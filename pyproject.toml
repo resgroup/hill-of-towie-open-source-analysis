@@ -1,0 +1,87 @@
+[tool.poetry]
+name = "hill-of-towie-open-source-analysis"
+version = "0.1.0"
+description = ""
+authors = ["Alex Clerc <alex.clerc@res-group.com>"]
+readme = "README.md"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = ">=3.11,<4.0"
+pandas = "^2.2.3"
+res-wind-up = "^0.1.11"
+
+[tool.poetry.group.dev.dependencies]
+poethepoet = "^0.25.0"
+ruff = "^0.3.0"
+mypy = "^1.8.0"
+pytest = "^8.1.0"
+coverage = "^7.4.3"
+deptry = "^0.20.0"
+pandas-stubs = "^2.2.3.241126"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+show-fixes = true
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "D203",  # `one-blank-line-before-class` conflicts with D211 `blank-line-before-class`
+    "D213",  # 'multi-line-summary-second-line' conflicts with D212 'multi-line-summary-starts-with-capital-letter'
+    "COM812",  # can conflict with formatter
+    "ISC001",  # can conflict with formatter
+    "ANN101", # `self` doesn't need annotations
+    "ANN102", # `cls` doesn't need annotations
+    "ANN204", # `__init__` doesn't need annotations
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "D100", # Ignore module docstring in tests
+    "S101", # Ignore use of `assert` in tests
+    "PLR2004", # Magic values allowed in tests
+]
+"__init__.py" = ["D"]
+
+[tool.mypy]
+python_version = 3.12
+
+[[tool.mypy.overrides]]
+module = [
+    "wind_up.*",
+]
+ignore_missing_imports = true
+
+[tool.coverage.report]
+exclude_lines = ["if __name__ == .__main__.:"]
+
+[tool.poe.tasks]
+[tool.poe.tasks.lint]
+help = "Runs formater and linter"
+sequence = [
+    { cmd = "poetry run ruff format ." },
+    { cmd = "poetry run ruff check . --fix" },
+    { cmd = "poetry run mypy ." },
+]
+
+[tool.poe.tasks.lint-check]
+help = "Checks using formater and linter"
+sequence = [
+    { cmd = "poetry run ruff format . --check" },
+    { cmd = "poetry run ruff check ." },
+    { cmd = "poetry run mypy ." },
+]
+
+[tool.poe.tasks.dep-check]
+help = "Check dependencies"
+shell = "poetry run deptry ."
+
+[tool.poe.tasks.all]
+help = "Run all required pre-push commands"
+sequence = [{ ref = "lint" }, { ref = "dep-check" }]

@@ -1,0 +1,31 @@
+assessment_name: HoT_northing
+test_wtgs:
+  - T13
+ref_wtgs:
+  #- T07
+  ##- HOT_T08  # High uncertainty
+  #- T09
+  ##- HOT_T10  # T10 topology is unusually complex on the wind farm
+  ##- HOT_T11  # Wind sensor error https://smart-uki.res-smart.com/EngineeringRecommendationsForSite.mvc/Details?engineeringRecommendationsForSiteKeys=EngineeringRecommendationsForSiteKeys(SiteKeys(ScadaSiteKeys(90))%2C52)
+  #- T12
+  - T14
+upgrade_first_dt_utc_start: 2024-09-01 00:00:00  # dummy value since no uplift analysis is intended, this config is just to run optimize_northing_corrections
+analysis_last_dt_utc_start: 2024-09-01 01:00:00  # dataset ends at end of August 2024
+years_offset_for_pre_period: 1
+years_for_lt_distribution: 10 # sufficient to include entire open-source dataset
+years_for_detrend: 3
+ws_bin_width: 1
+clip_rated_power_pp: true
+reanalysis_method: node_with_best_ws_corr
+asset: !include asset/HOT.yaml
+exclusion_periods_utc:
+    - ['ALL', 2024-03-14 08:00:00, 2024-03-14 17:00:00] # pitch tune up deployment
+    - ['ALL', 2022-09-03 00:00:00, 2023-02-12 00:00:00] # lots of curtailment
+    - ["T07", 2022-09-20 00:00:00, 2024-09-20 00:00:00]  # after AeroUp install
+    - ["T08", 2022-08-08 00:00:00, 2024-09-20 00:00:00]  # after AeroUp install
+    - ["T09", 2022-09-13 00:00:00, 2024-09-20 00:00:00]  # after AeroUp install
+    - ["T11", 2022-09-09 00:00:00, 2024-09-20 00:00:00]  # after AeroUp install
+    - ["T12", 2022-09-01 00:00:00, 2024-09-20 00:00:00]  # after AeroUp install
+    - ["T14", 2022-08-30 00:00:00, 2024-09-20 00:00:00]  # after AeroUp install
+    - ['T13', 2021-09-21 12:40:00, 2021-09-29 18:10:00]  # T13 blade works in progress
+optimize_northing_corrections: true

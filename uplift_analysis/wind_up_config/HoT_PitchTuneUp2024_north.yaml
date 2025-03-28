@@ -1,0 +1,32 @@
+assessment_name: HoT_PitchTuneUp2024_north
+test_wtgs:
+    - T08
+    - T09
+    - T13
+ref_wtgs:
+    - T07
+    - T11
+    - T12
+    - T14
+upgrade_first_dt_utc_start: 2024-03-14 17:00:00 # upgrades were carried out on 14 Mar
+analysis_last_dt_utc_start: 2024-08-31 23:50:00 # end of dataset
+years_offset_for_pre_period: 1
+years_for_lt_distribution: 5
+use_test_wtg_lt_distribution: false # setting to false uses the wind farm long-term distribution
+years_for_detrend: 3
+ws_bin_width: 1
+reanalysis_method: node_with_best_ws_corr
+asset: !include asset/HOT.yaml
+exclusion_periods_utc:
+    - ['ALL', 2024-03-14 07:00:00, 2024-03-14 18:00:00] # pitch tune up deployment
+    - ['ALL', 2022-09-03 00:00:00, 2023-02-12 00:00:00] # lots of curtailment
+    - ["T06", 2023-03-14 00:00:00, 2023-04-15 18:00:00 ] # pre period begin to end of AeroUp install
+    - ["T07", 2023-03-14 00:00:00, 2023-05-25 18:00:00 ] # pre period begin to end of AeroUp install
+    - ["T10", 2023-03-14 00:00:00, 2023-04-26 18:00:00 ] # pre period begin to end of AeroUp install
+    - ["T11", 2023-03-14 00:00:00, 2023-05-18 18:00:00 ] # pre period begin to end of AeroUp install
+    - ["T12", 2023-03-14 00:00:00, 2023-05-09 18:00:00 ] # pre period begin to end of AeroUp install
+    - ["T15", 2023-03-14 00:00:00, 2023-05-26 18:00:00 ] # pre period begin to end of AeroUp install
+    - ["T16", 2023-03-14 00:00:00, 2023-04-15 18:00:00 ] # pre period begin to end of AeroUp install
+    - ["T20", 2023-03-14 00:00:00, 2023-04-20 18:00:00 ] # pre period begin to end of AeroUp install
+optimize_northing_corrections: false
+northing_corrections_utc: !include northing/optimized_northing_corrections.yaml

@@ -1,28 +1,42 @@
-[tool.poetry]
+[project]
 name = "hill-of-towie-open-source-analysis"
-version = "0.1.0"
-description = ""
-authors = ["Alex Clerc <alex.clerc@res-group.com>"]
+dynamic = ["version"]
+description = "Project for open analysis of the Hill of Towie SCADA open source dataset"
+authors = [
+    { name = "Alex Clerc", email = "alex.clerc@res-group.com" }
+]
 readme = "README.md"
-package-mode = false
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.2.3",
+    "numpy>=2.2.3",
+    "scipy>=1.15.2",
+    "res-wind-up>=0.1.11",
+    "requests>=2.32.3",
+]
 
-[tool.poetry.dependencies]
-python = ">=3.11,<4.0"
-pandas = "^2.2.3"
-res-wind-up = "^0.1.11"
-
-[tool.poetry.group.dev.dependencies]
-poethepoet = "^0.25.0"
-ruff = "^0.3.0"
-mypy = "^1.8.0"
-pytest = "^8.1.0"
-coverage = "^7.4.3"
-deptry = "^0.20.0"
-pandas-stubs = "^2.2.3.241126"
+[dependency-groups]
+dev = [
+    "pytest>=8.2.2",
+    "poethepoet>=0.27.0",
+    "ruff>=0.5.0",
+    "mypy>=1.10.1",
+    "coverage>=7.5.4",
+    "deptry>=0.20.0",
+    "pandas-stubs>=2.2.2.240603",
+    "types-pyyaml>=6.0.12.20241230",
+    "scipy-stubs>=1.15.2.1",
+]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["uplift_analysis"]
+
+[tool.hatch.version]
+path = "uplift_analysis/__init__.py"
 
 [tool.ruff]
 line-length = 120
@@ -36,8 +50,6 @@ ignore = [
     "D213",  # 'multi-line-summary-second-line' conflicts with D212 'multi-line-summary-starts-with-capital-letter'
     "COM812",  # can conflict with formatter
     "ISC001",  # can conflict with formatter
-    "ANN101", # `self` doesn't need annotations
-    "ANN102", # `cls` doesn't need annotations
     "ANN204", # `__init__` doesn't need annotations
 ]
 
@@ -48,6 +60,7 @@ ignore = [
     "PLR2004", # Magic values allowed in tests
 ]
 "__init__.py" = ["D"]
+"uplift_analysis/*.py" = ["N999"]
 
 [tool.mypy]
 python_version = 3.12
@@ -65,22 +78,22 @@ exclude_lines = ["if __name__ == .__main__.:"]
 [tool.poe.tasks.lint]
 help = "Runs formater and linter"
 sequence = [
-    { cmd = "poetry run ruff format ." },
-    { cmd = "poetry run ruff check . --fix" },
-    { cmd = "poetry run mypy ." },
+    { cmd = "ruff format ." },
+    { cmd = "ruff check . --fix" },
+    { cmd = "mypy ." },
 ]
 
 [tool.poe.tasks.lint-check]
 help = "Checks using formater and linter"
 sequence = [
-    { cmd = "poetry run ruff format . --check" },
-    { cmd = "poetry run ruff check ." },
-    { cmd = "poetry run mypy ." },
+    { cmd = "ruff format . --check" },
+    { cmd = "ruff check ." },
+    { cmd = "mypy ." },
 ]
 
 [tool.poe.tasks.dep-check]
 help = "Check dependencies"
-shell = "poetry run deptry ."
+shell = "deptry ."
 
 [tool.poe.tasks.all]
 help = "Run all required pre-push commands"

@@ -13,7 +13,7 @@ from wind_up.main_analysis import run_wind_up_analysis
 from wind_up.models import PlotConfig, WindUpConfig
 from wind_up.reanalysis_data import ReanalysisDataset
 
-OUT_DIR = Path.home() / "temp" / "hill-of-towie-open-source-analysis-internal" / Path(__file__).stem
+OUT_DIR = Path.home() / "temp" / "hill-of-towie-open-source-analysis" / Path(__file__).stem
 CACHE_DIR = OUT_DIR / "cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_DIR = Path(__file__).parent / "wind_up_config"

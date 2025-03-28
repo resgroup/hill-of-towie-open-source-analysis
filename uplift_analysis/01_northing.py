@@ -15,7 +15,7 @@ from wind_up.main_analysis import run_wind_up_analysis
 from wind_up.models import PlotConfig, WindUpConfig
 from wind_up.reanalysis_data import ReanalysisDataset
 
-OUT_DIR = Path.home() / "temp" / "hill-of-towie-open-source-analysis-internal" / Path(__file__).stem
+OUT_DIR = Path.home() / "temp" / "hill-of-towie-open-source-analysis" / Path(__file__).stem
 CACHE_DIR = OUT_DIR / "cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_DIR = Path(__file__).parent / "wind_up_config"
@@ -57,10 +57,18 @@ def _main_northing_analysis(
 
 
 if __name__ == "__main__":
-    setup_logger(OUT_DIR / "analysis.log")
+    setup_logger(OUT_DIR / f"{Path(__file__).stem}.log")
 
     data_dir = OUT_DIR.parent / "zenodo_data"
-    download_zenodo_data(record_id="14870023", output_dir=data_dir)
+    download_zenodo_data(
+        record_id="14870023",
+        output_dir=data_dir,
+        filenames=[
+            *[f"{x}.zip" for x in range(2016, 2025)],
+            "Hill_of_Towie_ShutdownDuration.zip",
+            "Hill_of_Towie_turbine_metadata.csv",
+        ],
+    )
 
     metadata_df = unpack_local_meta_data(data_dir=data_dir)
     scada_df = unpack_local_scada_data(data_dir=data_dir)

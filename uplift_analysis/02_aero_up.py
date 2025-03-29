@@ -39,7 +39,7 @@ def _main_aeroup_analysis(
     cfg = WindUpConfig.from_yaml(CONFIG_DIR / "HoT_AeroUp_T13.yaml")
     cfg.out_dir = OUT_DIR / cfg.assessment_name
     cfg.out_dir.mkdir(parents=True, exist_ok=True)
-    plot_cfg = PlotConfig(show_plots=False, save_plots=False, plots_dir=cfg.out_dir / "plots")
+    plot_cfg = PlotConfig(show_plots=False, save_plots=True, plots_dir=cfg.out_dir / "plots")
 
     (CACHE_DIR / cfg.assessment_name).mkdir(parents=True, exist_ok=True)
     assessment_inputs = AssessmentInputs.from_cfg(

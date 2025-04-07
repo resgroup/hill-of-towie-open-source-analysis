@@ -11,8 +11,8 @@ from wind_up.main_analysis import run_wind_up_analysis
 from wind_up.models import PlotConfig, WindUpConfig
 from wind_up.reanalysis_data import ReanalysisDataset
 
-from .helpers import setup_logger
-from .input_data import unpack_local_meta_data, unpack_local_scada_data
+from hot_open import setup_logger
+from hot_open.unpack import unpack_local_meta_data, unpack_local_scada_data
 
 OUT_DIR = Path.home() / "temp" / "hill-of-towie-open-source-analysis" / Path(__file__).stem
 CACHE_DIR = OUT_DIR / "cache"

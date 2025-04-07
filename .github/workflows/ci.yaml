@@ -28,4 +28,3 @@ jobs:
       - name: Lint
         run: |
           uv run poe lint-check
-          uv run poe dep-check

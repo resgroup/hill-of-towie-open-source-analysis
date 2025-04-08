@@ -12,7 +12,7 @@ ws_bin_width: 1
 reanalysis_method: node_with_best_ws_corr
 asset: !include asset/HOT.yaml
 exclusion_periods_utc:
-  - [ 'T13', 2021-09-24 07:00:00, 2021-09-29 18:00:00 ]  # T13 blade works
-  - [ 'ALL', 2024-03-14 07:00:00, 2024-03-14 18:00:00 ] # pitch tune up deployment
-  - [ 'ALL', 2022-09-03 00:00:00, 2023-02-12 00:00:00 ] # lots of curtailment
+  - ['T13', 2021-09-24 07:00:00, 2021-09-29 18:00:00 ] # T13 blade works
+  - ['ALL', 2024-03-14 07:00:00, 2024-03-14 18:00:00 ] # pitch tune up deployment
+  - ['ALL', 2022-09-03 00:00:00, 2023-02-12 00:00:00 ] # lots of curtailment
 optimize_northing_corrections: true

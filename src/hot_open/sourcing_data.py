@@ -51,7 +51,9 @@ def download_zenodo_data(
             with Path.open(dst_fpath, "wb") as f:
                 for chunk in tqdm(
                     result.iter_content(chunk_size=CHUNK_SIZE),
-                    total=_file_size // (CHUNK_SIZE) + 1,
+                    total=round(_file_size / CHUNK_SIZE, 3),
+                    unit="MB",
+                    unit_scale=10,  # 10 MB per iteration
                     desc=f"Downloading {_file_name} ({_file_size / BYTES_IN_1MB:.2f} MB)",
                 ):
                     f.write(chunk)

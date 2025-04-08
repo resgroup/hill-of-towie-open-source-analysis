@@ -2,7 +2,7 @@ assessment_name: HoT_northing
 test_wtgs:
    - T13
 ref_wtgs:
-   - T14
+   - T12
 upgrade_first_dt_utc_start: 2024-03-01 00:00:00  # dummy value since no uplift analysis is intended, this config is just to run optimize_northing_corrections
 analysis_last_dt_utc_start: 2024-09-01 01:00:00  # dataset ends at end of August 2024
 years_offset_for_pre_period: 1
@@ -15,4 +15,4 @@ exclusion_periods_utc:
   - [ 'T13', 2021-09-24 07:00:00, 2021-09-29 18:00:00 ]  # T13 blade works
   - [ 'ALL', 2024-03-14 07:00:00, 2024-03-14 18:00:00 ] # pitch tune up deployment
   - [ 'ALL', 2022-09-03 00:00:00, 2023-02-12 00:00:00 ] # lots of curtailment
-optimize_northing_corrections: false
+optimize_northing_corrections: true

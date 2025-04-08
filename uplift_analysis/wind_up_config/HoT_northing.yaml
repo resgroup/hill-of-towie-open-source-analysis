@@ -1,8 +1,8 @@
 assessment_name: HoT_northing
 test_wtgs:
-   - T13
+    - T13
 ref_wtgs:
-   - T12
+    - T12
 upgrade_first_dt_utc_start: 2024-03-01 00:00:00  # dummy value since no uplift analysis is intended, this config is just to run optimize_northing_corrections
 analysis_last_dt_utc_start: 2024-09-01 01:00:00  # dataset ends at end of August 2024
 years_offset_for_pre_period: 1

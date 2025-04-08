@@ -7,9 +7,7 @@ import logging
 from pathlib import Path
 
 import pandas as pd
-from wind_up.combine_results import combine_results
 from wind_up.interface import AssessmentInputs
-from wind_up.main_analysis import run_wind_up_analysis
 from wind_up.models import PlotConfig, WindUpConfig
 from wind_up.reanalysis_data import ReanalysisDataset
 
@@ -42,7 +40,7 @@ def _main_northing_analysis(
     plot_cfg = PlotConfig(show_plots=False, save_plots=True, plots_dir=cfg.out_dir / "plots")
 
     (CACHE_DIR / cfg.assessment_name).mkdir(parents=True, exist_ok=True)
-    assessment_inputs = AssessmentInputs.from_cfg(
+    _ = AssessmentInputs.from_cfg(
         cfg=cfg,
         plot_cfg=plot_cfg,
         scada_df=scada_df,
@@ -50,11 +48,8 @@ def _main_northing_analysis(
         reanalysis_datasets=[reanalysis_dataset],
         cache_dir=CACHE_DIR / cfg.assessment_name,
     )
-    results_per_test_ref_df = run_wind_up_analysis(assessment_inputs)
-    combined_results_df = combine_results(results_per_test_ref_df, plot_config=plot_cfg, auto_choose_refs=False)
-    combined_results_df.to_csv(
-        cfg.out_dir / f"{cfg.assessment_name}_combined_results_{pd.Timestamp.utcnow().strftime('%Y%m%d_%H%M%S')}.csv",
-    )
+    msg = f"Completed northing analysis. Results are at {cfg.out_dir / 'optimized_northing_corrections.yaml'}"
+    logger.info(msg)
 
 
 if __name__ == "__main__":

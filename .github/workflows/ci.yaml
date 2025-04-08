@@ -28,3 +28,7 @@ jobs:
       - name: Lint
         run: |
           uv run poe lint-check
+
+      - name: Test
+        run: |
+          uv run poe test

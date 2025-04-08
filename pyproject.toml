@@ -1,5 +1,5 @@
 [project]
-name = "hill-of-towie-open-source-analysis"
+name = "hot_open"
 dynamic = ["version"]
 description = "Project for open analysis of the Hill of Towie SCADA open source dataset"
 authors = [
@@ -13,6 +13,7 @@ dependencies = [
     "scipy>=1.15.2",
     "res-wind-up>=0.1.11",
     "requests>=2.32.3",
+    "tqdm>=4.67.0",
 ]
 
 [dependency-groups]
@@ -26,22 +27,23 @@ dev = [
     "pandas-stubs>=2.2.2.240603",
     "types-pyyaml>=6.0.12.20241230",
     "scipy-stubs>=1.15.2.1",
+    "types-requests>=2.32.0.20250328",
+    "types-tqdm>=4.67.0.20250404",
+    "responses>=0.25.7",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.hatch.build.targets.wheel]
-packages = ["uplift_analysis"]
-
 [tool.hatch.version]
-path = "uplift_analysis/__init__.py"
+path = "src/hot_open/__init__.py"
 
 [tool.ruff]
 line-length = 120
-target-version = "py312"
+target-version = "py310"
 show-fixes = true
+extend-exclude = ["tests"]
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -54,16 +56,12 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = [
-    "D100", # Ignore module docstring in tests
-    "S101", # Ignore use of `assert` in tests
-    "PLR2004", # Magic values allowed in tests
-]
 "__init__.py" = ["D"]
 "uplift_analysis/*.py" = ["N999"]
 
 [tool.mypy]
-python_version = 3.12
+python_version = "3.10"
+exclude = "tests|.venv|__ignore__"
 
 [[tool.mypy.overrides]]
 module = [
@@ -71,8 +69,12 @@ module = [
 ]
 ignore_missing_imports = true
 
+[tool.deptry.per_rule_ignores]
+DEP003 = ["hot_open"]
+
 [tool.coverage.report]
 exclude_lines = ["if __name__ == .__main__.:"]
+
 
 [tool.poe.tasks]
 [tool.poe.tasks.lint]
@@ -81,6 +83,7 @@ sequence = [
     { cmd = "ruff format ." },
     { cmd = "ruff check . --fix" },
     { cmd = "mypy ." },
+    { cmd = "deptry ." },
 ]
 
 [tool.poe.tasks.lint-check]
@@ -89,12 +92,16 @@ sequence = [
     { cmd = "ruff format . --check" },
     { cmd = "ruff check ." },
     { cmd = "mypy ." },
+    { cmd = "deptry ." },
 ]
 
-[tool.poe.tasks.dep-check]
-help = "Check dependencies"
-shell = "deptry ."
+[tool.poe.tasks.test]
+help = "Runs unit tests and show coverage"
+sequence = [
+    { cmd = "coverage run --source src -m pytest ./tests" },
+    { cmd = "coverage report -m" },
+]
 
 [tool.poe.tasks.all]
 help = "Run all required pre-push commands"
-sequence = [{ ref = "lint" }, { ref = "dep-check" }]
+sequence = [{ ref = "lint" }, { ref = "test" }]

@@ -7,15 +7,16 @@ import logging
 from pathlib import Path
 
 import pandas as pd
-from helpers import download_zenodo_data, setup_logger
-from input_data import unpack_local_meta_data, unpack_local_scada_data
 from wind_up.combine_results import combine_results
 from wind_up.interface import AssessmentInputs
 from wind_up.main_analysis import run_wind_up_analysis
 from wind_up.models import PlotConfig, WindUpConfig
 from wind_up.reanalysis_data import ReanalysisDataset
 
-OUT_DIR = Path.home() / "temp" / "hill-of-towie-open-source-analysis" / Path(__file__).stem
+from hot_open import download_zenodo_data, setup_logger
+from hot_open.unpack import unpack_local_meta_data, unpack_local_scada_data
+
+OUT_DIR = Path.home() / "hill-of-towie-open-source-analysis" / Path(__file__).stem
 CACHE_DIR = OUT_DIR / "cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_DIR = Path(__file__).parent / "wind_up_config"

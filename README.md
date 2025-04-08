@@ -17,6 +17,8 @@ Example code for downloading data from Zenodo and loading it into pandas datafra
 The folder `uplift_analysis` uses [wind-up](https://github.com/resgroup/wind-up) to run two analyses of energy uplift
 after turbine upgrades.
 
+Note any analysis can be run without running the others, e.g. you do not need to run `01_northing.py` before `02_aero_up.py`.
+
 The script `uplift_analysis/01_northing.py` calculates the northing corrections saved to
 `uplift_analysis/wind_up_config/northing/optimized_northing_corrections.yaml` and used in subsequent analyses. The plot
 below shows the circular difference of ERA5 wind direction to each turbine's yaw direction before the northing

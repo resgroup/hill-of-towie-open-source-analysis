@@ -8,7 +8,7 @@ from hot_open.sourcing_data import download_zenodo_data
 class TestDownloadZenodoData:
     @staticmethod
     @responses.activate
-    def test_downloads_file_correctly(tmp_path: Path):
+    def test_downloads_file_correctly(tmp_path: Path) -> None:
         fname = "somefile.zip"
         expected_fpath = tmp_path / fname
         expected_content = b"test"

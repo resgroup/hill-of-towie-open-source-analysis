@@ -32,7 +32,10 @@ The result is a P50 uplift of 4.3% with a 90% confidence interval of 3.3% to 5.3
 
 The script `uplift_analysis/03_tune_up.py` analyses the energy uplift thanks
 to [TuneUp](https://www.res-group.com/digital-solutions/tuneup/) for nine test turbines. The result is a P50 uplift of
-1.1% with a 90% confidence interval of 0.2% to 2.0%.
+1.1% with a 90% confidence interval of 0.2% to 2.0%. This is visualized in the plot below along with the same result for
+the ten unchanged reference turbines, which is near 0% uplift as expected:
+![combined uplift and 90% CI](https://github.com/user-attachments/assets/00b17f01-54ea-4532-ab1c-16921df0b70e)
+
 
 ## Python environment
 

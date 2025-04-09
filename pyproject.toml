@@ -9,8 +9,6 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "pandas>=2.2.3",
-    "numpy>=2.2.3",
-    "scipy>=1.15.2",
     "res-wind-up>=0.1.11",
     "requests>=2.32.3",
     "tqdm>=4.67.0",

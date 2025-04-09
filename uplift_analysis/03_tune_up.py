@@ -80,7 +80,7 @@ if __name__ == "__main__":
     if re_run_test_ref_results:
         username = getpass.getuser()
 
-        data_dir = Path(r"C:\Users") / username / "RES Group/Digital Solutions - HardTech - Open source dataset"
+        data_dir = OUT_DIR.parent / "zenodo_data"
 
         metadata_df = unpack_local_meta_data(data_dir=data_dir)
 

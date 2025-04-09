@@ -367,7 +367,7 @@ dev = [
 requires-dist = [
     { name = "pandas", specifier = ">=2.2.3" },
     { name = "requests", specifier = ">=2.32.3" },
-    { name = "res-wind-up", specifier = ">=0.1.11" },
+    { name = "res-wind-up", specifier = ">=0.2.0" },
     { name = "tqdm", specifier = ">=4.67.0" },
 ]
 
@@ -1108,7 +1108,7 @@ wheels = [
 
 [[package]]
 name = "res-wind-up"
-version = "0.1.11"
+version = "0.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "eval-type-backport" },
@@ -1127,9 +1127,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "utm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b2/de/a1cad466c2a97be9d8274684625f5de9edee191f895ec9b314785852898e/res_wind_up-0.1.11.tar.gz", hash = "sha256:13afda93b4df73086f2d6a772530dfe9dcc5d70465a5e96e4c764423d9c0d301", size = 78130 }
+sdist = { url = "https://files.pythonhosted.org/packages/43/4f/d68c4179a456f922eeb8ef0ecf18f6f55766dfd4ea4afd4e3da2fde52eb0/res_wind_up-0.2.0.tar.gz", hash = "sha256:f7951594835b15684e86376abf01da633184a0046e59f54eaa6b3e36e362f058", size = 87118 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b1/6c/1cdc61698667a1ef88b096c7130ccb06baadf2ad99d042c4946dc00a3a72/res_wind_up-0.1.11-py3-none-any.whl", hash = "sha256:b44995a139c8d5c072a0f1bdb3d088ca76ec368c7fc543605bffc2fb1f06fcfd", size = 83225 },
+    { url = "https://files.pythonhosted.org/packages/75/3b/49d1176b4987b4aef74e0a22fd96f290b3e593f290a589669250700804bd/res_wind_up-0.2.0-py3-none-any.whl", hash = "sha256:5df5e1a9ad609ed8526e0234de78f1333f4671495ec313a9d1d184dbff02c6d1", size = 88932 },
 ]
 
 [[package]]

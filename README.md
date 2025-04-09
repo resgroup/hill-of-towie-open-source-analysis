@@ -24,16 +24,22 @@ The script `uplift_analysis/01_northing.py` calculates the northing corrections 
 below shows the circular difference of ERA5 wind direction to each turbine's yaw direction before the northing
 correction. The turbine north calibrations are apparently wrong quite often which means the northing correction is quite
 important.
+
 ![northing error vs reanalysis_wd before northing](https://github.com/user-attachments/assets/aaf1e4c6-dc10-4c59-9281-1051128464af)
+
+# AeroUp
 
 The script `uplift_analysis/02_aero_up.py` analyses the energy uplift thanks
 to [AeroUp](https://www.res-group.com/digital-solutions/aeroup/) for T13.
 The result is a P50 uplift of 4.3% with a 90% confidence interval of 3.3% to 5.3%.
 
+# TuneUp
+
 The script `uplift_analysis/03_tune_up.py` analyses the energy uplift thanks
 to [TuneUp](https://www.res-group.com/digital-solutions/tuneup/) for nine test turbines. The result is a P50 uplift of
 1.1% with a 90% confidence interval of 0.2% to 2.0%. This is visualized in the plot below along with the same result for
 the ten unchanged reference turbines, which is near 0% uplift as expected:
+
 ![combined uplift and 90% CI](https://github.com/user-attachments/assets/00b17f01-54ea-4532-ab1c-16921df0b70e)
 
 

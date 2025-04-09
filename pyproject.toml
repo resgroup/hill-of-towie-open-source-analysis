@@ -43,7 +43,6 @@ path = "src/hot_open/__init__.py"
 line-length = 120
 target-version = "py310"
 show-fixes = true
-extend-exclude = ["tests"]
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -58,10 +57,17 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["D"]
 "uplift_analysis/*.py" = ["N999"]
+"tests/**/*.py" = [
+    "S101",  # allow `assert`
+    "PLR2004",  # allow magic values
+    "D100", # Missing docstring in public module
+    "D101", # Missing docstring in public class
+    "D102", # Missing docstring in public method
+]
 
 [tool.mypy]
 python_version = "3.10"
-exclude = "tests|.venv|__ignore__"
+exclude = ".venv|__ignore__"
 
 [[tool.mypy.overrides]]
 module = [

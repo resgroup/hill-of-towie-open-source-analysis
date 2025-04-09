@@ -27,13 +27,13 @@ important.
 
 ![northing error vs reanalysis_wd before northing](https://github.com/user-attachments/assets/aaf1e4c6-dc10-4c59-9281-1051128464af)
 
-# AeroUp
+### AeroUp
 
 The script `uplift_analysis/02_aero_up.py` analyses the energy uplift thanks
 to [AeroUp](https://www.res-group.com/digital-solutions/aeroup/) for T13.
 The result is a P50 uplift of 4.3% with a 90% confidence interval of 3.3% to 5.3%.
 
-# TuneUp
+### TuneUp
 
 The script `uplift_analysis/03_tune_up.py` analyses the energy uplift thanks
 to [TuneUp](https://www.res-group.com/digital-solutions/tuneup/) for nine test turbines. The result is a P50 uplift of

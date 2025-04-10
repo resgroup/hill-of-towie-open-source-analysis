@@ -12,6 +12,11 @@ The code within this repository contains analysis and helper functions to:
 Example code for downloading data from Zenodo and loading it into pandas dataframes is shown in
 `uplift_analysis/northing.py`.
 
+A plot of the Hill of Towie layout and the capacity factor of each turbine in the dataset is shown below:
+
+![Hill of Towie capacity factor](https://github.com/user-attachments/assets/915473d0-3871-4758-adc8-534ab1cd8acc)
+
+
 ## Uplift analysis
 
 The folder `uplift_analysis` uses [wind-up](https://github.com/resgroup/wind-up) to run two analyses of energy uplift

@@ -31,13 +31,17 @@ important.
 
 The script `uplift_analysis/aero_up.py` analyses the energy uplift thanks
 to [AeroUp](https://www.res-group.com/digital-solutions/aeroup/) for T13.
-The result is a P50 uplift of 4.3% with a 90% confidence interval of 3.3% to 5.3%.
+The result is a P50 uplift of 4.3% with a 90% confidence interval of 3.3% to 5.3%. This is visualized in the plot below
+along with the uplift results for the three selected reference turbines, which are near 0% uplift as expected:
+
+![combined uplift and 90% CI](https://github.com/user-attachments/assets/a36214d1-7308-4a16-9be3-9e2230170708)
+
 
 ### TuneUp
 
 The script `uplift_analysis/tune_up.py` analyses the energy uplift thanks
 to [TuneUp](https://www.res-group.com/digital-solutions/tuneup/) for nine test turbines. The result is a P50 uplift of
-1.1% with a 90% confidence interval of 0.2% to 2.0%. This is visualized in the plot below along with the same result for
+1.1% with a 90% confidence interval of 0.2% to 2.0%. This is visualized in the plot below along with the uplift result for
 the ten unchanged reference turbines, which is near 0% uplift as expected:
 
 ![combined uplift and 90% CI](https://github.com/user-attachments/assets/00b17f01-54ea-4532-ab1c-16921df0b70e)

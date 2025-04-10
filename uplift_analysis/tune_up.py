@@ -1,6 +1,5 @@
 """Analyse the uplift of the TuneUp upgrades."""
 
-import getpass
 import logging
 from dataclasses import dataclass
 from functools import partial
@@ -13,7 +12,7 @@ from wind_up.main_analysis import run_wind_up_analysis
 from wind_up.models import PlotConfig, WindUpConfig
 from wind_up.reanalysis_data import ReanalysisDataset
 
-from hot_open import setup_logger
+from hot_open import download_zenodo_data, setup_logger
 from hot_open.unpack import unpack_local_meta_data, unpack_local_scada_data
 
 OUT_DIR = Path.home() / "hill-of-towie-open-source-analysis" / Path(__file__).stem
@@ -78,12 +77,18 @@ class HoTPitchTuneUpResults:
 if __name__ == "__main__":
     re_run_test_ref_results = False
     if re_run_test_ref_results:
-        username = getpass.getuser()
-
+        setup_logger(OUT_DIR / f"{Path(__file__).stem}.log")
         data_dir = OUT_DIR.parent / "zenodo_data"
-
+        download_zenodo_data(
+            record_id="14870023",
+            output_dir=data_dir,
+            filenames=[
+                *[f"{x}.zip" for x in range(2016, 2025)],
+                "Hill_of_Towie_ShutdownDuration.zip",
+                "Hill_of_Towie_turbine_metadata.csv",
+            ],
+        )
         metadata_df = unpack_local_meta_data(data_dir=data_dir)
-
         scada_df = unpack_local_scada_data(data_dir=data_dir)
         # The wind farm is analysed in three sections to avoid an excessive number of test-ref combinations
         for config_fname in [
@@ -129,6 +134,14 @@ if __name__ == "__main__":
         msg = f"{cfg.assessment_name=}"
         logger.info(msg)
 
+        results_per_test_ref_df_path = cfg.out_dir / result.results_per_test_ref_fname
+        if not results_per_test_ref_df_path.exists():
+            msg = (
+                f"{results_per_test_ref_df_path} does not exist.\n\nPlease move the file to this location, "
+                f"correct the filename in the script or generate a new file by "
+                f"setting `re_run_test_ref_results` to True."
+            )
+            raise ValueError(msg)
         results_per_test_ref_df = pd.read_csv(cfg.out_dir / result.results_per_test_ref_fname, index_col=0)
         ref_list_before = list(results_per_test_ref_df["ref"].unique())
         msg = f"{ref_list_before=}"

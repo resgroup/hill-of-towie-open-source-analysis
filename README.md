@@ -10,7 +10,7 @@ The code within this repository contains analysis and helper functions to:
 ## Quickstart
 
 Example code for downloading data from Zenodo and loading it into pandas dataframes is shown in
-`uplift_analysis/01_northing.py`.
+`uplift_analysis/northing.py`.
 
 ## Uplift analysis
 
@@ -19,7 +19,7 @@ after turbine upgrades.
 
 Note any analysis can be run without running the others, e.g. you do not need to run `01_northing.py` before `02_aero_up.py`.
 
-The script `uplift_analysis/01_northing.py` calculates the northing corrections saved to
+The script `uplift_analysis/northing.py` calculates the northing corrections saved to
 `uplift_analysis/wind_up_config/northing/optimized_northing_corrections.yaml` and used in subsequent analyses. The plot
 below shows the circular difference of ERA5 wind direction to each turbine's yaw direction before the northing
 correction. The turbine north calibrations are apparently wrong quite often which means the northing correction is quite
@@ -29,13 +29,13 @@ important.
 
 ### AeroUp
 
-The script `uplift_analysis/02_aero_up.py` analyses the energy uplift thanks
+The script `uplift_analysis/aero_up.py` analyses the energy uplift thanks
 to [AeroUp](https://www.res-group.com/digital-solutions/aeroup/) for T13.
 The result is a P50 uplift of 4.3% with a 90% confidence interval of 3.3% to 5.3%.
 
 ### TuneUp
 
-The script `uplift_analysis/03_tune_up.py` analyses the energy uplift thanks
+The script `uplift_analysis/tune_up.py` analyses the energy uplift thanks
 to [TuneUp](https://www.res-group.com/digital-solutions/tuneup/) for nine test turbines. The result is a P50 uplift of
 1.1% with a 90% confidence interval of 0.2% to 2.0%. This is visualized in the plot below along with the same result for
 the ten unchanged reference turbines, which is near 0% uplift as expected:

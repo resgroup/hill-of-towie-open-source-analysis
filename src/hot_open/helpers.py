@@ -46,6 +46,7 @@ def load_hot_10min_data(  # noqa:PLR0913 C901
     end_dt_excl: pd.Timestamp,
     use_turbine_names: bool = True,  # if False serial numbers are used to identify turbines
     rename_cols_using_aliases: bool = True,
+    custom_fields: list[WPSBackupFileField] | None = None,
 ) -> pd.DataFrame:
     """Return a SCADA 10-min dataframe of for Hill of Towie."""
     if str(start_dt.tz) != "UTC" or str(end_dt_excl.tz) != "UTC":
@@ -59,7 +60,8 @@ def load_hot_10min_data(  # noqa:PLR0913 C901
     first_year_to_load = start_dt.year
     last_year_to_load = (end_dt_excl - pd.Timedelta(seconds=timebase_s)).year
     years_to_load = list(range(first_year_to_load, last_year_to_load + 1))
-    tables_to_load = {x.table_name for x in hill_of_towie_fields}
+    fields_to_load = hill_of_towie_fields if custom_fields is None else custom_fields
+    tables_to_load = {x.table_name for x in fields_to_load}
     result_dfs = []
     for _year in years_to_load:
         zip_path = data_dir / f"{_year}.zip"
@@ -77,11 +79,11 @@ def load_hot_10min_data(  # noqa:PLR0913 C901
                     if (fname := f"{_table}_{_year}_{_month:02d}.csv") not in zip_file.namelist():
                         continue
                     _df = pd.read_csv(zip_file.open(fname), index_col=0, parse_dates=True)[
-                        ["StationId", *[x.field_name for x in hill_of_towie_fields if x.table_name == _table]]
+                        ["StationId", *[x.field_name for x in fields_to_load if x.table_name == _table]]
                     ]
                     if rename_cols_using_aliases:
                         _df = _df.rename(
-                            columns={x.field_name: x.alias for x in hill_of_towie_fields if x.table_name == _table}
+                            columns={x.field_name: x.alias for x in fields_to_load if x.table_name == _table}
                         )
                     if _df.index.name != "TimeStamp":
                         msg = f"unexpected index name, {_df.index.name =}"

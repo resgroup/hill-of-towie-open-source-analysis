@@ -54,7 +54,6 @@ def _main_northing_analysis(
 
 if __name__ == "__main__":
     setup_logger(OUT_DIR / f"{Path(__file__).stem}.log")
-
     data_dir = OUT_DIR.parent / "zenodo_data"
     download_zenodo_data(
         record_id="14870023",
@@ -65,7 +64,6 @@ if __name__ == "__main__":
             "Hill_of_Towie_turbine_metadata.csv",
         ],
     )
-
     metadata_df = unpack_local_meta_data(data_dir=data_dir)
     scada_df = unpack_local_scada_data(data_dir=data_dir)
     _main_northing_analysis(

@@ -1,24 +1,21 @@
 """Analyse the uplift of the TuneUp upgrades."""
 
-import getpass
 import logging
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
-from scipy.stats import norm
-from wind_up.combine_results import combine_results
+from wind_up.combine_results import calculate_total_uplift_of_test_and_ref_turbines, combine_results
 from wind_up.interface import AssessmentInputs
 from wind_up.main_analysis import run_wind_up_analysis
 from wind_up.models import PlotConfig, WindUpConfig
 from wind_up.reanalysis_data import ReanalysisDataset
 
-from hot_open import setup_logger
+from hot_open import download_zenodo_data, setup_logger
 from hot_open.unpack import unpack_local_meta_data, unpack_local_scada_data
 
-OUT_DIR = Path.home() / "temp" / "hill-of-towie-open-source-analysis" / Path(__file__).stem
+OUT_DIR = Path.home() / "hill-of-towie-open-source-analysis" / Path(__file__).stem
 CACHE_DIR = OUT_DIR / "cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_DIR = Path(__file__).parent / "wind_up_config"
@@ -80,12 +77,18 @@ class HoTPitchTuneUpResults:
 if __name__ == "__main__":
     re_run_test_ref_results = False
     if re_run_test_ref_results:
-        username = getpass.getuser()
-
-        data_dir = Path(r"C:\Users") / username / "RES Group/Digital Solutions - HardTech - Open source dataset"
-
+        setup_logger(OUT_DIR / f"{Path(__file__).stem}.log")
+        data_dir = OUT_DIR.parent / "zenodo_data"
+        download_zenodo_data(
+            record_id="14870023",
+            output_dir=data_dir,
+            filenames=[
+                *[f"{x}.zip" for x in range(2016, 2025)],
+                "Hill_of_Towie_ShutdownDuration.zip",
+                "Hill_of_Towie_turbine_metadata.csv",
+            ],
+        )
         metadata_df = unpack_local_meta_data(data_dir=data_dir)
-
         scada_df = unpack_local_scada_data(data_dir=data_dir)
         # The wind farm is analysed in three sections to avoid an excessive number of test-ref combinations
         for config_fname in [
@@ -131,6 +134,14 @@ if __name__ == "__main__":
         msg = f"{cfg.assessment_name=}"
         logger.info(msg)
 
+        results_per_test_ref_df_path = cfg.out_dir / result.results_per_test_ref_fname
+        if not results_per_test_ref_df_path.exists():
+            msg = (
+                f"{results_per_test_ref_df_path} does not exist.\n\nPlease move the file to this location, "
+                f"correct the filename in the script or generate a new file by "
+                f"setting `re_run_test_ref_results` to True."
+            )
+            raise ValueError(msg)
         results_per_test_ref_df = pd.read_csv(cfg.out_dir / result.results_per_test_ref_fname, index_col=0)
         ref_list_before = list(results_per_test_ref_df["ref"].unique())
         msg = f"{ref_list_before=}"
@@ -159,54 +170,6 @@ if __name__ == "__main__":
 
         all_combined_results_df = pd.concat([all_combined_results_df, combined_results_df]).reset_index(drop=True)
 
-    # confirm there is only one row per test_wtg
-    if all_combined_results_df["test_wtg"].value_counts().max() > 1:
-        msg = "all_combined_results_df must have no more than one row per test_wtg"
-        raise ValueError(msg)
-
-    weight_col = "unc_weight"
-    all_combined_results_df[weight_col] = 1 / (all_combined_results_df["sigma"] ** 2)
-
-    all_combined_results_df.to_csv(
-        OUT_DIR / f"all_combined_results_{pd.Timestamp.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
-    )
-
-    wf_results = all_combined_results_df.groupby("role").agg(
-        p50_uplift=pd.NamedAgg(
-            column="p50_uplift",
-            aggfunc=lambda x: (x * all_combined_results_df.loc[x.index, weight_col]).sum()
-            / all_combined_results_df.loc[x.index, weight_col].sum(),
-        ),
-        sigma_uncorr=pd.NamedAgg(
-            column="sigma",
-            aggfunc=lambda x: np.sqrt(
-                (
-                    (
-                        x
-                        * all_combined_results_df.loc[x.index, weight_col]
-                        / all_combined_results_df.loc[x.index, weight_col].sum()
-                    )
-                    ** 2
-                ).sum(),
-            ),
-        ),
-        sigma_corr=pd.NamedAgg(
-            column="sigma",
-            aggfunc=lambda x: (x * all_combined_results_df.loc[x.index, weight_col]).sum()
-            / all_combined_results_df.loc[x.index, weight_col].sum(),
-        ),
-        wtg_count=pd.NamedAgg(column="p50_uplift", aggfunc=len),
-        wtg_list=pd.NamedAgg(column="test_wtg", aggfunc=lambda x: ", ".join(sorted(x))),
-    )
-
-    wf_results["sigma"] = (wf_results["sigma_uncorr"] + wf_results["sigma_corr"]) / 2
-    confidence = 0.9
-    wf_results[f"p{100 * (1 - ((1 - confidence) / 2)):.0f}_uplift"] = (
-        wf_results["p50_uplift"] + norm.ppf((1 - confidence) / 2) * wf_results["sigma"]
-    )
-    wf_results[f"p{100 * ((1 - confidence) / 2):.0f}_uplift"] = (
-        wf_results["p50_uplift"] + norm.ppf(1 - (1 - confidence) / 2) * wf_results["sigma"]
-    )
-    # make test the first row
-    wf_results = wf_results.loc[["test", "ref"]]  # type:ignore[index]
+    plot_cfg.plots_dir = plot_cfg.plots_dir.parent.parent
+    wf_results = calculate_total_uplift_of_test_and_ref_turbines(all_combined_results_df, plot_cfg=plot_cfg)
     wf_results.to_csv(OUT_DIR / f"wf_results_{pd.Timestamp.utcnow().strftime('%Y%m%d_%H%M%S')}.csv")

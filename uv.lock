@@ -90,7 +90,7 @@ name = "click"
 version = "8.1.8"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "platform_system == 'Windows'" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/b9/2e/0090cbf739cee7d23781ad4b89a9894a41538e4fcf4c31dcdd705b78eb8b/click-8.1.8.tar.gz", hash = "sha256:ed53c9d8990d83c2a27deae68e4ee337473f6330c040a31d4225c9574d16096a", size = 226593 }
 wheels = [
@@ -339,14 +339,11 @@ wheels = [
 
 [[package]]
 name = "hot-open"
-version = "0.0.1"
 source = { editable = "." }
 dependencies = [
-    { name = "numpy" },
     { name = "pandas" },
     { name = "requests" },
     { name = "res-wind-up" },
-    { name = "scipy" },
     { name = "tqdm" },
 ]
 
@@ -368,11 +365,9 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "numpy", specifier = ">=2.2.3" },
     { name = "pandas", specifier = ">=2.2.3" },
     { name = "requests", specifier = ">=2.32.3" },
-    { name = "res-wind-up", specifier = ">=0.1.11" },
-    { name = "scipy", specifier = ">=1.15.2" },
+    { name = "res-wind-up", specifier = ">=0.2.0" },
     { name = "tqdm", specifier = ">=4.67.0" },
 ]
 
@@ -1113,7 +1108,7 @@ wheels = [
 
 [[package]]
 name = "res-wind-up"
-version = "0.1.11"
+version = "0.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "eval-type-backport" },
@@ -1132,9 +1127,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "utm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b2/de/a1cad466c2a97be9d8274684625f5de9edee191f895ec9b314785852898e/res_wind_up-0.1.11.tar.gz", hash = "sha256:13afda93b4df73086f2d6a772530dfe9dcc5d70465a5e96e4c764423d9c0d301", size = 78130 }
+sdist = { url = "https://files.pythonhosted.org/packages/43/4f/d68c4179a456f922eeb8ef0ecf18f6f55766dfd4ea4afd4e3da2fde52eb0/res_wind_up-0.2.0.tar.gz", hash = "sha256:f7951594835b15684e86376abf01da633184a0046e59f54eaa6b3e36e362f058", size = 87118 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b1/6c/1cdc61698667a1ef88b096c7130ccb06baadf2ad99d042c4946dc00a3a72/res_wind_up-0.1.11-py3-none-any.whl", hash = "sha256:b44995a139c8d5c072a0f1bdb3d088ca76ec368c7fc543605bffc2fb1f06fcfd", size = 83225 },
+    { url = "https://files.pythonhosted.org/packages/75/3b/49d1176b4987b4aef74e0a22fd96f290b3e593f290a589669250700804bd/res_wind_up-0.2.0-py3-none-any.whl", hash = "sha256:5df5e1a9ad609ed8526e0234de78f1333f4671495ec313a9d1d184dbff02c6d1", size = 88932 },
 ]
 
 [[package]]
@@ -1362,7 +1357,7 @@ name = "tqdm"
 version = "4.67.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "platform_system == 'Windows'" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a8/4b/29b4ef32e036bb34e4ab51796dd745cdba7ed47ad142a9f4a1eb8e0c744d/tqdm-4.67.1.tar.gz", hash = "sha256:f8aef9c52c08c13a65f30ea34f4e5aac3fd1a34959879d7e59e63027286627f2", size = 169737 }
 wheels = [

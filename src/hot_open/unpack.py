@@ -5,12 +5,18 @@ from pathlib import Path
 import pandas as pd
 from wind_up.caching import with_parquet_cache
 
+from hot_open import get_analysis_directory
+
 from .helpers import load_hot_10min_data, scada_df_to_wind_up_df
 
 OUT_DIR = Path.home() / "temp" / "hill-of-towie-open-source-analysis" / Path(__file__).stem
 CACHE_DIR = OUT_DIR / "cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_DIR = Path(__file__).parent / "wind_up_config"
+
+
+ANALYSIS_DIR = get_analysis_directory(analysis_name="hill-of-towie-open-source-analysis")
+CACHE_DIR = ANALYSIS_DIR / "cache"
 
 
 @with_parquet_cache(CACHE_DIR / "scada_df.parquet")

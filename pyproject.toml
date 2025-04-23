@@ -28,6 +28,7 @@ dev = [
     "types-requests>=2.32.0.20250328",
     "types-tqdm>=4.67.0.20250404",
     "responses>=0.25.7",
+    "jupytext>=1.17.0",
 ]
 
 [build-system]
@@ -55,6 +56,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["D"]
 "uplift_analysis/*.py" = ["N999"]
+"scripts/**/*.py" = ["D100", "INP001", "ERA001", "T201", "ARG002", "N803", "N806", "N802", "D102", "PD010"]
 "tests/**/*.py" = [
     "S101", # allow `assert`
     "PLR2004", # allow magic values
@@ -70,8 +72,12 @@ exclude = ".venv|__ignore__"
 [[tool.mypy.overrides]]
 module = [
     "wind_up.*",
+    "plotly.*",
 ]
 ignore_missing_imports = true
+
+[tool.deptry]
+extend_exclude = ["scripts"]
 
 [tool.deptry.per_rule_ignores]
 DEP003 = ["hot_open"]

@@ -28,7 +28,12 @@ dev = [
     "types-requests>=2.32.0.20250328",
     "types-tqdm>=4.67.0.20250404",
     "responses>=0.25.7",
+]
+wedowind = [
+    "jupyterlab>=4.4.1",
     "jupytext>=1.17.0",
+    "plotly>=6.0.1",
+    "polars>=1.27.1",
 ]
 
 [build-system]

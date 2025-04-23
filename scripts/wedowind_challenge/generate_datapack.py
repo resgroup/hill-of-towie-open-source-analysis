@@ -1,8 +1,12 @@
 # /// script
 # requires-python = ">=3.10"
 # dependencies = [
+#     "hot-open",
 #     "polars",
 # ]
+#
+# [tool.uv.sources]
+# hot-open = { path = "../../" }
 # ///
 
 """Generating the data-pack for the WeDoWind challenge.

@@ -2,12 +2,13 @@
 
 import json
 import logging
-import os
 from collections.abc import Collection
 from pathlib import Path
 
 import requests
 from tqdm.auto import tqdm
+
+from hot_open.paths import DATA_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,11 @@ CHUNK_SIZE = 10 * BYTES_IN_1MB
 
 
 def download_zenodo_data(
-    record_id: str, output_dir: Path, filenames: Collection[str] | None = None, *, cache_overwrite: bool = False
+    record_id: str,
+    output_dir: Path = DATA_DIR,
+    filenames: Collection[str] | None = None,
+    *,
+    cache_overwrite: bool = False,
 ) -> None:
     """Download and caches files from zenodo.org."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -75,17 +80,3 @@ def _check_name_of_files_to_download(filenames: Collection[str], remote_files: C
         )
         raise ValueError(msg)
     return [i for i in remote_files if i["key"] in requested_filenames]
-
-
-def get_analysis_directory(analysis_name: str) -> Path:
-    """Get the location where the analysis will be saved.
-
-    Defaulted to: `[user folder]/.windup/analyses/[analysis_name]`
-
-    But can customized by setting the "WINDUP_ANALYSIS_DIR" enviroment variable, in
-    which case the location will be: `[WINDUP_ANALYSIS_DIR]/[analysis_name]`
-    """
-    location = Path(os.getenv("WINDUP_ANALYSIS_DIR", Path.home() / ".windup" / "analyses"))
-    analysis_directory = location / analysis_name
-    analysis_directory.mkdir(exist_ok=True, parents=True)
-    return analysis_directory

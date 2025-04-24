@@ -11,12 +11,13 @@ from wind_up.models import PlotConfig, WindUpConfig
 from wind_up.reanalysis_data import ReanalysisDataset
 
 from hot_open import download_zenodo_data, setup_logger
+from hot_open.paths import ANALYSES_DIR
 from hot_open.unpack import unpack_local_meta_data, unpack_local_scada_data
 
-OUT_DIR = Path.home() / "hill-of-towie-open-source-analysis" / Path(__file__).stem
-CACHE_DIR = OUT_DIR / "cache"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_DIR = Path(__file__).parent / "wind_up_config"
+ANALYSIS_DIR = ANALYSES_DIR / Path(__file__).stem
+ANALYSIS_CACHE_DIR = ANALYSIS_DIR / "cache"
+ANALYSIS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _main_aeroup_analysis(
@@ -37,18 +38,18 @@ def _main_aeroup_analysis(
 
     logger.info("Defining Assessment Configuration")
     cfg = WindUpConfig.from_yaml(CONFIG_DIR / "HoT_AeroUp_T13.yaml")
-    cfg.out_dir = OUT_DIR / cfg.assessment_name
+    cfg.out_dir = ANALYSIS_DIR / cfg.assessment_name
     cfg.out_dir.mkdir(parents=True, exist_ok=True)
     plot_cfg = PlotConfig(show_plots=False, save_plots=True, plots_dir=cfg.out_dir / "plots")
 
-    (CACHE_DIR / cfg.assessment_name).mkdir(parents=True, exist_ok=True)
+    (ANALYSIS_CACHE_DIR / cfg.assessment_name).mkdir(parents=True, exist_ok=True)
     assessment_inputs = AssessmentInputs.from_cfg(
         cfg=cfg,
         plot_cfg=plot_cfg,
         scada_df=scada_df,
         metadata_df=metadata_df,
         reanalysis_datasets=[reanalysis_dataset],
-        cache_dir=CACHE_DIR / cfg.assessment_name,
+        cache_dir=ANALYSIS_CACHE_DIR / cfg.assessment_name,
     )
     results_per_test_ref_df = run_wind_up_analysis(assessment_inputs)
     combined_results_df = combine_results(results_per_test_ref_df, plot_config=plot_cfg, auto_choose_refs=True)
@@ -58,21 +59,15 @@ def _main_aeroup_analysis(
 
 
 if __name__ == "__main__":
-    setup_logger(OUT_DIR / f"{Path(__file__).stem}.log")
-    data_dir = OUT_DIR.parent / "zenodo_data"
+    setup_logger(ANALYSIS_DIR / f"{Path(__file__).stem}.log")
     download_zenodo_data(
         record_id="14870023",
-        output_dir=data_dir,
         filenames=[
             *[f"{x}.zip" for x in range(2016, 2025)],
             "Hill_of_Towie_ShutdownDuration.zip",
             "Hill_of_Towie_turbine_metadata.csv",
         ],
     )
-    metadata_df = unpack_local_meta_data(data_dir=data_dir)
-    scada_df = unpack_local_scada_data(data_dir=data_dir)
-    _main_aeroup_analysis(
-        scada_df=scada_df,
-        metadata_df=metadata_df,
-        analysis_output_dir=OUT_DIR,
-    )
+    metadata_df = unpack_local_meta_data()
+    scada_df = unpack_local_scada_data()
+    _main_aeroup_analysis(scada_df=scada_df, metadata_df=metadata_df, analysis_output_dir=ANALYSIS_DIR)

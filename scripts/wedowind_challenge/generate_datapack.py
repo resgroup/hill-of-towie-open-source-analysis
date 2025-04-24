@@ -23,20 +23,31 @@ from zipfile import ZipFile
 import polars as pl
 
 from hot_open import setup_logger
-from hot_open.sourcing_data import download_zenodo_data, get_analysis_directory
+from hot_open.paths import ANALYSES_DIR, DATA_DIR
+from hot_open.sourcing_data import download_zenodo_data
 
 INDEX_FIELDS = {"TimeStamp": pl.Datetime(), "StationId": pl.Int32()}
 STATION_TO_TURBINE_MAP = {x + 2304509: x for x in range(1, 21 + 1)}
 FIELDS_DEFINITIONS = [
     {"field_name": "wtc_ActPower_mean", "table_name": "tblSCTurGrid", "dtype": pl.Float64()},
+    {"field_name": "wtc_ActPower_min", "table_name": "tblSCTurGrid", "dtype": pl.Float64()},
+    {"field_name": "wtc_ActPower_max", "table_name": "tblSCTurGrid", "dtype": pl.Float64()},
     {"field_name": "wtc_ActPower_stddev", "table_name": "tblSCTurGrid", "dtype": pl.Float64()},
     {"field_name": "wtc_AcWindSp_mean", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
+    {"field_name": "wtc_AcWindSp_min", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
+    {"field_name": "wtc_AcWindSp_max", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
     {"field_name": "wtc_AcWindSp_stddev", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
     {"field_name": "wtc_NacelPos_mean", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
     {"field_name": "wtc_NacelPos_min", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
     {"field_name": "wtc_NacelPos_max", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
     {"field_name": "wtc_GenRpm_mean", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
+    {"field_name": "wtc_GenRpm_min", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
+    {"field_name": "wtc_GenRpm_max", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
+    {"field_name": "wtc_GenRpm_stddev", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
     {"field_name": "wtc_PitcPosA_mean", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
+    {"field_name": "wtc_PitcPosA_min", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
+    {"field_name": "wtc_PitcPosA_max", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
+    {"field_name": "wtc_PitcPosA_stddev", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
     {"field_name": "wtc_PitcPosB_mean", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
     {"field_name": "wtc_PitcPosC_mean", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
     {"field_name": "wtc_AmbieTmp_mean", "table_name": "tblSCTurTemp", "dtype": pl.Float64()},
@@ -94,17 +105,32 @@ def _extract_data_from_year_zipfile(
     return combined_df.with_columns(turbine_id=pl.col("StationId").replace(station_to_turbine_map)).drop("StationId")
 
 
+def _extract_shutdown_data(zip_fpath: Path) -> pl.LazyFrame:
+    turbine_name_mapping = {f"T{x:02}": x for x in [target_turbine, *ref_turbines]}
+    return (
+        pl.scan_csv(
+            ZipFile(zip_fpath).open("ShutdownDuration.csv").read(),
+            schema_overrides=pl.Schema({"TimeStamp_StartFormat": pl.Datetime(), "ShutdownDuration": pl.Int16()}),
+        )
+        .filter(pl.col("TurbineName").is_in(turbine_name_mapping.keys()))
+        .with_columns(turbine_id=pl.col("TurbineName").replace(turbine_name_mapping).cast(pl.Int32()))
+        .drop("TurbineName")
+        .rename({"TimeStamp_StartFormat": "TimeStamp"})
+    )
+
+
+def _augment_with_shutdown_data(df: pl.LazyFrame, shutdown_df: pl.LazyFrame) -> pl.LazyFrame:
+    return df.join(shutdown_df, how="left", on=["turbine_id", "TimeStamp"])
+
+
 if __name__ == "__main__":
-    analysis_dir = get_analysis_directory(analysis_name="hill-of-towie-open-source-analysis")
-    output_dir = analysis_dir / "wedowind_competition_input_data"
+    output_dir = ANALYSES_DIR / "wedowind_competition_input_data"
     output_dir.mkdir(exist_ok=True)
 
     # Download and Cache Source Data
-    data_dir = analysis_dir / "zenodo_data"
-    setup_logger(data_dir / f"{Path(__file__).stem}.log")
+    setup_logger(DATA_DIR / f"{Path(__file__).stem}.log")
     download_zenodo_data(
         record_id="14870023",
-        output_dir=data_dir,
         filenames=[
             *[f"{x}.zip" for x in range(2016, 2020)],
             "Hill_of_Towie_ShutdownDuration.zip",
@@ -112,11 +138,14 @@ if __name__ == "__main__":
         ],
     )
 
+    # Shutdown Data
+    shutdown_df = _extract_shutdown_data(zip_fpath=DATA_DIR / "Hill_of_Towie_ShutdownDuration.zip")
+
     # Train Dataset
     (
         pl.concat(
             _extract_data_from_year_zipfile(
-                year_data_zip_fpath=data_dir / f"{year}.zip",
+                year_data_zip_fpath=DATA_DIR / f"{year}.zip",
                 index_fields=INDEX_FIELDS,
                 field_definitions=FIELDS_DEFINITIONS,
                 station_to_turbine_map=_make_station_to_turbine_map({target_turbine, *ref_turbines}),
@@ -125,18 +154,20 @@ if __name__ == "__main__":
         )
         .group_by(["turbine_id", "TimeStamp"])
         .mean()  # ensure unique timestamp turbine combination
+        .pipe(_augment_with_shutdown_data, shutdown_df=shutdown_df)
         .sink_parquet(output_dir / "train_dataset.parquet")
     )
 
-    # Evaluation Dataset
+    # Submission Dataset
     (
         _extract_data_from_year_zipfile(
-            year_data_zip_fpath=data_dir / "2020.zip",
+            year_data_zip_fpath=DATA_DIR / "2020.zip",
             index_fields=INDEX_FIELDS,
             field_definitions=FIELDS_DEFINITIONS,
             station_to_turbine_map=_make_station_to_turbine_map(set(ref_turbines)),
         )
         .group_by(["turbine_id", "TimeStamp"])
         .mean()  # ensure unique timestamp turbine combination
-        .sink_parquet(output_dir / "eval_dataset.parquet")
+        .pipe(_augment_with_shutdown_data, shutdown_df=shutdown_df)
+        .sink_parquet(output_dir / "submission_dataset.parquet")
     )

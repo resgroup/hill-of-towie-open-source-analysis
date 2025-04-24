@@ -5,22 +5,12 @@ from pathlib import Path
 import pandas as pd
 from wind_up.caching import with_parquet_cache
 
-from hot_open import get_analysis_directory
-
 from .helpers import load_hot_10min_data, scada_df_to_wind_up_df
-
-OUT_DIR = Path.home() / "temp" / "hill-of-towie-open-source-analysis" / Path(__file__).stem
-CACHE_DIR = OUT_DIR / "cache"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
-CONFIG_DIR = Path(__file__).parent / "wind_up_config"
+from .paths import DATA_DIR, GLOBAL_CACHE_DIR
 
 
-ANALYSIS_DIR = get_analysis_directory(analysis_name="hill-of-towie-open-source-analysis")
-CACHE_DIR = ANALYSIS_DIR / "cache"
-
-
-@with_parquet_cache(CACHE_DIR / "scada_df.parquet")
-def unpack_local_scada_data(data_dir: Path) -> pd.DataFrame:
+@with_parquet_cache(GLOBAL_CACHE_DIR / "scada_df.parquet")
+def unpack_local_scada_data(data_dir: Path = DATA_DIR) -> pd.DataFrame:
     """Unpack Hill of Towie open source SCADA data."""
     scada_df = load_hot_10min_data(
         data_dir=data_dir,
@@ -32,8 +22,8 @@ def unpack_local_scada_data(data_dir: Path) -> pd.DataFrame:
     return scada_df_to_wind_up_df(scada_df, shutdown_duration_df=shutdown_duration_df)
 
 
-@with_parquet_cache(CACHE_DIR / "metadata_df.parquet")
-def unpack_local_meta_data(data_dir: Path) -> pd.DataFrame:
+@with_parquet_cache(GLOBAL_CACHE_DIR / "metadata_df.parquet")
+def unpack_local_meta_data(data_dir: Path = DATA_DIR) -> pd.DataFrame:
     """Unpack Hill of Towie open source turbine metadata."""
     return (
         pd.read_csv(data_dir / "Hill_of_Towie_turbine_metadata.csv")

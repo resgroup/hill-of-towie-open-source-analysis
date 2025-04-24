@@ -22,11 +22,11 @@ import plotly.express as px
 from IPython.display import display
 
 # setting the location of the source data
-from hot_open.sourcing_data import get_analysis_directory
+from hot_open.paths import get_analyses_directory
 
-analysis_dir = get_analysis_directory(analysis_name="hill-of-towie-open-source-analysis")
+analysis_dir = get_analyses_directory(analysis_name="hill-of-towie-open-source-analysis")
 train_data_fpath = analysis_dir / "wedowind_competition_input_data" / "train_dataset.parquet"
-eval_data_fpath = analysis_dir / "wedowind_competition_input_data" / "eval_dataset.parquet"
+submission_data_fpath = analysis_dir / "wedowind_competition_input_data" / "submission_dataset.parquet"
 
 
 # %%
@@ -183,16 +183,16 @@ px.scatter(
 )
 
 # %% [markdown]
-# ## Predicting on the Submission Evaluation Data
+# ## Predicting on the Submission Data
 
 # %%
 # load and reshape data
-X_eval = pd.read_parquet(eval_data_fpath).pipe(_make_wide)
-X_eval.head(3)
+X_submission = pd.read_parquet(submission_data_fpath).pipe(_make_wide)
+X_submission.head(3)
 
 # %%
 # use the model to predict target turbine active power
-submission_predictions = simple_model.predict(X_eval).rename("prediciton")
+submission_predictions = simple_model.predict(X_submission).rename("prediciton")
 
 # %% [markdown]
 # ### Exporting the prediciton for submission

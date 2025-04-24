@@ -50,6 +50,7 @@ FIELDS_DEFINITIONS = [
     {"field_name": "wtc_PitcPosA_stddev", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
     {"field_name": "wtc_PitcPosB_mean", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
     {"field_name": "wtc_PitcPosC_mean", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
+    {"field_name": "wtc_PowerRef_endvalue", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
     {"field_name": "wtc_AmbieTmp_mean", "table_name": "tblSCTurTemp", "dtype": pl.Float64()},
     {"field_name": "wtc_ScReToOp_timeon", "table_name": "tblSCTurFlag", "dtype": pl.Float64()},
 ]

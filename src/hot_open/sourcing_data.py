@@ -6,7 +6,7 @@ from collections.abc import Collection
 from pathlib import Path
 
 import requests
-from tqdm.auto import tqdm
+from tqdm import tqdm
 
 from hot_open.paths import DATA_DIR
 

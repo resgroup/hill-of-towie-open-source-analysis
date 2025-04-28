@@ -21,10 +21,13 @@ from pathlib import Path
 from zipfile import ZipFile
 
 import polars as pl
+from dotenv import load_dotenv
 
 from hot_open import setup_logger
 from hot_open.paths import ANALYSES_DIR, DATA_DIR
 from hot_open.sourcing_data import download_zenodo_data
+
+load_dotenv()
 
 INDEX_FIELDS = {"TimeStamp": pl.Datetime(), "StationId": pl.Int32()}
 STATION_TO_TURBINE_MAP = {x + 2304509: x for x in range(1, 21 + 1)}
@@ -37,6 +40,10 @@ FIELDS_DEFINITIONS = [
     {"field_name": "wtc_AcWindSp_min", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
     {"field_name": "wtc_AcWindSp_max", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
     {"field_name": "wtc_AcWindSp_stddev", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
+    {"field_name": "wtc_ScYawPos_mean", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
+    {"field_name": "wtc_ScYawPos_min", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
+    {"field_name": "wtc_ScYawPos_max", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
+    {"field_name": "wtc_ScYawPos_stddev", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
     {"field_name": "wtc_NacelPos_mean", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
     {"field_name": "wtc_NacelPos_min", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
     {"field_name": "wtc_NacelPos_max", "table_name": "tblSCTurbine", "dtype": pl.Float64()},
@@ -89,8 +96,8 @@ def _extract_data_from_year_zipfile(
         _df = pl.concat(
             # using `schema` raises error that when ignored nullify entire columns
             pl.scan_csv(zf.open(fname), schema_overrides=pl.Schema(_field_types))
-            .select(_field_types)
             .filter(pl.col("StationId").is_in(station_to_turbine_map.keys()))
+            .select(_field_types)
             for fname in fnames
         )
         frames_to_combine.append(_df)
@@ -103,7 +110,10 @@ def _extract_data_from_year_zipfile(
     for _df in frames_to_combine[1:]:
         combined_df = combined_df.join(_df, how="full", on=index_cols, coalesce=True)
 
-    return combined_df.with_columns(turbine_id=pl.col("StationId").replace(station_to_turbine_map)).drop("StationId")
+    return combined_df.with_columns(
+        turbine_id=pl.col("StationId").replace(station_to_turbine_map),
+        TimeStamp_StartFormat=pl.col("TimeStamp") - pl.duration(minutes=10),
+    ).drop("StationId", "TimeStamp")
 
 
 def _extract_shutdown_data(zip_fpath: Path) -> pl.LazyFrame:
@@ -116,12 +126,11 @@ def _extract_shutdown_data(zip_fpath: Path) -> pl.LazyFrame:
         .filter(pl.col("TurbineName").is_in(turbine_name_mapping.keys()))
         .with_columns(turbine_id=pl.col("TurbineName").replace(turbine_name_mapping).cast(pl.Int32()))
         .drop("TurbineName")
-        .rename({"TimeStamp_StartFormat": "TimeStamp"})
     )
 
 
 def _augment_with_shutdown_data(df: pl.LazyFrame, shutdown_df: pl.LazyFrame) -> pl.LazyFrame:
-    return df.join(shutdown_df, how="left", on=["turbine_id", "TimeStamp"])
+    return df.join(shutdown_df, how="left", on=["turbine_id", "TimeStamp_StartFormat"])
 
 
 if __name__ == "__main__":
@@ -153,7 +162,7 @@ if __name__ == "__main__":
             )
             for year in (2016, 2017, 2018, 2019)
         )
-        .group_by(["turbine_id", "TimeStamp"])
+        .group_by(["turbine_id", "TimeStamp_StartFormat"])
         .mean()  # ensure unique timestamp turbine combination
         .pipe(_augment_with_shutdown_data, shutdown_df=shutdown_df)
         .sink_parquet(output_dir / "train_dataset.parquet")
@@ -167,7 +176,7 @@ if __name__ == "__main__":
             field_definitions=FIELDS_DEFINITIONS,
             station_to_turbine_map=_make_station_to_turbine_map(set(ref_turbines)),
         )
-        .group_by(["turbine_id", "TimeStamp"])
+        .group_by(["turbine_id", "TimeStamp_StartFormat"])
         .mean()  # ensure unique timestamp turbine combination
         .pipe(_augment_with_shutdown_data, shutdown_df=shutdown_df)
         .sink_parquet(output_dir / "submission_dataset.parquet")

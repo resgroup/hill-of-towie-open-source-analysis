@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 
 import pandas as pd
+from dotenv import load_dotenv
 from wind_up.combine_results import combine_results
 from wind_up.interface import AssessmentInputs
 from wind_up.main_analysis import run_wind_up_analysis
@@ -13,6 +14,8 @@ from wind_up.reanalysis_data import ReanalysisDataset
 from hot_open import download_zenodo_data, setup_logger
 from hot_open.paths import ANALYSES_DIR
 from hot_open.unpack import unpack_local_meta_data, unpack_local_scada_data
+
+load_dotenv()
 
 CONFIG_DIR = Path(__file__).parent / "wind_up_config"
 ANALYSIS_DIR = ANALYSES_DIR / Path(__file__).stem

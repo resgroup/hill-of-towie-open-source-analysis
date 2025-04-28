@@ -24,7 +24,7 @@ from IPython.display import display
 # setting the location of the source data
 from hot_open.paths import get_analyses_directory
 
-analysis_dir = get_analyses_directory(analysis_name="hill-of-towie-open-source-analysis")
+analysis_dir = get_analyses_directory()
 train_data_fpath = analysis_dir / "wedowind_competition_input_data" / "train_dataset.parquet"
 submission_data_fpath = analysis_dir / "wedowind_competition_input_data" / "submission_dataset.parquet"
 
@@ -33,7 +33,7 @@ submission_data_fpath = analysis_dir / "wedowind_competition_input_data" / "subm
 class Cols:
     """Class to hold the column names of the dataset. Which allows for tab-completion and minimizes typos."""
 
-    TIMESTAMP = "TimeStamp"
+    TIMESTAMP = "TimeStamp_StartFormat"
     TURBINE_ID = "turbine_id"
     WINDSPEED_MEAN = "wtc_AcWindSp_mean"
     OP_TIMEON = "wtc_ScReToOp_timeon"
@@ -72,7 +72,7 @@ px.scatter(
 #
 # We'll also pivot the data into a "wide" format, where each column is repeated for each turbine. So instead of:
 #
-# | turbine_id | TimeStamp | colA | colB |
+# | turbine_id | TimeStamp_StartFormat | colA | colB |
 # | --- | --- | --- | --- |
 # | 1 | 2000-01-01 00:00 | 1 | 5 |
 # | 2 | 2000-01-01 00:00 | 2 | 6 |
@@ -81,7 +81,7 @@ px.scatter(
 #
 # We'll have:
 #
-# | TimeStamp | colA;1 | colA;2 | colB;1 | colB;2 |
+# | TimeStamp_StartFormat | colA;1 | colA;2 | colB;1 | colB;2 |
 # | --- | --- | --- | --- | --- |
 # | 2000-01-01 00:00 | 1 | 2 | 5 | 6 |
 # | 2000-01-01 00:10 | 3 | 4 | 7 | 8 |
@@ -167,8 +167,8 @@ simple_model.fit(X=X_train, y=y_train)
 y_pred = simple_model.predict(X_test)
 
 # %%
-root_mean_squared_error = (y_pred - y_test).pow(2).mean() ** 0.5
-print(f"The RMSE for model is {root_mean_squared_error:.2f}")
+mean_absolute_error = (y_pred - y_test).abs().mean()
+print(f"The MAE for model is {mean_absolute_error:.2f}")
 
 # %% [markdown]
 # ### visualising the performance

@@ -12,6 +12,7 @@ dependencies = [
     "res-wind-up>=0.2.0",
     "requests>=2.32.3",
     "tqdm>=4.67.0",
+    "python-dotenv>=1.1.0",
 ]
 
 [dependency-groups]

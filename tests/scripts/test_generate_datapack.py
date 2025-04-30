@@ -22,39 +22,34 @@ def test_extract_data_from_year_zipfile_similar_to_load_hot_10min_data() -> None
         station_to_turbine_map={x + 2304509: x for x in wtg_numbers},
     )
 
-    def _dedup(d: pl.LazyFrame) -> pl.LazyFrame:
-        # used to deduplicate across zips (after _extract_data_from_year_zipfile are concatenated)
-        return d.group_by(["turbine_id", "TimeStamp_StartFormat"]).mean()
-
     def _reintroduce_station_ids(d: pl.LazyFrame) -> pl.LazyFrame:
         return d.with_columns(StationId="T0" + pl.col("turbine_id").cast(pl.String)).drop("turbine_id")
 
     def _drop_timestamps_not_in_the_month(d: pl.LazyFrame) -> pl.LazyFrame:
         # load_hot_10min_data drops timestamps not in this month when converted to StartFormat
-        return d.filter(pl.col("TimeStamp_StartFormat") >= pd.Timestamp("2024-07-01"))
+        return d.filter(pl.col("TimeStamp_StartFormat") >= pd.Timestamp("2024-07-01", tz="UTC"))
 
     def _reshape(d: pd.DataFrame) -> pd.DataFrame:
         return (
-            d.set_index(["TimeStamp_StartFormat", "StationId"])  # type: ignore[call-arg,return-value] # noqa: PD010
-            .unstack(level="StationId")  # type: ignore[assignment]
-            .swaplevel(axis=1)
-            .resample(pd.Timedelta(minutes=10))
-            .mean()
+            d.pivot_table(
+                index=["TimeStamp_StartFormat"],
+                columns=["StationId"],
+                dropna=False,
+            ).swaplevel(axis=1)  # type: ignore[call-arg,return-value]
         )
 
+    def _cast_timeindex(d: pd.DataFrame) -> pd.DataFrame:
+        """Force index to be in nano-seconds."""
+        d.index = d.index.as_unit("ns")  # type: ignore[attr-defined]
+        return d
+
     actual = (
-        actual_lazy.pipe(_dedup)
-        .pipe(_reintroduce_station_ids)
+        actual_lazy.pipe(_reintroduce_station_ids)
         .pipe(_drop_timestamps_not_in_the_month)
         .collect()
         .to_pandas()
         .pipe(_reshape)
-    )
-    # forcing index to be in UTC in nano-seconds
-    actual.index = pd.to_datetime(  # type: ignore[assignment]
-        actual.index.strftime("%Y-%m-%dT%H:%M"),  # type: ignore[attr-defined]
-        unit="ns",
-        utc=True,
+        .pipe(_cast_timeindex)
     )
 
     expected = load_hot_10min_data(

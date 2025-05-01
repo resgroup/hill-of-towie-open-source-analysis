@@ -29,16 +29,14 @@ dev = [
     "types-requests>=2.32.0.20250328",
     "types-tqdm>=4.67.0.20250404",
     "responses>=0.25.7",
-    "jupyterlab>=4.4.1",
-    "jupytext>=1.17.0",
-    "plotly>=6.0.1",
-    "polars>=1.27.1",
 ]
 wedowind = [
+    "cdsapi>=0.7.5",
     "jupyterlab>=4.4.1",
     "jupytext>=1.17.0",
     "plotly>=6.0.1",
     "polars>=1.27.1",
+    "xarray>=2025.4.0",
 ]
 
 [build-system]
@@ -83,6 +81,7 @@ exclude = ".venv|__ignore__"
 module = [
     "wind_up.*",
     "plotly.*",
+    "cdsapi.*",
 ]
 ignore_missing_imports = true
 

@@ -2,7 +2,7 @@ import pandas as pd
 import polars as pl
 
 from hot_open.helpers import WPSBackupFileField, load_hot_10min_data
-from scripts.wedowind_challenge.generate_datapack import INDEX_FIELDS, _extract_data_from_year_zipfile
+from scripts.wedowind_challenge.s03_generate_datapack import INDEX_FIELDS, _extract_data_from_year_zipfile
 from tests.conftest import TEST_DATA_DIR
 
 

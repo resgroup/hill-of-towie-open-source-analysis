@@ -1,12 +1,15 @@
 assessment_name: HoT_wedowind_T1
 test_wtgs:
   - T01
+  - T04
+  - T05
+  - T09
 ref_wtgs:
   - T02
   - T03
-  - T04
-  - T05
-  - T06
+  - T07
+  - T08
+  - T11
 upgrade_first_dt_utc_start: 2020-01-01 00:00:00  # start of validation year
 analysis_last_dt_utc_start: 2020-12-31 23:50:00  # end of validation year
 years_offset_for_pre_period: 1

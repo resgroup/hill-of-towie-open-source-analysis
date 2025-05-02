@@ -18,6 +18,8 @@ def get_analyses_directory(analysis_name: str = "hill-of-towie-open-source-analy
     return analysis_directory
 
 
+REPO_ROOT = Path(__file__).parents[2]
+
 ANALYSES_DIR = get_analyses_directory()
 DATA_DIR = ANALYSES_DIR / "zenodo_data"
 

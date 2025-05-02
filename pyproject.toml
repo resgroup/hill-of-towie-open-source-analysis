@@ -32,6 +32,7 @@ dev = [
 ]
 wedowind = [
     "cdsapi>=0.7.5",
+    "cfgrib>=0.9.15.0",
     "jupyterlab>=4.4.1",
     "jupytext>=1.17.0",
     "plotly>=6.0.1",

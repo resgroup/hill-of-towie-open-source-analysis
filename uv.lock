@@ -235,6 +235,21 @@ wheels = [
 ]
 
 [[package]]
+name = "cfgrib"
+version = "0.9.15.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "attrs" },
+    { name = "click" },
+    { name = "eccodes" },
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3e/3b/0ccbbc67866a4a2df570d6bf0f53d6d22220c44e1f3684455b5eae298936/cfgrib-0.9.15.0.tar.gz", hash = "sha256:d455034e19b9560a75d008ba9d09b2d4e65762adfb2e911f28b841f4b9c6b47f", size = 6511752 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7d/d7/96b4209c99f1fd6c19f502cebe8c91983c23331c380f3f521250f268ae8c/cfgrib-0.9.15.0-py3-none-any.whl", hash = "sha256:469cfd25dc173863795e596263b3b6b5ea1402b1715f2b7b1d4b995b40b32c18", size = 48908 },
+]
+
+[[package]]
 name = "charset-normalizer"
 version = "3.4.1"
 source = { registry = "https://pypi.org/simple" }
@@ -550,6 +565,37 @@ wheels = [
 ]
 
 [[package]]
+name = "eccodes"
+version = "2.41.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "attrs" },
+    { name = "cffi" },
+    { name = "findlibs" },
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8a/c2/e2f8d98dea0b2d8d77c99edb72b5831286abfaf80d94edf13ad127f6979a/eccodes-2.41.0.tar.gz", hash = "sha256:f3e209f5da5a7fcee4942295db4ee7888e077bd2e0342e6170ec5fedb9b29840", size = 2268345 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/33/0b/1ab7bd70339fcae516fe9aac7f8a287886e21452880ae18bb374159f70bc/eccodes-2.41.0-cp310-cp310-macosx_13_0_arm64.whl", hash = "sha256:1205a20c8f081f14cf97696928bfa64ee50760a726a5ae7b96f577db18df97c9", size = 6557196 },
+    { url = "https://files.pythonhosted.org/packages/4f/d5/a36732686e34cedc44895d3c7a0ad176a5a1a4557ec72098b714bcb098f0/eccodes-2.41.0-cp310-cp310-macosx_13_0_x86_64.whl", hash = "sha256:0ca32c3291a2ed96313f8830b27f25e4db7747fbede9af72096409964f896cda", size = 6659406 },
+    { url = "https://files.pythonhosted.org/packages/eb/f0/c9b623c1eb182ba4d4c1cc675b53111035c80820cfca74e2656c948cacad/eccodes-2.41.0-cp310-cp310-manylinux_2_28_x86_64.whl", hash = "sha256:3cff916d08dc525d3123a45eaef3e06f6eb6b45fe313c40aabf253e4a5c1e713", size = 7431146 },
+    { url = "https://files.pythonhosted.org/packages/fc/7a/c81a4f970d1dd7a7c0498244cdf09b8168329b5f3f854bde850005c1b9e7/eccodes-2.41.0-cp310-cp310-win_amd64.whl", hash = "sha256:560f2c5d1a6b303455924faa6c6db20f6dc5cfdde38fefffbd85486be25fc78d", size = 6239554 },
+    { url = "https://files.pythonhosted.org/packages/8d/5e/12db85193132cdbbf270e7242c04053ff01ca21ad854d5bed395e4e5e968/eccodes-2.41.0-cp311-cp311-macosx_13_0_arm64.whl", hash = "sha256:30c0ac320c5feb2bd8febee6611ba0efa3fd8d4b6696b7d383a8e856c6586b81", size = 6557198 },
+    { url = "https://files.pythonhosted.org/packages/48/ca/a9da117d7228dc961124a2d524d41b18326ba10896af179dc7b0364197d7/eccodes-2.41.0-cp311-cp311-macosx_13_0_x86_64.whl", hash = "sha256:cdb3b5c9ff131159bb928c8e6c0e0e7c6d01e075a57b3b58393dae2722d7497c", size = 6659409 },
+    { url = "https://files.pythonhosted.org/packages/e1/62/e7103dbf2602db1b754cab5ae50e302b468c51c3be76b95fbee8b7d6fbbf/eccodes-2.41.0-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:cf16b5f17dcffcb20c28066f068aca21b3b1da075b22be941b2714f2938bf38b", size = 7431165 },
+    { url = "https://files.pythonhosted.org/packages/06/92/2127be7c85bb60e4e2d971262e2bee361be851fb91a59622d7c5f1b822bc/eccodes-2.41.0-cp311-cp311-win_amd64.whl", hash = "sha256:4a4e614ab47233750c0cb370a72d111f90d156201d0044eab3a687d63fa6f4bf", size = 6239551 },
+    { url = "https://files.pythonhosted.org/packages/35/d5/7803aa1bbff4161b147c11cd6531d421a2ad38a0bb2fd29a7265fb369c3d/eccodes-2.41.0-cp312-cp312-macosx_13_0_arm64.whl", hash = "sha256:56803ac38e5b50377054cb2b944c8982d6fcfca0c25b4d04fe1ef94ba81b202c", size = 6557422 },
+    { url = "https://files.pythonhosted.org/packages/d1/17/bf8f714f5dd483d0da11515dbcb1b4f0992e900abef540c318a93b55edb9/eccodes-2.41.0-cp312-cp312-macosx_13_0_x86_64.whl", hash = "sha256:ae3a0f62a4b1107fe9f8362d58e4f452891ccbcc6aaecca5437724223f71a974", size = 6659630 },
+    { url = "https://files.pythonhosted.org/packages/45/4a/7a45f8fc7d8f2047b023befd17155fa7d2d1274feda9796b1e69b68b7033/eccodes-2.41.0-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:bb0182f7ce3c907671860ab554430be053f37f227789a7a27b2d06118fe48c97", size = 7431350 },
+    { url = "https://files.pythonhosted.org/packages/31/f7/f48a3ab347941243064060e3b0139aeb8d9414f1775f54239bed7fe66a29/eccodes-2.41.0-cp312-cp312-win_amd64.whl", hash = "sha256:81ca80d251be3fa66c42c020538cd67b12ed6e7c79e1e10299dc36dc07d28678", size = 6239631 },
+    { url = "https://files.pythonhosted.org/packages/4d/fc/6d2c6125fad3f556d1099d0b7e761f995f3bfb9808e454e032879086f32c/eccodes-2.41.0-cp313-cp313-macosx_13_0_arm64.whl", hash = "sha256:1c139783f385e0e102556f468fd089cfd6a27990711869aa73a589512533c8ba", size = 6557424 },
+    { url = "https://files.pythonhosted.org/packages/d8/e2/8fb2abc5bc7f5d0d93fba3347c763415b4bfb53e99abb583e7f9b7fedf22/eccodes-2.41.0-cp313-cp313-macosx_13_0_x86_64.whl", hash = "sha256:d30637b18f75f654340f08a0e003b6aa1db28aa62cc041571a1c7529922a3922", size = 6659633 },
+    { url = "https://files.pythonhosted.org/packages/4e/39/c91a1c27b2e4e761eaa491ae1ce7a56319720715629f73c055cbbd368484/eccodes-2.41.0-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:e32c531e45ec818bcc9c0d7b2b6ff68d11f446f4c9b129e9cc8d31a23b0f401c", size = 7433837 },
+    { url = "https://files.pythonhosted.org/packages/2b/f1/a12b3797ae231fe8fd1b8dabe8b31a3f23a1708eca8661da3a6d7a07da3d/eccodes-2.41.0-cp313-cp313-win_amd64.whl", hash = "sha256:9a2d6dd911e146cfad69641dae0a90969b45a974a448c5279ab909237a2c6c08", size = 6239632 },
+    { url = "https://files.pythonhosted.org/packages/bd/42/ac29e37149f36807e8f979707f5ae0d466d4a2c4b340597e2177809a016b/eccodes-2.41.0-py3-none-any.whl", hash = "sha256:f3f4444757aac6a249cc47947dee5660309d48854ebfc5e6ca8515374398e1bf", size = 44012 },
+]
+
+[[package]]
 name = "entrypoints"
 version = "0.4"
 source = { registry = "https://pypi.org/simple" }
@@ -592,6 +638,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/8b/50/4b769ce1ac4071a1ef6d86b1a3fb56cdc3a37615e8c5519e1af96cdac366/fastjsonschema-2.21.1.tar.gz", hash = "sha256:794d4f0a58f848961ba16af7b9c85a3e88cd360df008c59aac6fc5ae9323b5d4", size = 373939 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/90/2b/0817a2b257fe88725c25589d89aec060581aabf668707a8d03b2e9e0cb2a/fastjsonschema-2.21.1-py3-none-any.whl", hash = "sha256:c9e5b7e908310918cf494a434eeb31384dd84a98b57a30bcb1f535015b554667", size = 23924 },
+]
+
+[[package]]
+name = "findlibs"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/29/66/4ed4652c0f91dceb13403192793caaf1d58c28296b1f5af5efaea63e2616/findlibs-0.1.1.tar.gz", hash = "sha256:dc7a0d4fe2bb6635f1e4bdcde60aecec42b6755c4783c2f629069c2f9321d732", size = 11284 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/eb/f8/945427d587d3d3ec6dea3297f5a5b6b1cd4c5e126d0638cb148d3c360487/findlibs-0.1.1-py3-none-any.whl", hash = "sha256:1b611a040d41e491049568e530c7e032f5c2be8f582386961b8d14a6936406a9", size = 10713 },
 ]
 
 [[package]]
@@ -691,6 +746,7 @@ dev = [
 ]
 wedowind = [
     { name = "cdsapi" },
+    { name = "cfgrib" },
     { name = "jupyterlab" },
     { name = "jupytext" },
     { name = "plotly" },
@@ -724,6 +780,7 @@ dev = [
 ]
 wedowind = [
     { name = "cdsapi", specifier = ">=0.7.5" },
+    { name = "cfgrib", specifier = ">=0.9.15.0" },
     { name = "jupyterlab", specifier = ">=4.4.1" },
     { name = "jupytext", specifier = ">=1.17.0" },
     { name = "plotly", specifier = ">=6.0.1" },

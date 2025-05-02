@@ -12,8 +12,10 @@
 
 """Download ERA5 data from the Copernicus Climate Change Service (C3S) Climate Data Store (CDS).
 
+Follow the instructions to set up your CDS API key: https://cds.climate.copernicus.eu/how-to-api
+
 This script can be run with uv directly from the root of the repository:
-`uv run scripts/wedowind_challenge/s01_download_era5_data_as_netcdf.py`
+`uv run scripts/wedowind_challenge/s01_download_era5_data.py`
 """
 
 # ruff: noqa: G004
@@ -34,28 +36,26 @@ def generate_retrieve_args(
     variables: list[str], area: list[float], years: Iterable[int], output_dir: Path
 ) -> list[dict]:
     """Generate arguments for the CDS API to retrieve ERA5 data."""
-    block1_months = [f"{i:02}" for i in range(1, 6 + 1)]
-    block2_months = [f"{i:02}" for i in range(7, 12 + 1)]
     all_days = [f"{i:02}" for i in range(1, 31 + 1)]
     all_times = [f"{i:02}:00" for i in range(23 + 1)]
 
     calls_args = []
     for year in years:
-        for i_block, month_block in enumerate([block1_months, block2_months]):
+        for month in range(1, 12 + 1):
             args = {
                 "name": "reanalysis-era5-single-levels",
                 "request": {
                     "product_type": ["reanalysis"],
                     "variable": variables,
                     "year": [str(year)],
-                    "month": month_block,
+                    "month": [f"{month:02}"],
                     "day": all_days,
                     "time": all_times,
-                    "data_format": "netcdf",
+                    "data_format": "grib",
                     "download_format": "unarchived",
                     "area": area,
                 },
-                "target": (output_dir / f"ERA5_{year}_{i_block}.nc").as_posix(),
+                "target": (output_dir / f"ERA5_{year}_{month}.grib").as_posix(),
             }
             calls_args.append(args)
 
@@ -74,7 +74,7 @@ if __name__ == "__main__":
             "100m_u_component_of_wind",
             "100m_v_component_of_wind",
         ],
-        area=[57.52, -3.1, 57.49, -3.03],
+        area=[57.75, -3.25, 57.5, -3],
         years=range(2016, 2020 + 1),
         output_dir=output_dir,
     )

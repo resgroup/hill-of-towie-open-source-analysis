@@ -196,7 +196,7 @@ if __name__ == "__main__":
     download_zenodo_data(
         record_id="14870023",
         filenames=[
-            *[f"{x}.zip" for x in range(2016, 2020)],
+            *[f"{x}.zip" for x in range(2016, 2020 + 1)],
             "Hill_of_Towie_ShutdownDuration.zip",
             "Hill_of_Towie_turbine_metadata.csv",
         ],

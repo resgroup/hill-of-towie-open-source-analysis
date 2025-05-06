@@ -31,12 +31,13 @@ dev = [
     "responses>=0.25.7",
 ]
 wedowind = [
-    "cdsapi>=0.7.5",
-    "cfgrib>=0.9.15.0",
     "jupyterlab>=4.4.1",
     "jupytext>=1.17.0",
+    "openmeteo-requests>=1.4.0",
     "plotly>=6.0.1",
     "polars>=1.27.1",
+    "requests-cache>=1.2.1",
+    "retry-requests>=2.0.0",
     "xarray>=2025.4.0",
 ]
 

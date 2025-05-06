@@ -82,7 +82,8 @@ exclude = ".venv|__ignore__"
 module = [
     "wind_up.*",
     "plotly.*",
-    "cdsapi.*",
+    "openmeteo_requests.*",
+    "retry_requests.*",
 ]
 ignore_missing_imports = true
 

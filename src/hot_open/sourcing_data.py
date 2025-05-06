@@ -6,7 +6,9 @@ from collections.abc import Collection
 from pathlib import Path
 
 import requests
-from tqdm.auto import tqdm
+from tqdm import tqdm
+
+from hot_open.paths import DATA_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +17,11 @@ CHUNK_SIZE = 10 * BYTES_IN_1MB
 
 
 def download_zenodo_data(
-    record_id: str, output_dir: Path, filenames: Collection[str] | None = None, *, cache_overwrite: bool = False
+    record_id: str,
+    output_dir: Path = DATA_DIR,
+    filenames: Collection[str] | None = None,
+    *,
+    cache_overwrite: bool = False,
 ) -> None:
     """Download and caches files from zenodo.org."""
     output_dir.mkdir(parents=True, exist_ok=True)

@@ -12,6 +12,7 @@ dependencies = [
     "res-wind-up>=0.2.0",
     "requests>=2.32.3",
     "tqdm>=4.67.0",
+    "python-dotenv>=1.1.0",
 ]
 
 [dependency-groups]
@@ -29,6 +30,16 @@ dev = [
     "types-tqdm>=4.67.0.20250404",
     "responses>=0.25.7",
 ]
+wedowind = [
+    "jupyterlab>=4.4.1",
+    "jupytext>=1.17.0",
+    "openmeteo-requests>=1.4.0",
+    "plotly>=6.0.1",
+    "polars>=1.27.1",
+    "requests-cache>=1.2.1",
+    "retry-requests>=2.0.0",
+    "xarray>=2025.4.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -45,19 +56,20 @@ show-fixes = true
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = [
-    "D203",  # `one-blank-line-before-class` conflicts with D211 `blank-line-before-class`
-    "D213",  # 'multi-line-summary-second-line' conflicts with D212 'multi-line-summary-starts-with-capital-letter'
-    "COM812",  # can conflict with formatter
-    "ISC001",  # can conflict with formatter
+    "D203", # `one-blank-line-before-class` conflicts with D211 `blank-line-before-class`
+    "D213", # 'multi-line-summary-second-line' conflicts with D212 'multi-line-summary-starts-with-capital-letter'
+    "COM812", # can conflict with formatter
+    "ISC001", # can conflict with formatter
     "ANN204", # `__init__` doesn't need annotations
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["D"]
 "uplift_analysis/*.py" = ["N999"]
+"scripts/**/*.py" = ["D100", "INP001", "ERA001", "T201", "ARG002", "N803", "N806", "N802", "D102", "PD010"]
 "tests/**/*.py" = [
-    "S101",  # allow `assert`
-    "PLR2004",  # allow magic values
+    "S101", # allow `assert`
+    "PLR2004", # allow magic values
     "D100", # Missing docstring in public module
     "D101", # Missing docstring in public class
     "D102", # Missing docstring in public method
@@ -70,8 +82,14 @@ exclude = ".venv|__ignore__"
 [[tool.mypy.overrides]]
 module = [
     "wind_up.*",
+    "plotly.*",
+    "openmeteo_requests.*",
+    "retry_requests.*",
 ]
 ignore_missing_imports = true
+
+[tool.deptry]
+extend_exclude = ["scripts"]
 
 [tool.deptry.per_rule_ignores]
 DEP003 = ["hot_open"]

@@ -3,6 +3,8 @@
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 
 def get_analyses_directory(analysis_name: str = "hill-of-towie-open-source-analysis") -> Path:
     """Get the location where the analysis will be saved.
@@ -12,6 +14,7 @@ def get_analyses_directory(analysis_name: str = "hill-of-towie-open-source-analy
     But can customized by setting the "WINDUP_ANALYSIS_DIR" enviroment variable, in
     which case the location will be: `[WINDUP_ANALYSIS_DIR]/[analysis_name]`
     """
+    load_dotenv()
     location = Path(os.getenv("WINDUP_ANALYSIS_DIR", Path.home() / ".windup" / "analyses"))
     analysis_directory = location / analysis_name
     analysis_directory.mkdir(exist_ok=True, parents=True)

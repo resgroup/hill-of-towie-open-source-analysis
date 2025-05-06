@@ -27,13 +27,10 @@ from pathlib import Path
 from zipfile import ZipFile
 
 import polars as pl
-from dotenv import load_dotenv
 
 from hot_open import setup_logger
 from hot_open.paths import ANALYSES_DIR, DATA_DIR
 from hot_open.sourcing_data import download_zenodo_data
-
-load_dotenv()
 
 FULL_10MIN_PERIOD = 600
 INDEX_FIELDS = {"TimeStamp": pl.Datetime(time_zone="UTC"), "StationId": pl.Int32()}

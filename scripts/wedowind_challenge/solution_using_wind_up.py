@@ -248,11 +248,11 @@ if __name__ == "__main__":
         scada_df=scada_df, metadata_df=metadata_df, analysis_output_dir=ANALYSIS_DIR
     )
     # prefer closest turbines
-    predicted_power_df["prediction"] = predicted_power_df[[f"power_prediction;{x}" for x in (2, 3, 4)]].mean(axis=1)
+    predicted_power_df["prediction"] = predicted_power_df[[f"t1_power_prediction;{x}" for x in (2, 3, 4)]].mean(axis=1)
     # try nan rows again with all turbines
     na_rows = predicted_power_df["prediction"].isna()
     predicted_power_df.loc[na_rows, "prediction"] = predicted_power_df.loc[
-        na_rows, [f"power_prediction;{x}" for x in (2, 3, 4, 5, 7)]
+        na_rows, [f"t1_power_prediction;{x}" for x in (2, 3, 4, 5, 7)]
     ].mean(axis=1)
     # fill as a last resort
     predicted_power_df["prediction"] = predicted_power_df["prediction"].interpolate().ffill().bfill()

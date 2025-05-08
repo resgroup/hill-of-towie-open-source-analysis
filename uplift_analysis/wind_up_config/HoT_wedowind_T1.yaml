@@ -10,7 +10,7 @@ ref_wtgs:
 upgrade_first_dt_utc_start: 2020-01-01 00:00:00  # start of validation year
 analysis_last_dt_utc_start: 2020-12-31 23:50:00  # end of validation year
 years_offset_for_pre_period: 1
-years_for_lt_distribution: 4 # there are only 4 years of data before the validation year
+years_for_lt_distribution: 5
 use_test_wtg_lt_distribution: false  # setting to false uses the wind farm long-term distribution
 years_for_detrend: 3
 ws_bin_width: 1

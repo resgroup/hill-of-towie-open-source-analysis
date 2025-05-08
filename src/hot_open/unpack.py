@@ -8,8 +8,8 @@ from wind_up.caching import with_parquet_cache
 from .helpers import load_hot_10min_data, scada_df_to_wind_up_df
 from .paths import DATA_DIR, GLOBAL_CACHE_DIR
 
-DATASET_START = pd.Timestamp("2016-01-01", tz="UTC")
-DATASET_END_EXCL = pd.Timestamp("2024-09-01", tz="UTC")
+DATASET_START = pd.Timestamp("2016-01-01", tz="UTC")  # open source dataset start
+DATASET_END_EXCL = pd.Timestamp("2024-09-01", tz="UTC")  # open source dataset end
 
 
 @with_parquet_cache(GLOBAL_CACHE_DIR / "scada_df.parquet")

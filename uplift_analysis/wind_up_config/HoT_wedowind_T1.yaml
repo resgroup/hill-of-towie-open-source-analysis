@@ -15,7 +15,7 @@ use_test_wtg_lt_distribution: false  # setting to false uses the wind farm long-
 years_for_detrend: 3
 ws_bin_width: 1
 reanalysis_method: node_with_best_ws_corr
-detrend_min_hours: 12 # in this analysis it's important to make a prediction in every timestep
+detrend_min_hours: 12 # smaller than default 24 because in this analysis it's important to make a prediction in every timestep
 asset: !include asset/HOT.yaml
 optimize_northing_corrections: false
 northing_corrections_utc: !include northing/optimized_northing_corrections.yaml

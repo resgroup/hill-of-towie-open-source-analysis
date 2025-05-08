@@ -69,7 +69,7 @@ def load_hot_10min_data(  # noqa:PLR0913 C901
         logger.info("[%d/%d] Beginning 10min data unpacking: %s", i_year, len(years_to_load), zip_path)
         with ZipFile(zip_path) as zip_file:
             year_dfs = []
-            for _table in tqdm(tables_to_load, desc=f"unpacking {zip_file.name}"):
+            for _table in tqdm(tables_to_load, desc=f"unpacking {zip_file.filename}"):
                 table_dfs = []
                 for _month in range(1, 13):
                     if pd.Timestamp(year=_year, month=_month, day=1, tz="UTC") < (

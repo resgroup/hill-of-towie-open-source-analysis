@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
-from wind_up.constants import REANALYSIS_WD_COL, REANALYSIS_WS_COL, WINDFARM_YAWDIR_COL
+from wind_up.constants import REANALYSIS_WD_COL, REANALYSIS_WS_COL, WINDFARM_YAWDIR_COL, DataColumns
 from wind_up.detrend import apply_wsratio_v_wd_scen, calc_wsratio_v_wd_scen
 from wind_up.interface import AssessmentInputs
 from wind_up.models import PlotConfig, WindUpConfig
@@ -25,7 +25,6 @@ from hot_open.unpack import unpack_local_meta_data, unpack_local_scada_data
 
 load_dotenv()
 
-CONFIG_DIR = Path(__file__).parent / "wind_up_config"
 ANALYSIS_DIR = ANALYSES_DIR / Path(__file__).stem
 ANALYSIS_CACHE_DIR = ANALYSIS_DIR / "cache"
 ANALYSIS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -33,24 +32,26 @@ ANALYSIS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 logger = logging.getLogger(__name__)
 
 
-def _main_wedowind_analysis(
+def wind_up_features_for_kaggle(
     *,
     scada_df: pd.DataFrame,
     metadata_df: pd.DataFrame,
     analysis_output_dir: Path,
 ) -> pd.DataFrame:
+    """Make a dataframe of useful features for the HoT kaggle competition."""
     setup_logger(analysis_output_dir / "analysis.log")
     logger = logging.getLogger(__name__)
 
+    uplift_analysis_dir = Path(__file__).parents[2] / "uplift_analysis"
     logger.info("Loading reference reanalysis data")
-    reanalysis_file_path = Path(__file__).parent / "reanalysis_data/ERA5T_57.50N_-3.25E_100m_1hr_20241231.parquet"
+    reanalysis_file_path = uplift_analysis_dir / "reanalysis_data/ERA5T_57.50N_-3.25E_100m_1hr_20241231.parquet"
     reanalysis_dataset = ReanalysisDataset(
         id="ERA5T_57.50N_-3.25E_100m_1hr",
         data=pd.read_parquet(reanalysis_file_path),
     )
 
     logger.info("Defining Assessment Configuration")
-    cfg = WindUpConfig.from_yaml(CONFIG_DIR / "HoT_wedowind_T1.yaml")
+    cfg = WindUpConfig.from_yaml(uplift_analysis_dir / "wind_up_config/HoT_wedowind_T1.yaml")
     cfg.out_dir = ANALYSIS_DIR / cfg.assessment_name
     cfg.out_dir.mkdir(parents=True, exist_ok=True)
     plot_cfg = PlotConfig(show_plots=False, save_plots=True, plots_dir=cfg.out_dir / "plots")
@@ -68,12 +69,19 @@ def _main_wedowind_analysis(
     cfg = assessment_inputs.cfg
     plot_cfg = assessment_inputs.plot_cfg
 
-    test_wtg = cfg.test_wtgs[0]
-    test_ws_col = "ws_est_blend"
+    # the below code is adapted from the wind-up source code starting from
+    # https://github.com/resgroup/wind-up/blob/d8ab91f3c656fa10c0986539683e626759c6ce4c/wind_up/main_analysis.py#L802
+    test_name = "T01"
+    test_wtg = next(x for x in cfg.asset.wtgs if x.name == test_name)
+    test_pw_col = "pw_clipped" if cfg.clip_rated_power_pp else DataColumns.active_power_mean
+    test_ws_col = "ws_est_from_power_only" if cfg.ignore_turbine_anemometer_data else "ws_est_blend"
     test_df = wf_df.loc[test_wtg.name].copy()
-    test_name = test_wtg.name
+
+    lt_df_raw = None
+    lt_df_filt = None
 
     test_df.columns = ["test_" + x for x in test_df.columns]
+    test_pw_col = "test_" + test_pw_col
     test_ws_col = "test_" + test_ws_col
 
     check_windspeed_drift(
@@ -87,6 +95,7 @@ def _main_wedowind_analysis(
 
     test_df, test_pre_df, test_post_df = assessment_inputs.pre_post_splitter.split(test_df, test_wtg_name=test_name)
 
+    # create an emp
     predicted_power_df = pd.DataFrame(index=test_post_df.index)
 
     for ref_wtg in cfg.ref_wtgs:
@@ -181,9 +190,12 @@ def _main_wedowind_analysis(
             ref_long=ref_long,
         )
         post_df = apply_wsratio_v_wd_scen(post_df, wsratio_v_dir_scen, ref_ws_col=ref_ws_col, ref_wd_col=ref_wd_col)
+
         # predict T1 power
         detrend_ws_col = "ref_ws_detrended"
-        predicted_power_df[ref_name] = pd.Series(
+        ref_number = int(ref_name.replace("T", ""))
+        predicted_power_df[f"ref_ws_detrended;{ref_number}"] = post_df[detrend_ws_col]
+        predicted_power_df[f"power_prediction;{ref_number}"] = pd.Series(
             np.interp(
                 post_df[detrend_ws_col],
                 assessment_inputs.pc_per_ttype["SWT-2.3-82"]["WindSpeedMean"].to_numpy(),
@@ -206,7 +218,7 @@ if __name__ == "__main__":
     )
     metadata_df = unpack_local_meta_data()
     scada_df = unpack_local_scada_data()
-    predicted_power_df = _main_wedowind_analysis(
+    predicted_power_df = wind_up_features_for_kaggle(
         scada_df=scada_df, metadata_df=metadata_df, analysis_output_dir=ANALYSIS_DIR
     )
     # prefer closest turbines

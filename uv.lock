@@ -660,7 +660,6 @@ wheels = [
 name = "hot-open"
 source = { editable = "." }
 dependencies = [
-    { name = "numpy" },
     { name = "pandas" },
     { name = "python-dotenv" },
     { name = "requests" },
@@ -696,7 +695,6 @@ wedowind = [
 
 [package.metadata]
 requires-dist = [
-    { name = "numpy", specifier = ">=2.2.4" },
     { name = "pandas", specifier = ">=2.2.3" },
     { name = "python-dotenv", specifier = ">=1.1.0" },
     { name = "requests", specifier = ">=2.32.3" },

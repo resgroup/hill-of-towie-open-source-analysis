@@ -15,8 +15,9 @@ from wind_up.interface import AssessmentInputs
 from wind_up.models import PlotConfig, WindUpConfig
 from wind_up.northing import check_wtg_northing
 from wind_up.plots.data_coverage_plots import plot_detrend_data_cov
+from wind_up.plots.detrend_plots import plot_apply_wsratio_v_wd_scen
 from wind_up.reanalysis_data import ReanalysisDataset
-from wind_up.waking_state import add_waking_scen
+from wind_up.waking_state import add_waking_scen, get_distance_and_bearing
 from wind_up.windspeed_drift import check_windspeed_drift
 
 from hot_open import download_zenodo_data, setup_logger
@@ -93,18 +94,25 @@ def wind_up_features_for_kaggle(
         plot_cfg=plot_cfg,
     )
 
-    test_df, test_pre_df, test_post_df = assessment_inputs.pre_post_splitter.split(test_df, test_wtg_name=test_name)
+    test_df, _, _ = assessment_inputs.pre_post_splitter.split(test_df, test_wtg_name=test_name)
 
     # create an emp
-    predicted_power_df = pd.DataFrame(index=test_post_df.index)
+    predicted_power_df = pd.DataFrame(index=test_df.index)
 
     for ref_wtg in cfg.ref_wtgs:
-        post_df = test_post_df.copy()
         ref_name = ref_wtg.name
+        (plot_cfg.plots_dir / test_name / ref_name).mkdir(exist_ok=True, parents=True)
+        if test_name == ref_name:
+            ref_ws_col = DataColumns.wind_speed_mean
+            test_ws_col = "test_" + DataColumns.wind_speed_mean
+        else:
+            ref_ws_col = "ws_est_from_power_only" if cfg.ignore_turbine_anemometer_data else "ws_est_blend"
+        ref_info = {
+            "ref": ref_name,
+        }
         ref_wd_col = "YawAngleMean"
-        ref_ws_col = "ws_est_blend"
         ref_df = wf_df.loc[ref_name].copy()
-        check_wtg_northing(
+        ref_max_northing_error_v_reanalysis = check_wtg_northing(
             ref_df,
             wtg_name=ref_name,
             north_ref_wd_col=REANALYSIS_WD_COL,
@@ -112,7 +120,7 @@ def wind_up_features_for_kaggle(
             plot_cfg=plot_cfg,
             sub_dir=f"{test_name}/{ref_name}",
         )
-        check_wtg_northing(
+        ref_max_northing_error_v_wf = check_wtg_northing(
             ref_df,
             wtg_name=ref_name,
             north_ref_wd_col=WINDFARM_YAWDIR_COL,
@@ -125,10 +133,19 @@ def wind_up_features_for_kaggle(
         ref_wd_col = "ref_" + ref_wd_col
         ref_df.columns = ["ref_" + x for x in ref_df.columns]
 
+        test_lat = test_wtg.latitude
+        test_long = test_wtg.longitude
         ref_lat = ref_wtg.latitude
         ref_long = ref_wtg.longitude
 
-        check_windspeed_drift(
+        distance_m, bearing_deg = get_distance_and_bearing(
+            lat1=test_lat,
+            long1=test_long,
+            lat2=ref_lat,
+            long2=ref_long,
+        )
+
+        ref_max_ws_drift, ref_max_ws_drift_pp_period = check_windspeed_drift(
             wtg_df=ref_df,
             wtg_name=ref_name,
             ws_col=ref_ws_col,
@@ -178,9 +195,10 @@ def wind_up_features_for_kaggle(
             plot_cfg=plot_cfg,
         )
 
-        post_df = post_df.merge(ref_df, how="left", left_index=True, right_index=True)
-        post_df = add_waking_scen(
-            test_ref_df=post_df,
+        out_df = test_df.merge(ref_df, how="left", left_index=True, right_index=True)
+
+        out_df = add_waking_scen(
+            test_ref_df=out_df,
             test_name=test_name,
             ref_name=ref_name,
             cfg=cfg,
@@ -189,19 +207,32 @@ def wind_up_features_for_kaggle(
             ref_lat=ref_lat,
             ref_long=ref_long,
         )
-        post_df = apply_wsratio_v_wd_scen(post_df, wsratio_v_dir_scen, ref_ws_col=ref_ws_col, ref_wd_col=ref_wd_col)
+
+        detrend_ws_col = "ref_ws_detrended"
+        out_df = apply_wsratio_v_wd_scen(out_df, wsratio_v_dir_scen, ref_ws_col=ref_ws_col, ref_wd_col=ref_wd_col)
+        plot_apply_wsratio_v_wd_scen(
+            out_df.dropna(subset=[ref_ws_col, test_ws_col, detrend_ws_col, test_pw_col]),
+            ref_ws_col=ref_ws_col,
+            test_ws_col=test_ws_col,
+            detrend_ws_col=detrend_ws_col,
+            test_pw_col=test_pw_col,
+            test_name=test_name,
+            ref_name=ref_name,
+            title_end="out_df",
+            plot_cfg=plot_cfg,
+        )
 
         # predict T1 power
         detrend_ws_col = "ref_ws_detrended"
         ref_number = int(ref_name.replace("T", ""))
-        predicted_power_df[f"ref_ws_detrended;{ref_number}"] = post_df[detrend_ws_col]
+        predicted_power_df[f"ref_ws_detrended;{ref_number}"] = out_df[detrend_ws_col]
         predicted_power_df[f"power_prediction;{ref_number}"] = pd.Series(
             np.interp(
-                post_df[detrend_ws_col],
+                out_df[detrend_ws_col],
                 assessment_inputs.pc_per_ttype["SWT-2.3-82"]["WindSpeedMean"].to_numpy(),
                 assessment_inputs.pc_per_ttype["SWT-2.3-82"]["pw_clipped"].to_numpy(),
             ),
-            index=post_df.index,
+            index=out_df.index,
         )
     return predicted_power_df
 
@@ -217,7 +248,7 @@ if __name__ == "__main__":
         ],
     )
     metadata_df = unpack_local_meta_data()
-    scada_df = unpack_local_scada_data()
+    scada_df = unpack_local_scada_data(end_dt_excl=pd.Timestamp("2021-01-01", tz="UTC"))
     predicted_power_df = wind_up_features_for_kaggle(
         scada_df=scada_df, metadata_df=metadata_df, analysis_output_dir=ANALYSIS_DIR
     )

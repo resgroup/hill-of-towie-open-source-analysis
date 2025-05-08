@@ -6,6 +6,7 @@ from typing import NamedTuple
 from zipfile import ZipFile
 
 import pandas as pd
+from tqdm import tqdm
 from wind_up.constants import DataColumns
 
 logger = logging.getLogger(__name__)
@@ -63,11 +64,12 @@ def load_hot_10min_data(  # noqa:PLR0913 C901
     fields_to_load = hill_of_towie_fields if custom_fields is None else custom_fields
     tables_to_load = {x.table_name for x in fields_to_load}
     result_dfs = []
-    for _year in years_to_load:
+    for i_year, _year in enumerate(years_to_load):
         zip_path = data_dir / f"{_year}.zip"
+        logger.info("[%d/%d] Beginning 10min data unpacking: %s", i_year, len(years_to_load), zip_path)
         with ZipFile(zip_path) as zip_file:
             year_dfs = []
-            for _table in tables_to_load:
+            for _table in tqdm(tables_to_load, desc=f"unpacking {zip_file.name}"):
                 table_dfs = []
                 for _month in range(1, 13):
                     if pd.Timestamp(year=_year, month=_month, day=1, tz="UTC") < (

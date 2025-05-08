@@ -153,6 +153,10 @@ def wind_up_features_for_kaggle(  # noqa:PLR0915
         detrend_df = test_df.merge(ref_df, how="left", left_index=True, right_index=True)
         detrend_df = detrend_df[cfg.detrend_first_dt_utc_start : cfg.detrend_last_dt_utc_start]  # type: ignore[misc]
 
+        # ensure no T1 data in 2020 is used!!!
+        # See https://www.kaggle.com/competitions/hill-of-towie-wind-turbine-power-prediction/rules
+        detrend_df = detrend_df[detrend_df.index < pd.Timestamp("2020-01-01", tz="UTC")]
+
         detrend_df = add_waking_scen(
             test_name=test_name,
             ref_name=ref_name,

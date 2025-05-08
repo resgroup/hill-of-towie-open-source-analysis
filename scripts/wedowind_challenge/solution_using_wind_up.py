@@ -33,7 +33,7 @@ ANALYSIS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 logger = logging.getLogger(__name__)
 
 
-def wind_up_features_for_kaggle(
+def wind_up_features_for_kaggle(  # noqa:PLR0915
     *,
     scada_df: pd.DataFrame,
     metadata_df: pd.DataFrame,
@@ -78,9 +78,6 @@ def wind_up_features_for_kaggle(
     test_ws_col = "ws_est_from_power_only" if cfg.ignore_turbine_anemometer_data else "ws_est_blend"
     test_df = wf_df.loc[test_wtg.name].copy()
 
-    lt_df_raw = None
-    lt_df_filt = None
-
     test_df.columns = ["test_" + x for x in test_df.columns]
     test_pw_col = "test_" + test_pw_col
     test_ws_col = "test_" + test_ws_col
@@ -107,12 +104,10 @@ def wind_up_features_for_kaggle(
             test_ws_col = "test_" + DataColumns.wind_speed_mean
         else:
             ref_ws_col = "ws_est_from_power_only" if cfg.ignore_turbine_anemometer_data else "ws_est_blend"
-        ref_info = {
-            "ref": ref_name,
-        }
+
         ref_wd_col = "YawAngleMean"
         ref_df = wf_df.loc[ref_name].copy()
-        ref_max_northing_error_v_reanalysis = check_wtg_northing(
+        check_wtg_northing(
             ref_df,
             wtg_name=ref_name,
             north_ref_wd_col=REANALYSIS_WD_COL,
@@ -120,7 +115,7 @@ def wind_up_features_for_kaggle(
             plot_cfg=plot_cfg,
             sub_dir=f"{test_name}/{ref_name}",
         )
-        ref_max_northing_error_v_wf = check_wtg_northing(
+        check_wtg_northing(
             ref_df,
             wtg_name=ref_name,
             north_ref_wd_col=WINDFARM_YAWDIR_COL,
@@ -138,14 +133,14 @@ def wind_up_features_for_kaggle(
         ref_lat = ref_wtg.latitude
         ref_long = ref_wtg.longitude
 
-        distance_m, bearing_deg = get_distance_and_bearing(
+        get_distance_and_bearing(
             lat1=test_lat,
             long1=test_long,
             lat2=ref_lat,
             long2=ref_long,
         )
 
-        ref_max_ws_drift, ref_max_ws_drift_pp_period = check_windspeed_drift(
+        check_windspeed_drift(
             wtg_df=ref_df,
             wtg_name=ref_name,
             ws_col=ref_ws_col,
@@ -195,10 +190,10 @@ def wind_up_features_for_kaggle(
             plot_cfg=plot_cfg,
         )
 
-        out_df = test_df.merge(ref_df, how="left", left_index=True, right_index=True)
+        result_df = test_df.merge(ref_df, how="left", left_index=True, right_index=True)
 
-        out_df = add_waking_scen(
-            test_ref_df=out_df,
+        result_df = add_waking_scen(
+            test_ref_df=result_df,
             test_name=test_name,
             ref_name=ref_name,
             cfg=cfg,
@@ -209,30 +204,30 @@ def wind_up_features_for_kaggle(
         )
 
         detrend_ws_col = "ref_ws_detrended"
-        out_df = apply_wsratio_v_wd_scen(out_df, wsratio_v_dir_scen, ref_ws_col=ref_ws_col, ref_wd_col=ref_wd_col)
+        result_df = apply_wsratio_v_wd_scen(result_df, wsratio_v_dir_scen, ref_ws_col=ref_ws_col, ref_wd_col=ref_wd_col)
         plot_apply_wsratio_v_wd_scen(
-            out_df.dropna(subset=[ref_ws_col, test_ws_col, detrend_ws_col, test_pw_col]),
+            result_df.dropna(subset=[ref_ws_col, test_ws_col, detrend_ws_col, test_pw_col]),
             ref_ws_col=ref_ws_col,
             test_ws_col=test_ws_col,
             detrend_ws_col=detrend_ws_col,
             test_pw_col=test_pw_col,
             test_name=test_name,
             ref_name=ref_name,
-            title_end="out_df",
+            title_end="result_df",
             plot_cfg=plot_cfg,
         )
 
         # predict T1 power
         detrend_ws_col = "ref_ws_detrended"
         ref_number = int(ref_name.replace("T", ""))
-        predicted_power_df[f"ref_ws_detrended;{ref_number}"] = out_df[detrend_ws_col]
-        predicted_power_df[f"power_prediction;{ref_number}"] = pd.Series(
+        predicted_power_df[f"ref_ws_detrended;{ref_number}"] = result_df[detrend_ws_col]
+        predicted_power_df[f"t1_power_prediction;{ref_number}"] = pd.Series(
             np.interp(
-                out_df[detrend_ws_col],
+                result_df[detrend_ws_col],
                 assessment_inputs.pc_per_ttype["SWT-2.3-82"]["WindSpeedMean"].to_numpy(),
                 assessment_inputs.pc_per_ttype["SWT-2.3-82"]["pw_clipped"].to_numpy(),
             ),
-            index=out_df.index,
+            index=result_df.index,
         )
     return predicted_power_df
 
@@ -253,19 +248,25 @@ if __name__ == "__main__":
         scada_df=scada_df, metadata_df=metadata_df, analysis_output_dir=ANALYSIS_DIR
     )
     # prefer closest turbines
-    predicted_power_df["prediction"] = predicted_power_df[["T02", "T03", "T04"]].mean(axis=1)
+    predicted_power_df["prediction"] = predicted_power_df[[f"power_prediction;{x}" for x in (2, 3, 4)]].mean(axis=1)
     # try nan rows again with all turbines
     na_rows = predicted_power_df["prediction"].isna()
     predicted_power_df.loc[na_rows, "prediction"] = predicted_power_df.loc[
-        na_rows, ["T02", "T03", "T04", "T05", "T07"]
+        na_rows, [f"power_prediction;{x}" for x in (2, 3, 4, 5, 7)]
     ].mean(axis=1)
     # fill as a last resort
     predicted_power_df["prediction"] = predicted_power_df["prediction"].interpolate().ffill().bfill()
 
-    # fill as a last resort
-    submission_example = pd.read_parquet(
-        Path.home() / "Downloads" / "hill-of-towie-wind-turbine-power-prediction" / "submission_dataset.parquet"
-    ).set_index("TimeStamp_StartFormat")
+    kaggle_data_dir = Path("/kaggle/input/hill-of-towie-wind-turbine-power-prediction")
+    if not kaggle_data_dir.exists():
+        downloads_dir = Path.home() / "Downloads" / "hill-of-towie-wind-turbine-power-prediction"
+        msg = f"{kaggle_data_dir} does not exist, using {downloads_dir}"
+        logger.info(msg)
+        kaggle_data_dir = downloads_dir
+    submission_example = pd.read_parquet(kaggle_data_dir / "submission_dataset.parquet").set_index(
+        "TimeStamp_StartFormat"
+    )
+
     submission_df = (
         submission_example[["id"]]
         .merge(

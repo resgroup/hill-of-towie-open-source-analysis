@@ -66,7 +66,7 @@ def load_hot_10min_data(  # noqa:PLR0913 C901
     result_dfs = []
     for i_year, _year in enumerate(years_to_load):
         zip_path = data_dir / f"{_year}.zip"
-        logger.info("[%d/%d] Beginning 10min data unpacking: %s", i_year, len(years_to_load), zip_path)
+        logger.info("[%d/%d] Beginning 10min data unpacking: %s", i_year + 1, len(years_to_load), zip_path)
         with ZipFile(zip_path) as zip_file:
             year_dfs = []
             for _table in tqdm(tables_to_load, desc=f"unpacking {zip_path.stem}"):

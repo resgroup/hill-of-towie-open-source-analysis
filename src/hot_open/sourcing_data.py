@@ -29,7 +29,8 @@ def download_zenodo_data(
     metadata_fpath = output_dir / "zenodo_dataset_metadata.json"
 
     if not cache_overwrite and metadata_fpath.is_file():
-        logger.info(f"Loading metadata from {metadata_fpath}")
+        msg = f"Loading metadata from {metadata_fpath}"
+        logger.info(msg)
         with metadata_fpath.open() as f:
             content = json.load(f)
     else:
@@ -39,7 +40,8 @@ def download_zenodo_data(
         content = r.json()
         with metadata_fpath.open("w") as f:
             json.dump(content, f)
-        logger.info(f"Saved metadata to {metadata_fpath}")
+        msg = f"Saved metadata to {metadata_fpath}"
+        logger.info(msg)
 
     remote_files: list[dict] = content["files"]
     files_to_download = remote_files if not filenames else _check_name_of_files_to_download(filenames, remote_files)

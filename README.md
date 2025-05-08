@@ -25,6 +25,8 @@ after turbine upgrades.
 
 Note any analysis can be run without running the others, e.g. you do not need to run `northing.py` before `aero_up.py`.
 
+You can set an environment variable `WINDUP_ANALYSIS_DIR` to specify the location of the analysis directory.
+
 The script `uplift_analysis/northing.py` calculates the northing corrections saved to
 `uplift_analysis/wind_up_config/northing/optimized_northing_corrections.yaml` and used in subsequent analyses. The plot
 below shows the circular difference of ERA5 wind direction to each turbine's yaw direction before the northing

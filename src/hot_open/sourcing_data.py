@@ -2,6 +2,7 @@
 
 import json
 import logging
+import math
 from collections.abc import Collection
 from pathlib import Path
 
@@ -57,7 +58,7 @@ def download_zenodo_data(
             with Path.open(dst_fpath, "wb") as f:
                 for chunk in tqdm(
                     result.iter_content(chunk_size=CHUNK_SIZE),
-                    total=round(_file_size / CHUNK_SIZE, 3),
+                    total=math.ceil(_file_size / CHUNK_SIZE),
                     unit="MB",
                     unit_scale=10,  # 10 MB per iteration
                     desc=f"Downloading {_file_name} ({_file_size / BYTES_IN_1MB:.2f} MB)",

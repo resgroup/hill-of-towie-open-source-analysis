@@ -76,7 +76,7 @@ class HoTPitchTuneUpResults:
 
 
 if __name__ == "__main__":
-    re_run_test_ref_results = False
+    re_run_test_ref_results = True
     if re_run_test_ref_results:
         setup_logger(ANALYSIS_DIR / f"{Path(__file__).stem}.log")
 
@@ -103,9 +103,6 @@ if __name__ == "__main__":
                 analysis_output_dir=ANALYSIS_DIR,
             )
 
-    show_plots = False
-    save_plots = True
-
     all_combined_results_df = pd.DataFrame()
     for result in [
         HoTPitchTuneUpResults(
@@ -129,7 +126,7 @@ if __name__ == "__main__":
     ]:
         cfg = WindUpConfig.from_yaml(CONFIG_DIR / result.config_file_name)
         cfg.out_dir = ANALYSIS_DIR / cfg.assessment_name
-        plot_cfg = PlotConfig(show_plots=False, save_plots=save_plots, plots_dir=cfg.out_dir / "plots")
+        plot_cfg = PlotConfig(show_plots=False, save_plots=True, plots_dir=cfg.out_dir / "plots")
 
         msg = f"{cfg.assessment_name=}"
         logger.info(msg)

@@ -76,7 +76,7 @@ class HoTPitchTuneUpResults:
 
 
 if __name__ == "__main__":
-    re_run_test_ref_results = True
+    re_run_test_ref_results = False
     if re_run_test_ref_results:
         setup_logger(ANALYSIS_DIR / f"{Path(__file__).stem}.log")
 
@@ -107,17 +107,17 @@ if __name__ == "__main__":
     for result in [
         HoTPitchTuneUpResults(
             config_file_name="HoT_PitchTuneUp2024_east.yaml",
-            results_per_test_ref_fname="HoT_PitchTuneUp2024_east_results_per_test_ref_20250328_232321.csv",
+            results_per_test_ref_fname="HoT_PitchTuneUp2024_east_results_per_test_ref_20250521_094448.csv",
             refs=["T17", "T18", "T19"],
         ),
         HoTPitchTuneUpResults(
             config_file_name="HoT_PitchTuneUp2024_south.yaml",
-            results_per_test_ref_fname="HoT_PitchTuneUp2024_south_results_per_test_ref_20250329_030039.csv",
+            results_per_test_ref_fname="HoT_PitchTuneUp2024_south_results_per_test_ref_20250522_005552.csv",
             refs=["T05", "T01", "T04", "T07"],
         ),
         HoTPitchTuneUpResults(
             config_file_name="HoT_PitchTuneUp2024_north.yaml",
-            results_per_test_ref_fname="HoT_PitchTuneUp2024_north_results_per_test_ref_20250328_220318.csv",
+            results_per_test_ref_fname="HoT_PitchTuneUp2024_north_results_per_test_ref_20250521_034153.csv",
             refs=["T11", "T12", "T14"],
             test_wtgs_to_exclude=[
                 "T08",  # T08 south results are used since they have lower uncertainty

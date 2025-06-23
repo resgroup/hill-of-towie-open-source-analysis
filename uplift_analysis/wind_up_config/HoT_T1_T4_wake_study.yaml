@@ -1,0 +1,19 @@
+assessment_name: HoT_T1_T4_wake_study
+test_wtgs:
+  - T04
+ref_wtgs:
+  - T03
+  - T01
+  - T07
+upgrade_first_dt_utc_start: 2020-01-01 00:00:00  # start of validation year
+analysis_last_dt_utc_start: 2020-12-31 23:50:00  # end of validation year
+years_offset_for_pre_period: 1
+years_for_lt_distribution: 5
+use_test_wtg_lt_distribution: false  # setting to false uses the wind farm long-term distribution
+years_for_detrend: 3
+ws_bin_width: 1
+reanalysis_method: node_with_best_ws_corr
+detrend_min_hours: 24
+asset: !include asset/HOT.yaml
+optimize_northing_corrections: false
+northing_corrections_utc: !include northing/optimized_northing_corrections.yaml

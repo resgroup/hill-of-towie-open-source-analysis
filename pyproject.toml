@@ -13,6 +13,7 @@ dependencies = [
     "requests>=2.32.3",
     "tqdm>=4.67.0",
     "python-dotenv>=1.1.0",
+    "ephem>=4.2",
 ]
 
 [dependency-groups]
@@ -73,6 +74,7 @@ ignore = [
     "D100", # Missing docstring in public module
     "D101", # Missing docstring in public class
     "D102", # Missing docstring in public method
+    "D103", # Missing docstring in public function
 ]
 
 [tool.mypy]

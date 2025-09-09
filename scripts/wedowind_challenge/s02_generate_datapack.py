@@ -113,7 +113,7 @@ def _extract_data_from_year_zipfile(
             # using `schema` raises error that when ignored nullify entire columns
             pl.scan_csv(zf.open(fname), schema_overrides=pl.Schema(_field_types))
             .filter(pl.col("StationId").is_in(station_to_turbine_map.keys()))
-            .select(_field_types)
+            .select(_field_types.keys())
             for fname in fnames
         )
         frames_to_combine.append(_df)

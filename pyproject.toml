@@ -9,7 +9,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "pandas>=2.2.3",
-    "res-wind-up>=0.2.0",
+    "res-wind-up>=0.3.0",
     "requests>=2.32.3",
     "tqdm>=4.67.0",
     "python-dotenv>=1.1.0",

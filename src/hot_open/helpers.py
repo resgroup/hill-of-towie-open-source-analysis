@@ -23,9 +23,7 @@ class WPSBackupFileField(NamedTuple):
 hill_of_towie_fields = [
     WPSBackupFileField(alias=DataColumns.active_power_mean, field_name="wtc_ActPower_mean", table_name="tblSCTurGrid"),
     WPSBackupFileField(alias=DataColumns.active_power_sd, field_name="wtc_ActPower_stddev", table_name="tblSCTurGrid"),
-    WPSBackupFileField(
-        alias=DataColumns.reactive_power_mean, field_name="wtc_ReactPwr_mean", table_name="tblSCTurGrid"
-    ),
+    WPSBackupFileField(alias="ReactivePowerMean", field_name="wtc_ReactPwr_mean", table_name="tblSCTurGrid"),
     WPSBackupFileField(alias=DataColumns.wind_speed_mean, field_name="wtc_AcWindSp_mean", table_name="tblSCTurbine"),
     WPSBackupFileField(alias=DataColumns.wind_speed_sd, field_name="wtc_AcWindSp_stddev", table_name="tblSCTurbine"),
     WPSBackupFileField(alias=DataColumns.yaw_angle_mean, field_name="wtc_NacelPos_mean", table_name="tblSCTurbine"),

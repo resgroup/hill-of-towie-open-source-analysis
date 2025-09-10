@@ -1,7 +1,6 @@
 """input data loading functions."""
 
 import logging
-import os
 from pathlib import Path
 
 import pandas as pd
@@ -15,7 +14,8 @@ logger = logging.getLogger(__name__)
 DATASET_START = pd.Timestamp("2016-01-01", tz="UTC")  # open source dataset start
 DATASET_END_EXCL = pd.Timestamp("2024-09-01", tz="UTC")  # open source dataset end
 
-parquet_cache_dir = Path(os.getenv("HOT_OPEN_CACHE_DIR", str(GLOBAL_CACHE_DIR)))
+parquet_cache_dir = GLOBAL_CACHE_DIR / "unpack"
+parquet_cache_dir.mkdir(parents=True, exist_ok=True)
 logger.debug("Using parquet cache directory: %s", parquet_cache_dir)
 SCADA_DF_CACHE = parquet_cache_dir / "scada_df.parquet"
 METADATA_DF_CACHE = parquet_cache_dir / "metadata_df.parquet"

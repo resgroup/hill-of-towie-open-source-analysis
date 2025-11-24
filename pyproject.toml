@@ -32,8 +32,11 @@ dev = [
     "polars>=1.27.1",
 ]
 wedowind = [
+    "autogluon>=1.4.0",
+    "ephem>=4.2",
     "jupyterlab>=4.4.1",
     "jupytext>=1.17.0",
+    "kagglehub>=0.3.13",
     "openmeteo-requests>=1.4.0",
     "plotly>=6.0.1",
     "polars>=1.27.1",

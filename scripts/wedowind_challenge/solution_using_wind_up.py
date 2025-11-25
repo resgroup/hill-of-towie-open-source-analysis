@@ -293,7 +293,7 @@ def filter_is_valid(X: pl.DataFrame, y: pl.Series) -> tuple[pl.DataFrame, pl.Ser
     return X, y
 
 
-def preprocess_x(X):
+def preprocess_x(X: pl.DataFrame) -> pl.DataFrame:
     sun_position = SunPosition(latitude=57.50576819514985, longitude=-3.0683841268762757)
     X = X.with_columns(
         pl.col("TimeStamp_StartFormat")
@@ -307,23 +307,19 @@ def preprocess_x(X):
 
 if __name__ == "__main__":
     setup_logger(ANALYSIS_DIR / f"{Path(__file__).stem}.log")
-    try:
-        predicted_power_df = pd.read_parquet("predicted_power_df.parquet")
-    except FileNotFoundError:
-        download_zenodo_data(
-            record_id="14870023",
-            filenames=[
-                *[f"{x}.zip" for x in range(2016, 2020 + 1)],
-                "Hill_of_Towie_ShutdownDuration.zip",
-                "Hill_of_Towie_turbine_metadata.csv",
-            ],
-        )
-        metadata_df = unpack_local_meta_data()
-        scada_df = unpack_local_scada_data(end_dt_excl=pd.Timestamp("2021-01-01", tz="UTC"))
-        predicted_power_df = wind_up_features_for_kaggle(
-            scada_df=scada_df, metadata_df=metadata_df, analysis_output_dir=ANALYSIS_DIR
-        )
-        predicted_power_df.to_parquet("predicted_power_df.parquet")  # TODO remove
+    download_zenodo_data(
+        record_id="14870023",
+        filenames=[
+            *[f"{x}.zip" for x in range(2016, 2020 + 1)],
+            "Hill_of_Towie_ShutdownDuration.zip",
+            "Hill_of_Towie_turbine_metadata.csv",
+        ],
+    )
+    metadata_df = unpack_local_meta_data()
+    scada_df = unpack_local_scada_data(end_dt_excl=pd.Timestamp("2021-01-01", tz="UTC"))
+    predicted_power_df = wind_up_features_for_kaggle(
+        scada_df=scada_df, metadata_df=metadata_df, analysis_output_dir=ANALYSIS_DIR
+    )
     # prefer closest turbines
     predicted_power_df["wind_up_prediction"] = predicted_power_df[[f"t1_power_prediction;{x}" for x in (2, 3, 4)]].mean(
         axis=1
@@ -374,27 +370,33 @@ if __name__ == "__main__":
     submission = df_id.with_columns(prediction=y_test)
 
     # checking the columns are the expected ones
-    assert submission.columns == ["id", "prediction"], (
-        f'Expected columns ["id", "prediction"], found: {submission.columns}'
-    )
+    if submission.columns != ["id", "prediction"]:
+        msg = f'Expected columns ["id", "prediction"], found: {submission.columns}'
+        raise ValueError(msg)
 
     # checking no nulls in the data
-    assert submission.select(pl.col("id").is_null().sum()).item() == 0, "There are null values in the 'id' column"
-    assert submission.select(pl.col("id").is_nan().sum()).item() == 0, "There are nan values in the 'id' column"
-    assert submission.select(pl.col("prediction").is_null().sum()).item() == 0, (
-        "There are null values in the 'prediction' column"
-    )
-    assert submission.select(pl.col("prediction").is_nan().sum()).item() == 0, (
-        "There are nan values in the 'prediction' column"
-    )
+    if submission.select(pl.col("id").is_null().sum()).item() != 0:
+        msg = "There are null values in the 'id' column"
+        raise ValueError(msg)
+    if submission.select(pl.col("id").is_nan().sum()).item() != 0:
+        msg = "There are nan values in the 'id' column"
+        raise ValueError(msg)
+    if submission.select(pl.col("prediction").is_null().sum()).item() != 0:
+        msg = "There are null values in the 'prediction' column"
+        raise ValueError(msg)
+    if submission.select(pl.col("prediction").is_nan().sum()).item() != 0:
+        msg = "There are nan values in the 'prediction' column"
+        raise ValueError(msg)
 
     # checking the row ids are unique and within expected range
     duplicated_ids = submission.select("id").is_duplicated()
-    assert not duplicated_ids.any(), (
-        f"There are duplicated ids: {submission.select('id').filter(duplicated_ids).to_series().unique()}"
-    )
+    if duplicated_ids.any():
+        msg = f"There are duplicated ids: {submission.select('id').filter(duplicated_ids).to_series().unique()}"
+        raise ValueError(msg)
     invalid_ids = set(submission.select("id").unique().to_series().to_list()) - set(range(52704))
-    assert not invalid_ids, f"The following row IDs are not within the expected ones: {invalid_ids}"
+    if invalid_ids:
+        msg = f"The following row IDs are not within the expected ones: {invalid_ids}"
+        raise ValueError(msg)
 
     print("Submission file is valid and ready for submission.")
 

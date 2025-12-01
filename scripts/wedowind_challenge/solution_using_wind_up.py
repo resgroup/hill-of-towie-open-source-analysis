@@ -3,12 +3,20 @@
 Challenge URL: https://www.kaggle.com/competitions/hill-of-towie-wind-turbine-power-prediction
 """
 
+import datetime as dt
 import logging
+import math
+import tempfile
 from pathlib import Path
 
+import ephem
+import kagglehub
 import numpy as np
 import pandas as pd
+import polars as pl
+from autogluon.tabular import TabularPredictor
 from dotenv import load_dotenv
+from kagglehub.config import DEFAULT_CACHE_FOLDER
 from wind_up.constants import REANALYSIS_WD_COL, REANALYSIS_WS_COL, WINDFARM_YAWDIR_COL, DataColumns
 from wind_up.detrend import apply_wsratio_v_wd_scen, calc_wsratio_v_wd_scen
 from wind_up.interface import AssessmentInputs
@@ -55,7 +63,7 @@ def wind_up_features_for_kaggle(  # noqa:PLR0915
     cfg = WindUpConfig.from_yaml(uplift_analysis_dir / "wind_up_config/HoT_wedowind_T1.yaml")
     cfg.out_dir = ANALYSIS_DIR / cfg.assessment_name
     cfg.out_dir.mkdir(parents=True, exist_ok=True)
-    plot_cfg = PlotConfig(show_plots=False, save_plots=True, plots_dir=cfg.out_dir / "plots")
+    plot_cfg = PlotConfig(show_plots=False, save_plots=False, plots_dir=cfg.out_dir / "plots")
 
     (ANALYSIS_CACHE_DIR / cfg.assessment_name).mkdir(parents=True, exist_ok=True)
     assessment_inputs = AssessmentInputs.from_cfg(
@@ -236,6 +244,67 @@ def wind_up_features_for_kaggle(  # noqa:PLR0915
     return predicted_power_df
 
 
+# kaggle stuff
+class SunPosition:
+    def __init__(self, *, latitude: float, longitude: float) -> None:
+        self.latitude = latitude
+        self.longitude = longitude
+        self._observer = self._create_ephem_observer()
+        self._sun = ephem.Sun()
+
+    def _create_ephem_observer(self) -> ephem.Observer:
+        observer = ephem.Observer()
+        observer.lat = str(self.latitude)
+        observer.lon = str(self.longitude)
+        return observer
+
+    def altitude(self, *, timestamp_utc: dt.datetime) -> float:
+        self._observer.date = timestamp_utc
+        self._sun.compute(self._observer)
+        return self._sun.alt
+
+
+CACHE_DIR = Path(DEFAULT_CACHE_FOLDER) / "competitions" / "hill-of-towie-wind-turbine-power-prediction"
+
+
+def load_training_dataset(*, force_download: bool = False, just_for_year: int | None = None) -> pl.LazyFrame:
+    file_path = kagglehub.competition_download(
+        handle="hill-of-towie-wind-turbine-power-prediction",
+        path="training_dataset.parquet",
+        force_download=force_download,
+    )
+    if just_for_year is None:
+        return pl.scan_parquet(Path(file_path))
+    return pl.scan_parquet(Path(file_path)).filter(pl.col("TimeStamp_StartFormat").dt.year() == just_for_year)
+
+
+def load_submission_dataset(*, force_download: bool = False) -> pl.LazyFrame:
+    file_path = kagglehub.competition_download(
+        handle="hill-of-towie-wind-turbine-power-prediction",
+        path="submission_dataset.parquet",
+        force_download=force_download,
+    )
+    return pl.scan_parquet(Path(file_path))
+
+
+def filter_is_valid(X: pl.DataFrame, y: pl.Series) -> tuple[pl.DataFrame, pl.Series]:
+    y = y.filter(X.select("is_valid").to_series())
+    X = X.filter(pl.col("is_valid"))
+    return X, y
+
+
+def preprocess_x(X: pl.DataFrame) -> pl.DataFrame:
+    sun_position = SunPosition(latitude=57.50576819514985, longitude=-3.0683841268762757)
+    X = X.with_columns(
+        pl.col("TimeStamp_StartFormat")
+        .map_elements(lambda ts: sun_position.altitude(timestamp_utc=ts), return_dtype=pl.Float64)
+        .mul(180 / math.pi)
+        .alias("sun_altitude"),
+    )
+    cols_to_exclude = ["id", "is_valid", "TimeStamp_StartFormat", *[x for x in X.columns if x.split(";")[-1] == "1"]]
+    return X.select(pl.exclude(cols_to_exclude))
+
+
 if __name__ == "__main__":
     setup_logger(ANALYSIS_DIR / f"{Path(__file__).stem}.log")
     download_zenodo_data(
@@ -252,54 +321,83 @@ if __name__ == "__main__":
         scada_df=scada_df, metadata_df=metadata_df, analysis_output_dir=ANALYSIS_DIR
     )
     # prefer closest turbines
-    predicted_power_df["prediction"] = predicted_power_df[[f"t1_power_prediction;{x}" for x in (2, 3, 4)]].mean(axis=1)
+    predicted_power_df["wind_up_prediction"] = predicted_power_df[[f"t1_power_prediction;{x}" for x in (2, 3, 4)]].mean(
+        axis=1
+    )
     # try nan rows again with all turbines
-    na_rows = predicted_power_df["prediction"].isna()
-    predicted_power_df.loc[na_rows, "prediction"] = predicted_power_df.loc[
+    na_rows = predicted_power_df["wind_up_prediction"].isna()
+    predicted_power_df.loc[na_rows, "wind_up_prediction"] = predicted_power_df.loc[
         na_rows, [f"t1_power_prediction;{x}" for x in (2, 3, 4, 5, 7)]
     ].mean(axis=1)
     # fill as a last resort
-    predicted_power_df["prediction"] = predicted_power_df["prediction"].interpolate().ffill().bfill()
+    predicted_power_df["wind_up_prediction"] = predicted_power_df["wind_up_prediction"].interpolate().ffill().bfill()
 
-    kaggle_data_dir = Path("/kaggle/input/hill-of-towie-wind-turbine-power-prediction")
-    if not kaggle_data_dir.exists():
-        downloads_dir = Path.home() / "Downloads" / "hill-of-towie-wind-turbine-power-prediction"
-        msg = f"{kaggle_data_dir} does not exist, using {downloads_dir}"
-        logger.info(msg)
-        kaggle_data_dir = downloads_dir
-    submission_example = pd.read_parquet(kaggle_data_dir / "submission_dataset.parquet").set_index(
-        "TimeStamp_StartFormat"
+    # use AutoGluon to predict
+    df_train = load_training_dataset().collect()
+    X_train = df_train.select(pl.exclude("target"))
+
+    # merge predicted_power_df
+    X_train = X_train.join(
+        pl.from_pandas(predicted_power_df.reset_index()).with_columns(
+            pl.col("TimeStamp_StartFormat").dt.cast_time_unit("us")
+        ),
+        on="TimeStamp_StartFormat",
+        how="left",
     )
 
-    submission_df = (
-        submission_example[["id"]]
-        .merge(
-            predicted_power_df[["prediction"]],
-            how="left",
-            left_index=True,
-            right_index=True,
+    y_train = df_train.select("target").to_series()
+    # remove invalid rows
+    X_train, y_train = filter_is_valid(X_train, y_train)
+    X_train = preprocess_x(X_train)
+
+    train_data = X_train.with_columns(t1_power=y_train)
+    X_test = load_submission_dataset().collect()
+    X_test = X_test.join(
+        pl.from_pandas(predicted_power_df.reset_index()).with_columns(
+            pl.col("TimeStamp_StartFormat").dt.cast_time_unit("us")
+        ),
+        on="TimeStamp_StartFormat",
+        how="left",
+    )
+    df_id = X_test.select("id")
+    X_test = preprocess_x(X_test)
+    with tempfile.TemporaryDirectory() as model_dir:
+        model = TabularPredictor(label="t1_power", problem_type="regression", eval_metric="mae", path=model_dir).fit(
+            train_data.to_pandas(), presets="medium", time_limit=3 * 60 * 60
         )
-        .set_index("id")
-        .sort_index()
-    )
-    output_fpath = ANALYSIS_DIR / "kaggle_submission.csv"
-    submission_df.to_csv(output_fpath)
-    msg = f"Submission file saved to {output_fpath}"
-    logger.info(msg)
+        y_test = pl.Series(values=model.predict(X_test.to_pandas())).clip(lower_bound=0)
 
-    # Optional: checking the submission file
-    _df = pd.read_csv(output_fpath)
+    submission = df_id.with_columns(prediction=y_test)
 
     # checking the columns are the expected ones
-    assert _df.columns.to_list() == ["id", "prediction"], (  # noqa:S101
-        f'Expected columns ["id", "prediction"], found: {_df.columns.to_list()}'
-    )
+    if submission.columns != ["id", "prediction"]:
+        msg = f'Expected columns ["id", "prediction"], found: {submission.columns}'
+        raise ValueError(msg)
 
     # checking no nulls in the data
-    assert _df.isna().sum().sum() == 0, "There are NA values in the data!"  # noqa:S101
+    if submission.select(pl.col("id").is_null().sum()).item() != 0:
+        msg = "There are null values in the 'id' column"
+        raise ValueError(msg)
+    if submission.select(pl.col("id").is_nan().sum()).item() != 0:
+        msg = "There are nan values in the 'id' column"
+        raise ValueError(msg)
+    if submission.select(pl.col("prediction").is_null().sum()).item() != 0:
+        msg = "There are null values in the 'prediction' column"
+        raise ValueError(msg)
+    if submission.select(pl.col("prediction").is_nan().sum()).item() != 0:
+        msg = "There are nan values in the 'prediction' column"
+        raise ValueError(msg)
 
     # checking the row ids are unique and within expected range
-    duplicated_ids = _df["id"].duplicated()
-    assert not duplicated_ids.any(), f"There are duplicated ids: {_df['id'][duplicated_ids].to_numpy()}"  # noqa:S101
-    invalid_ids = set(_df["id"].unique()) - set(range(52704))
-    assert not invalid_ids, f"The following row IDs are not within the expected ones: {invalid_ids}"  # noqa:S101
+    duplicated_ids = submission.select("id").is_duplicated()
+    if duplicated_ids.any():
+        msg = f"There are duplicated ids: {submission.select('id').filter(duplicated_ids).to_series().unique()}"
+        raise ValueError(msg)
+    invalid_ids = set(submission.select("id").unique().to_series().to_list()) - set(range(52704))
+    if invalid_ids:
+        msg = f"The following row IDs are not within the expected ones: {invalid_ids}"
+        raise ValueError(msg)
+
+    print("Submission file is valid and ready for submission.")
+
+    submission.write_csv("submission.csv")

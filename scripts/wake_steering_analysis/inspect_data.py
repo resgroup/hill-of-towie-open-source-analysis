@@ -26,13 +26,13 @@ WTG_FL_WIND_SPEED_COL = "AcWindSp_AcWindSp"
 WTG_FL_YAW_POS_COL = "YawPos_Value"
 
 # ZX300 LiDAR 10-minute columns
-ZX300_10MIN_WS_COL = "Horizontal Wind Speed (m/s) at 58m"
-ZX300_10MIN_WD_COL = "Wind Direction (deg) at 58m"
+ZX300_WS_COL = "Horizontal Wind Speed (m/s) at 58m"
+ZX300_WD_COL = "Wind Direction (deg) at 58m"
 
 # ZXTM LiDAR columns
 ZXTM_10MIN_WS_COL = "FD Horizontal Wind Speed (m/s) at Hub Height at 208m"
-ZXTM_10MIN_WD_COL = "Met Compass Bearing (deg)"
 ZXTM_FL_WS_COL = "PD Horizontal Wind Speed (m/s) at Hub Height"
+ZXTM_WD_COL = "Met Compass Bearing (deg)"
 
 # ERA5 reanalysis columns
 ERA5_WS_COL = "100_m_hws_mean_mps"
@@ -283,6 +283,12 @@ def plot_wind_speed_and_direction_comparison(
     plt.close(fig)
 
 
+NORTH_CORRECTIONS = {
+    "T03": -177.46022644042966,
+    "T07": 39.44209289550781,
+    "ZXTM": -131,
+}
+
 if __name__ == "__main__":
     out_dir = get_out_dir(dir_name=Path(__file__).stem)
     log_path = out_dir / f"{Path(__file__).stem}.log"
@@ -301,6 +307,11 @@ if __name__ == "__main__":
         start_dt=start_dt,
         end_dt_excl=end_dt_excl,
     )
+    for wtg, correction in NORTH_CORRECTIONS.items():
+        if wtg in wtg_10min_df.columns.get_level_values(0):
+            wtg_10min_df[(wtg, WTG_10MIN_NACEL_POS_COL)] = (
+                wtg_10min_df[(wtg, WTG_10MIN_NACEL_POS_COL)] + correction
+            ) % 360
 
     wtg_fl_df = load_hot_fl_data(
         data_dir=LOCAL_TEMPORARY_DIR / "turbine_fastlog" / "Filestore",
@@ -308,6 +319,9 @@ if __name__ == "__main__":
         start_dt=start_dt,
         end_dt_excl=end_dt_excl,
     )
+    for wtg, correction in NORTH_CORRECTIONS.items():
+        if wtg in wtg_fl_df.columns.get_level_values(0):
+            wtg_fl_df[(wtg, WTG_FL_YAW_POS_COL)] = (wtg_fl_df[(wtg, WTG_FL_YAW_POS_COL)] + correction) % 360
 
     for wtg_number in wtg_numbers:
         plot_wtg_10min_and_fastlog(
@@ -326,6 +340,7 @@ if __name__ == "__main__":
         end_dt_excl=end_dt_excl,
         remove_bad_values=True,
     )
+
     zxtm_10min_df = load_zx_lidar_10min_data(
         data_dir=LOCAL_TEMPORARY_DIR / "lidar_data",
         lidar_unit_id="5060",
@@ -333,6 +348,7 @@ if __name__ == "__main__":
         end_dt_excl=end_dt_excl,
         remove_bad_values=True,
     )
+    zxtm_10min_df[ZXTM_WD_COL] = (zxtm_10min_df[ZXTM_WD_COL] + NORTH_CORRECTIONS["ZXTM"]) % 360
 
     # load reanalysis data
     era5_df = pd.read_parquet(
@@ -348,10 +364,10 @@ if __name__ == "__main__":
         wtg_numbers=wtg_numbers,
         zx300_10min_df=zx300_10min_df,
         zxtm_10min_df=zxtm_10min_df,
-        zx300_ws_col=ZX300_10MIN_WS_COL,
-        zx300_wd_col=ZX300_10MIN_WD_COL,
+        zx300_ws_col=ZX300_WS_COL,
+        zx300_wd_col=ZX300_WD_COL,
         zxtm_ws_col=ZXTM_10MIN_WS_COL,
-        zxtm_wd_col=ZXTM_10MIN_WD_COL,
+        zxtm_wd_col=ZXTM_WD_COL,
         era5_df=era5_df,
         start_dt=start_dt,
         end_dt_excl=end_dt_excl,
@@ -372,16 +388,17 @@ if __name__ == "__main__":
         end_dt_excl=end_dt_excl,
         remove_bad_values=True,
     )
+    zxtm_fl_df[ZXTM_WD_COL] = (zxtm_fl_df[ZXTM_WD_COL] + NORTH_CORRECTIONS["ZXTM"]) % 360
 
     plot_lidar_10min_and_fastlog(
         zx300_10min_df=zx300_10min_df,
         zx300_fl_df=zx300_fl_df,
         zxtm_10min_df=zxtm_10min_df,
         zxtm_fl_df=zxtm_fl_df,
-        zx300_ws_col=ZX300_10MIN_WS_COL,
-        zx300_wd_col=ZX300_10MIN_WD_COL,
+        zx300_ws_col=ZX300_WS_COL,
+        zx300_wd_col=ZX300_WD_COL,
         zxtm_ws_col=ZXTM_10MIN_WS_COL,
-        zxtm_wd_col=ZXTM_10MIN_WD_COL,
+        zxtm_wd_col=ZXTM_WD_COL,
         zxtm_fl_ws_col=ZXTM_FL_WS_COL,
         start_dt=start_dt,
         end_dt_excl=end_dt_excl,

@@ -15,6 +15,29 @@ from scripts.logger import setup_logger
 LOCAL_TEMPORARY_DIR = Path.home() / "temp" / "hill-of-towie-open-sourcing-2026" / "draft datapack"
 logger = logging.getLogger(__name__)
 
+# WTG 10-minute SCADA columns
+WTG_10MIN_ACT_POWER_COL = "wtc_ActPower_mean"
+WTG_10MIN_WIND_SPEED_COL = "wtc_AcWindSp_mean"
+WTG_10MIN_NACEL_POS_COL = "wtc_NacelPos_mean"
+
+# WTG fastlog columns
+WTG_FL_ACT_POWER_COL = "ActPower_Value"
+WTG_FL_WIND_SPEED_COL = "AcWindSp_AcWindSp"
+WTG_FL_YAW_POS_COL = "YawPos_Value"
+
+# ZX300 LiDAR 10-minute columns
+ZX300_10MIN_WS_COL = "Horizontal Wind Speed (m/s) at 58m"
+ZX300_10MIN_WD_COL = "Wind Direction (deg) at 58m"
+
+# ZXTM LiDAR columns
+ZXTM_10MIN_WS_COL = "FD Horizontal Wind Speed (m/s) at Hub Height at 208m"
+ZXTM_10MIN_WD_COL = "Met Compass Bearing (deg)"
+ZXTM_FL_WS_COL = "PD Horizontal Wind Speed (m/s) at Hub Height"
+
+# ERA5 reanalysis columns
+ERA5_WS_COL = "100_m_hws_mean_mps"
+ERA5_WD_COL = "100_m_hwd_mean_deg-n_true"
+
 
 def plot_wtg_10min_and_fastlog(
     *,
@@ -29,48 +52,48 @@ def plot_wtg_10min_and_fastlog(
 
     axes[0].plot(
         wtg_10min_df.index,
-        wtg_10min_df[wtg]["wtc_ActPower_mean"],
+        wtg_10min_df[wtg][WTG_10MIN_ACT_POWER_COL],
         drawstyle="steps-post",
-        label="wtc_ActPower_mean",
+        label=WTG_10MIN_ACT_POWER_COL,
         linewidth=1.5,
     )
     axes[0].plot(
         wtg_fl_df.index,
-        wtg_fl_df[wtg]["ActPower_Value"],
+        wtg_fl_df[wtg][WTG_FL_ACT_POWER_COL],
         drawstyle="steps-post",
-        label="ActPower_Value",
+        label=WTG_FL_ACT_POWER_COL,
         linestyle="--",
         linewidth=0.8,
         alpha=0.7,
     )
     axes[1].plot(
         wtg_10min_df.index,
-        wtg_10min_df[wtg]["wtc_AcWindSp_mean"],
+        wtg_10min_df[wtg][WTG_10MIN_WIND_SPEED_COL],
         drawstyle="steps-post",
-        label="wtc_AcWindSp_mean",
+        label=WTG_10MIN_WIND_SPEED_COL,
         linewidth=1.5,
     )
     axes[1].plot(
         wtg_fl_df.index,
-        wtg_fl_df[wtg]["AcWindSp_AcWindSp"],
+        wtg_fl_df[wtg][WTG_FL_WIND_SPEED_COL],
         drawstyle="steps-post",
-        label="AcWindSp_AcWindSp",
+        label=WTG_FL_WIND_SPEED_COL,
         linestyle="--",
         linewidth=0.8,
         alpha=0.7,
     )
     axes[2].plot(
         wtg_10min_df.index,
-        wtg_10min_df[wtg]["wtc_NacelPos_mean"],
+        wtg_10min_df[wtg][WTG_10MIN_NACEL_POS_COL],
         drawstyle="steps-post",
-        label="wtc_NacelPos_mean",
+        label=WTG_10MIN_NACEL_POS_COL,
         linewidth=1.5,
     )
     axes[2].plot(
         wtg_fl_df.index,
-        wtg_fl_df[wtg]["YawPos_Value"],
+        wtg_fl_df[wtg][WTG_FL_YAW_POS_COL],
         drawstyle="steps-post",
-        label="YawPos_Value",
+        label=WTG_FL_YAW_POS_COL,
         linestyle="--",
         linewidth=0.8,
         alpha=0.7,
@@ -185,16 +208,16 @@ def plot_wind_speed_and_direction_comparison(
         wtg = f"T{wtg_number:02d}"
         axes[0].plot(
             wtg_10min_df.index,
-            wtg_10min_df[wtg]["wtc_AcWindSp_mean"],
+            wtg_10min_df[wtg][WTG_10MIN_WIND_SPEED_COL],
             drawstyle="steps-post",
-            label=f"{wtg} wtc_AcWindSp_mean",
+            label=f"{wtg} {WTG_10MIN_WIND_SPEED_COL}",
             linewidth=1.5,
         )
         axes[1].plot(
             wtg_10min_df.index,
-            wtg_10min_df[wtg]["wtc_NacelPos_mean"],
+            wtg_10min_df[wtg][WTG_10MIN_NACEL_POS_COL],
             drawstyle="steps-post",
-            label=f"{wtg} wtc_NacelPos_mean",
+            label=f"{wtg} {WTG_10MIN_NACEL_POS_COL}",
             linewidth=1.5,
         )
 
@@ -214,9 +237,9 @@ def plot_wind_speed_and_direction_comparison(
     )
     axes[0].plot(
         era5_df.index,
-        era5_df["100_m_hws_mean_mps"],
+        era5_df[ERA5_WS_COL],
         drawstyle="steps-post",
-        label="ERA5 100_m_hws_mean_mps",
+        label=f"ERA5 {ERA5_WS_COL}",
         linestyle=":",
         alpha=0.7,
     )
@@ -236,9 +259,9 @@ def plot_wind_speed_and_direction_comparison(
     )
     axes[1].plot(
         era5_df.index,
-        era5_df["100_m_hwd_mean_deg-n_true"],
+        era5_df[ERA5_WD_COL],
         drawstyle="steps-post",
-        label="ERA5 100_m_hwd_mean_deg-n_true",
+        label=f"ERA5 {ERA5_WD_COL}",
         linestyle=":",
         alpha=0.7,
     )
@@ -311,11 +334,6 @@ if __name__ == "__main__":
         remove_bad_values=True,
     )
 
-    ZX300_10MIN_WS_COL = "Horizontal Wind Speed (m/s) at 58m"
-    ZX300_10MIN_WD_COL = "Wind Direction (deg) at 58m"
-    ZXTM_10MIN_WS_COL = "FD Horizontal Wind Speed (m/s) at Hub Height at 208m"
-    ZXTM_10MIN_WD_COL = "Met Compass Bearing (deg)"
-
     # load reanalysis data
     era5_df = pd.read_parquet(
         Path(__name__).parent / "reanalysis_data" / "ERA5T_57.50N_-3.25E_100m_1hr_20260331.parquet"
@@ -364,7 +382,7 @@ if __name__ == "__main__":
         zx300_wd_col=ZX300_10MIN_WD_COL,
         zxtm_ws_col=ZXTM_10MIN_WS_COL,
         zxtm_wd_col=ZXTM_10MIN_WD_COL,
-        zxtm_fl_ws_col="PD Horizontal Wind Speed (m/s) at Hub Height",
+        zxtm_fl_ws_col=ZXTM_FL_WS_COL,
         start_dt=start_dt,
         end_dt_excl=end_dt_excl,
         out_dir=out_dir,

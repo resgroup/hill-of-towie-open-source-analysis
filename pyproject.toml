@@ -8,11 +8,11 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "pandas>=2.2.3",
-    "res-wind-up>=0.3.0",
     "requests>=2.32.3",
     "tqdm>=4.67.0",
     "python-dotenv>=1.1.0",
+    "res-wind-up>=0.4.8",
+    "pandas>=2.3.3",
 ]
 
 [dependency-groups]
@@ -29,9 +29,9 @@ dev = [
     "types-requests>=2.32.0.20250328",
     "types-tqdm>=4.67.0.20250404",
     "responses>=0.25.7",
-    "polars>=1.27.1",
 ]
 wedowind = [
+    "polars>=1.27.1",
     "autogluon>=1.4.0",
     "ephem>=4.2",
     "jupyterlab>=4.4.1",
@@ -99,13 +99,10 @@ ignore_missing_imports = true
 
 [tool.deptry]
 extend_exclude = ["scripts"]
-
-[tool.deptry.per_rule_ignores]
-DEP003 = ["hot_open"]
+known_first_party = ["hot_open"]
 
 [tool.coverage.report]
 exclude_lines = ["if __name__ == .__main__.:"]
-
 
 [tool.poe.tasks]
 [tool.poe.tasks.lint]

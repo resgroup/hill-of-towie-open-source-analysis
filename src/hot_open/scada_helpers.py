@@ -1,6 +1,7 @@
-"""Helpful things."""
+"""Helpers for working with 10min SCADA data."""
 
 import logging
+from collections.abc import Sequence
 from pathlib import Path
 from typing import NamedTuple
 from zipfile import ZipFile
@@ -43,16 +44,19 @@ hill_of_towie_fields = [
 def load_hot_10min_data(  # noqa:PLR0913 C901
     *,
     data_dir: Path,
-    wtg_numbers: list[int],
+    wtg_numbers: Sequence[int],
     start_dt: pd.Timestamp,
     end_dt_excl: pd.Timestamp,
     use_turbine_names: bool = True,  # if False serial numbers are used to identify turbines
-    rename_cols_using_aliases: bool = True,
-    custom_fields: list[WPSBackupFileField] | None = None,
+    rename_cols_using_aliases: bool = False,
+    custom_fields: Sequence[WPSBackupFileField] | None = None,
 ) -> pd.DataFrame:
     """Return a SCADA 10-min dataframe of for Hill of Towie."""
     if str(start_dt.tz) != "UTC" or str(end_dt_excl.tz) != "UTC":
         msg = "start_dt and end_dt_excl must be in UTC"
+        raise ValueError(msg)
+    if end_dt_excl <= start_dt:
+        msg = "end_dt_excl must be after start_dt"
         raise ValueError(msg)
 
     timebase_s = 600

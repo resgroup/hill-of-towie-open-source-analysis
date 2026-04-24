@@ -6,8 +6,8 @@ from pathlib import Path
 import pandas as pd
 from wind_up.caching import with_parquet_cache
 
-from .helpers import load_hot_10min_data, scada_df_to_wind_up_df
 from .paths import DATA_DIR, GLOBAL_CACHE_DIR
+from .scada_helpers import load_hot_10min_data, scada_df_to_wind_up_df
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,7 @@ def unpack_local_scada_data(
         wtg_numbers=list(range(1, 22)),
         start_dt=start_dt,
         end_dt_excl=end_dt_excl,
+        rename_cols_using_aliases=True,
     )
     shutdown_duration_df = pd.read_csv(data_dir / "Hill_of_Towie_ShutdownDuration.zip", index_col=0, parse_dates=[0])
     return scada_df_to_wind_up_df(scada_df, shutdown_duration_df=shutdown_duration_df)

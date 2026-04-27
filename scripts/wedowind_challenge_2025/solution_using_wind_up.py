@@ -30,7 +30,7 @@ from wind_up.windspeed_drift import check_windspeed_drift
 
 from hot_open import download_zenodo_data, setup_logger
 from hot_open.paths import ANALYSES_DIR
-from hot_open.unpack import unpack_local_meta_data, unpack_local_scada_data
+from hot_open.unpack import unpack_local_meta_data, unpack_local_scada_data_v1
 
 load_dotenv()
 
@@ -316,7 +316,7 @@ if __name__ == "__main__":
         ],
     )
     metadata_df = unpack_local_meta_data()
-    scada_df = unpack_local_scada_data(end_dt_excl=pd.Timestamp("2021-01-01", tz="UTC"))
+    scada_df = unpack_local_scada_data_v1(end_dt_excl=pd.Timestamp("2021-01-01", tz="UTC"))
     predicted_power_df = wind_up_features_for_kaggle(
         scada_df=scada_df, metadata_df=metadata_df, analysis_output_dir=ANALYSIS_DIR
     )

@@ -1,0 +1,5 @@
+turbine_type: SWT-2.3-82
+rated_power_kw: 2300
+rotor_diameter_m: 82
+normal_operation_pitch_range: [-10,40]
+normal_operation_genrpm_range: [500,1600]

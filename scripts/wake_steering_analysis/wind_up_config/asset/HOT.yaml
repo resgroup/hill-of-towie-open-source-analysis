@@ -1,0 +1,28 @@
+name: Hill of Towie
+wtgs:
+    - HOT_T01
+    - HOT_T02
+    - HOT_T03
+    - HOT_T04
+    - HOT_T05
+    - HOT_T06
+    - HOT_T07
+    - HOT_T08
+    - HOT_T09
+    - HOT_T10
+    - HOT_T11
+    - HOT_T12
+    - HOT_T13
+    - HOT_T14
+    - HOT_T15
+    - HOT_T16
+    - HOT_T17
+    - HOT_T18
+    - HOT_T19
+    - HOT_T20
+    - HOT_T21
+turbine_types:
+    - !include turbine_type/SWT_2p3_82.yaml
+masts_and_lidars:
+    - !include masts_and_lidars/ZX300_2428.yaml
+    - !include masts_and_lidars/ZTM_5060.yaml

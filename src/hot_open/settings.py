@@ -48,3 +48,18 @@ def get_filestore_dir() -> Path:
     location = Path(os.getenv("HOT_OPEN_FILESTORE_DIR", Path.home() / "Filestore"))
     location.mkdir(exist_ok=True, parents=True)
     return location
+
+
+def get_wind_up_output_dir(analysis_name: str = "hill-of-towie-open-source-analysis") -> Path:
+    """Get the location where wind-up output will be saved.
+
+    Defaulted to: `[user folder]/.windup/analyses/[analysis_name]`
+
+    But can customized by setting the "WINDUP_OUTPUT_DIR" enviroment variable, in
+    which case the location will be: `[WINDUP_OUTPUT_DIR]/[analysis_name]`
+    """
+    load_dotenv()
+    location = Path(os.getenv("WINDUP_OUTPUT_DIR", Path.home() / ".windup" / "analyses"))
+    analysis_directory = location / analysis_name
+    analysis_directory.mkdir(exist_ok=True, parents=True)
+    return analysis_directory

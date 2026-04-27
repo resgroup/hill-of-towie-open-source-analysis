@@ -30,7 +30,7 @@ from retry_requests import retry
 from hot_open.paths import ANALYSES_DIR
 
 LAT, LON = 57.50, -3.25  # Closest ERA5 node to Hill of Towie
-PERIOD = "2016-01-01", "2021-01-01"
+PERIOD = "2016-01-01", "2026-04-01"
 FIELDS = [
     "temperature_2m",
     "relative_humidity_2m",

@@ -38,6 +38,8 @@ hill_of_towie_fields = [
     WPSBackupFileField(
         alias="Time ready to operate in period", field_name="wtc_ScReToOp_timeon", table_name="tblSCTurFlag"
     ),
+    WPSBackupFileField(alias="Yaw operation counts", field_name="wtc_ScYawOpe_counts", table_name="tblSCTurFlag"),
+    WPSBackupFileField(alias="Turbine power reference", field_name="wtc_PowerRef_endvalue", table_name="tblSCTurbine"),
 ]
 
 

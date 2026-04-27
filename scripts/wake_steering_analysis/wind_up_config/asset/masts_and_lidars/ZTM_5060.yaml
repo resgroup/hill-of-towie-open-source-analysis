@@ -1,0 +1,5 @@
+name: ZTM_5060
+latitude: 57.5051330219 # T07 latitude
+longitude: -3.08585076164 # T07 longitude
+wind_speed_column: FD Horizontal Wind Speed (m/s) at Hub Height at 208m
+wind_direction_column: Met Compass Bearing (deg)

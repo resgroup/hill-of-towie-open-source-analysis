@@ -24,6 +24,40 @@ logger = logging.getLogger(__name__)
 SMOOTHING_WINDOW = 600 // 2
 
 
+def _shade_toggle(ax, *, steer_df, toggle_col):
+    ylow, yhigh = ax.get_ylim()
+    ax.fill_between(
+        steer_df.index, ylow, yhigh, where=steer_df[toggle_col] == 0, color="red", alpha=0.05, label="steering off"
+    )
+    ax.fill_between(
+        steer_df.index, ylow, yhigh, where=steer_df[toggle_col] == 1, color="green", alpha=0.05, label="steering on"
+    )
+    ax.set_ylim(ylow, yhigh)
+
+
+def _finalize_and_save(axes, *, plot_start, plot_end, title, plot_dir):
+    for ax in axes:
+        ax.grid(True)
+        ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left", frameon=True)
+    plt.xlim(plot_start, plot_end)
+    plt.xticks(rotation=90)
+    plt.xlabel("timestamp")
+    plt.suptitle(title)
+    plt.tight_layout()
+    plot_dir.mkdir(parents=True, exist_ok=True)
+    plt.savefig(plot_dir / f"{title.replace(':', '')}.png", bbox_inches="tight")
+    plt.close()
+    logger.info(f"finished {plot_start=} {title}")
+
+
+def _add_smoothed(df, *, col, new_col, min_periods=SMOOTHING_WINDOW // 2):
+    df[new_col] = df[col].rolling(window=SMOOTHING_WINDOW, min_periods=min_periods).mean()
+
+
+def _slice_period(df, *, start, end):
+    return df[(df.index >= start) & (df.index < end)]
+
+
 def plot_wake_steering_period(
     *,
     plot_ref_df,
@@ -43,6 +77,8 @@ def plot_wake_steering_period(
     plot_end,
     out_dir,
 ):
+    plot_dir = out_dir / f"{steering_name}-{dependent_turbine_name}-{ref_name}"
+
     fig, axes = plt.subplots(3, 1, figsize=(12, 12), sharex=True)
 
     axid = 0
@@ -70,28 +106,7 @@ def plot_wake_steering_period(
         alpha=0.5,
     )
     ax.plot(plot_dep_df.index, plot_dep_df[yawpos_col], label=f"{dependent_turbine_name} yaw position", color="C2")
-    # shade toggle off red and toggle on green
-    ylow = ax.get_ylim()[0]
-    yhigh = ax.get_ylim()[1]
-    ax.fill_between(
-        plot_steer_df.index,
-        ylow,
-        yhigh,
-        where=plot_steer_df[toggle_col] == 0,
-        color="red",
-        alpha=0.05,
-        label="steering off",
-    )
-    ax.fill_between(
-        plot_steer_df.index,
-        ylow,
-        yhigh,
-        where=plot_steer_df[toggle_col] == 1,
-        color="green",
-        alpha=0.05,
-        label="steering on",
-    )
-    ax.set_ylim(ylow, yhigh)
+    _shade_toggle(ax, steer_df=plot_steer_df, toggle_col=toggle_col)
     ax.set_ylabel("direction [degN]")
 
     axid += 1
@@ -99,73 +114,18 @@ def plot_wake_steering_period(
     ax.plot(plot_ref_df.index, plot_ref_df[smoothed_pw_col], label=f"{ref_name} smoothed power")
     ax.plot(plot_steer_df.index, plot_steer_df[smoothed_pw_col], label=f"{steering_name} smoothed power")
     ax.plot(plot_dep_df.index, plot_dep_df[smoothed_pw_col], label=f"{dependent_turbine_name} smoothed power")
-    ylow = ax.get_ylim()[0]
-    yhigh = ax.get_ylim()[1]
-    ax.fill_between(
-        plot_steer_df.index,
-        ylow,
-        yhigh,
-        where=plot_steer_df[toggle_col] == 0,
-        color="red",
-        alpha=0.05,
-        label="steering off",
-    )
-    ax.fill_between(
-        plot_steer_df.index,
-        ylow,
-        yhigh,
-        where=plot_steer_df[toggle_col] == 1,
-        color="green",
-        alpha=0.05,
-        label="steering on",
-    )
-    ax.set_ylim(ylow, yhigh)
+    _shade_toggle(ax, steer_df=plot_steer_df, toggle_col=toggle_col)
     ax.set_ylabel("power [kW]")
 
     axid += 1
     ax = axes[axid]
     ax.plot(plot_zxtm_df.index, plot_zxtm_df[smoothed_left_ws_col], label="ZXTM smoothed left ws")
     ax.plot(plot_zxtm_df.index, plot_zxtm_df[smoothed_right_ws_col], label="ZXTM smoothed right ws")
-    ylow = ax.get_ylim()[0]
-    yhigh = ax.get_ylim()[1]
-    ax.fill_between(
-        plot_steer_df.index,
-        ylow,
-        yhigh,
-        where=plot_steer_df[toggle_col] == 0,
-        color="red",
-        alpha=0.05,
-        label="steering off",
-    )
-    ax.fill_between(
-        plot_steer_df.index,
-        ylow,
-        yhigh,
-        where=plot_steer_df[toggle_col] == 1,
-        color="green",
-        alpha=0.05,
-        label="steering on",
-    )
-    ax.set_ylim(ylow, yhigh)
+    _shade_toggle(ax, steer_df=plot_steer_df, toggle_col=toggle_col)
     ax.set_ylabel("T07 wind speed [m/s]")
 
-    for ax in axes:
-        ax.grid(True)
-        ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left", frameon=True)
-
-    plt.xlim(plot_start, plot_end)
-    plt.xticks(rotation=90)
-    plt.xlabel("timestamp")
     title = f"{steering_name} steering for {dependent_turbine_name} {plot_start.strftime('%Y-%m-%d %H:%M')} to {plot_end.strftime('%H:%M')}"
-    plt.suptitle(title)
-
-    plt.tight_layout()
-    plot_dir = out_dir / f"{steering_name}-{dependent_turbine_name}-{ref_name}"
-    plot_dir.mkdir(parents=True, exist_ok=True)
-    plt.savefig(plot_dir / f"{title.replace(':', '')}.png", bbox_inches="tight")
-    plt.close()
-    msg = f"finished {plot_start=} {title}"
-    logger.info(msg)
+    _finalize_and_save(axes, plot_start=plot_start, plot_end=plot_end, title=title, plot_dir=plot_dir)
 
     # plot diffs
     fig, axes = plt.subplots(3, 1, figsize=(12, 12), sharex=True)
@@ -193,28 +153,7 @@ def plot_wake_steering_period(
         .mean(),
         label=f"{dependent_turbine_name} yaw error",
     )
-    # shade toggle off red and toggle on green
-    ylow = ax.get_ylim()[0]
-    yhigh = ax.get_ylim()[1]
-    ax.fill_between(
-        plot_steer_df.index,
-        ylow,
-        yhigh,
-        where=plot_steer_df[toggle_col] == 0,
-        color="red",
-        alpha=0.05,
-        label="steering off",
-    )
-    ax.fill_between(
-        plot_steer_df.index,
-        ylow,
-        yhigh,
-        where=plot_steer_df[toggle_col] == 1,
-        color="green",
-        alpha=0.05,
-        label="steering on",
-    )
-    ax.set_ylim(ylow, yhigh)
+    _shade_toggle(ax, steer_df=plot_steer_df, toggle_col=toggle_col)
     ax.set_ylabel("direction [degN]")
 
     axid += 1
@@ -242,27 +181,7 @@ def plot_wake_steering_period(
         color="grey",
         alpha=0.5,
     )
-    ylow = ax.get_ylim()[0]
-    yhigh = ax.get_ylim()[1]
-    ax.fill_between(
-        plot_steer_df.index,
-        ylow,
-        yhigh,
-        where=plot_steer_df[toggle_col] == 0,
-        color="red",
-        alpha=0.05,
-        label="steering off",
-    )
-    ax.fill_between(
-        plot_steer_df.index,
-        ylow,
-        yhigh,
-        where=plot_steer_df[toggle_col] == 1,
-        color="green",
-        alpha=0.05,
-        label="steering on",
-    )
-    ax.set_ylim(ylow, yhigh)
+    _shade_toggle(ax, steer_df=plot_steer_df, toggle_col=toggle_col)
     ax.set_ylabel("power diff [kW]")
 
     axid += 1
@@ -273,46 +192,11 @@ def plot_wake_steering_period(
         label="ZXTM smoothed right - left ws",
     )
     ax.plot(plot_steer_df.index, steering_yawerr / 5, label=f"{steering_name} yaw error / 5", color="grey", alpha=0.5)
-    ylow = ax.get_ylim()[0]
-    yhigh = ax.get_ylim()[1]
-    ax.fill_between(
-        plot_steer_df.index,
-        ylow,
-        yhigh,
-        where=plot_steer_df[toggle_col] == 0,
-        color="red",
-        alpha=0.05,
-        label="steering off",
-    )
-    ax.fill_between(
-        plot_steer_df.index,
-        ylow,
-        yhigh,
-        where=plot_steer_df[toggle_col] == 1,
-        color="green",
-        alpha=0.05,
-        label="steering on",
-    )
-    ax.set_ylim(ylow, yhigh)
+    _shade_toggle(ax, steer_df=plot_steer_df, toggle_col=toggle_col)
     ax.set_ylabel("wind speed diff [m/s]")
 
-    for ax in axes:
-        ax.grid(True)
-        ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left", frameon=True)
-
-    plt.xlim(plot_start, plot_end)
-    plt.xticks(rotation=90)
-    plt.xlabel("timestamp")
     title = f"{steering_name} steering for {dependent_turbine_name} {plot_start.strftime('%Y-%m-%d %H:%M')} to {plot_end.strftime('%H:%M')} diffs"
-    plt.suptitle(title)
-
-    plt.tight_layout()
-    plot_dir = out_dir / f"{steering_name}-{dependent_turbine_name}-{ref_name}"
-    plot_dir.mkdir(parents=True, exist_ok=True)
-    plt.savefig(plot_dir / f"{title.replace(':', '')}.png", bbox_inches="tight")
-    plt.close()
-    msg = f"finished {plot_start=} {title}"
-    logger.info(msg)
+    _finalize_and_save(axes, plot_start=plot_start, plot_end=plot_end, title=title, plot_dir=plot_dir)
 
 
 if __name__ == "__main__":
@@ -374,25 +258,15 @@ if __name__ == "__main__":
     left_ws_col = "Left LOS Speed (m/s) at Rotor Segment Height 100.0m"
     right_ws_col = "Right LOS Speed (m/s) at Rotor Segment Height 100.0m"
 
-    # add smoothed power
     pw_col = WTG_FL_ACT_POWER_COL
     smoothed_pw_col = "smoothed_pw"
-    ref_df[smoothed_pw_col] = ref_df[pw_col].rolling(window=SMOOTHING_WINDOW, min_periods=SMOOTHING_WINDOW // 2).mean()
-    steering_df[smoothed_pw_col] = (
-        steering_df[pw_col].rolling(window=SMOOTHING_WINDOW, min_periods=SMOOTHING_WINDOW // 2).mean()
-    )
-    dependent_df[smoothed_pw_col] = (
-        dependent_df[pw_col].rolling(window=SMOOTHING_WINDOW, min_periods=SMOOTHING_WINDOW // 2).mean()
-    )
+    for df in (ref_df, steering_df, dependent_df):
+        _add_smoothed(df, col=pw_col, new_col=smoothed_pw_col)
 
     smoothed_left_ws_col = "smoothed_left_ws_col"
     smoothed_right_ws_col = "smoothed_right_ws_col"
-    zxtm_fl_df[smoothed_left_ws_col] = (
-        zxtm_fl_df[left_ws_col].rolling(window=SMOOTHING_WINDOW, min_periods=SMOOTHING_WINDOW // 5).mean()
-    )
-    zxtm_fl_df[smoothed_right_ws_col] = (
-        zxtm_fl_df[right_ws_col].rolling(window=SMOOTHING_WINDOW, min_periods=SMOOTHING_WINDOW // 5).mean()
-    )
+    _add_smoothed(zxtm_fl_df, col=left_ws_col, new_col=smoothed_left_ws_col, min_periods=SMOOTHING_WINDOW // 5)
+    _add_smoothed(zxtm_fl_df, col=right_ws_col, new_col=smoothed_right_ws_col, min_periods=SMOOTHING_WINDOW // 5)
 
     toggle_switch = steering_df[toggle_col].diff().fillna(0) != 0
     first_toggle_off = steering_df.index[toggle_switch & (steering_df[toggle_col] == 0)][0]
@@ -410,10 +284,10 @@ if __name__ == "__main__":
     while plot_start < (steering_df.index.max() - plot_duration):
         plot_end = plot_start + plot_duration
 
-        plot_ref_df = ref_df[(ref_df.index >= plot_start) & (ref_df.index < plot_end)]
-        plot_steer_df = steering_df[(steering_df.index >= plot_start) & (steering_df.index < plot_end)]
-        plot_dep_df = dependent_df[(dependent_df.index >= plot_start) & (dependent_df.index < plot_end)]
-        plot_zxtm_df = zxtm_fl_df[(zxtm_fl_df.index >= plot_start) & (zxtm_fl_df.index < plot_end)]
+        plot_ref_df = _slice_period(ref_df, start=plot_start, end=plot_end)
+        plot_steer_df = _slice_period(steering_df, start=plot_start, end=plot_end)
+        plot_dep_df = _slice_period(dependent_df, start=plot_start, end=plot_end)
+        plot_zxtm_df = _slice_period(zxtm_fl_df, start=plot_start, end=plot_end)
 
         # if there is no interesting steering, skip
         if ((plot_steer_df[wake_steer_col].abs() > 10) & (plot_steer_df[toggle_col] == 1)).sum() < (1800 / 3):

@@ -12,7 +12,8 @@ from hot_open.scada_helpers import load_hot_10min_data
 from hot_open.settings import get_out_dir
 from scripts.logger import setup_logger
 
-LOCAL_TEMPORARY_DIR = Path.home() / "temp" / "hill-of-towie-open-sourcing-2026" / "draft datapack"
+
+LOCAL_TEMPORARY_DIR = Path(r"F:\draft v2 datapack")
 logger = logging.getLogger(__name__)
 
 # WTG 10-minute SCADA columns
@@ -24,6 +25,7 @@ WTG_10MIN_NACEL_POS_COL = "wtc_NacelPos_mean"
 WTG_FL_ACT_POWER_COL = "ActPower_Value"
 WTG_FL_WIND_SPEED_COL = "AcWindSp_AcWindSp"
 WTG_FL_YAW_POS_COL = "YawPos_Value"
+WTG_FL_NORTHED_YAW_POS_COL = "northed YawPos_Value"
 
 # ZX300 LiDAR 10-minute columns
 ZX300_WS_COL = "Horizontal Wind Speed (m/s) at 58m"
@@ -91,9 +93,9 @@ def plot_wtg_10min_and_fastlog(
     )
     axes[2].plot(
         wtg_fl_df.index,
-        wtg_fl_df[wtg][WTG_FL_YAW_POS_COL],
+        wtg_fl_df[wtg][WTG_FL_NORTHED_YAW_POS_COL],
         drawstyle="steps-post",
-        label=WTG_FL_YAW_POS_COL,
+        label=WTG_FL_NORTHED_YAW_POS_COL,
         linestyle="--",
         linewidth=0.8,
         alpha=0.7,
@@ -111,6 +113,67 @@ def plot_wtg_10min_and_fastlog(
     fig.suptitle(f"{wtg}\n{date_range_str}")
 
     plot_path = out_dir / f"10min_vs_fastlog_{wtg}.png"
+    fig.savefig(plot_path, dpi=150, bbox_inches="tight")
+    logger.info("Saved plot to %s", plot_path)
+    plt.close(fig)
+
+
+def _plot_dynamic_yaw_control_tags(
+    *,
+    wtg: str,
+    wtg_fl_df: pd.DataFrame,
+    toggle_col: str,
+    wake_steer_col: str,
+    wd_col: str,
+    yawpos_col: str,
+    yawtarget_col: str,
+    start_dt: pd.Timestamp,
+    end_dt_excl: pd.Timestamp,
+    out_dir: Path,
+) -> None:
+    fig, axes = plt.subplots(3, 1, figsize=(14, 10), sharex=True)
+    fl = wtg_fl_df[wtg]
+
+    ax0 = axes[0]
+    ax0_twin = ax0.twinx()
+    ax0.plot(fl.index, fl[toggle_col], drawstyle="steps-post", label=toggle_col, linewidth=1.5, color="tab:blue")
+    ax0_twin.plot(
+        fl.index, fl[wake_steer_col], drawstyle="steps-post", label=wake_steer_col, linewidth=1.5, color="tab:orange"
+    )
+    ax0.set_ylabel("Toggle State")
+    ax0_twin.set_ylabel("Wake Steering Offset [deg]")
+    ax0.legend(loc="upper left", bbox_to_anchor=(1.08, 1), fontsize="small")
+    ax0_twin.legend(loc="upper left", bbox_to_anchor=(1.08, 0.85), fontsize="small")
+
+    axes[1].plot(fl.index, fl[wd_col], drawstyle="steps-post", label=wd_col, linewidth=1.5)
+    axes[1].plot(
+        fl.index, fl[yawpos_col], drawstyle="steps-post", label=yawpos_col, linestyle="--", linewidth=0.8, alpha=0.7
+    )
+    axes[1].set_ylabel("Direction [deg]")
+
+    axes[2].plot(fl.index, fl[yawtarget_col], drawstyle="steps-post", label=yawtarget_col, linewidth=1.5)
+    axes[2].plot(
+        fl.index,
+        fl[WTG_FL_YAW_POS_COL],
+        drawstyle="steps-post",
+        label=WTG_FL_YAW_POS_COL,
+        linestyle="--",
+        linewidth=0.8,
+        alpha=0.7,
+    )
+    axes[2].set_ylabel("Yaw [deg]")
+    axes[2].set_xlabel("timestamp")
+    axes[2].tick_params(axis="x", rotation=90)
+
+    for ax in axes[1:]:
+        ax.legend(loc="upper left", bbox_to_anchor=(1, 1), fontsize="small")
+    for ax in axes:
+        ax.grid(visible=True, alpha=0.3)
+
+    date_range_str = f"{start_dt.strftime('%Y-%m-%d %H:%M')} to {end_dt_excl.strftime('%Y-%m-%d %H:%M')} UTC"
+    fig.suptitle(f"{wtg} Dynamic Yaw Control Tags\n{date_range_str}")
+
+    plot_path = out_dir / f"dynamic_yaw_control_tags_{wtg}.png"
     fig.savefig(plot_path, dpi=150, bbox_inches="tight")
     logger.info("Saved plot to %s", plot_path)
     plt.close(fig)
@@ -298,7 +361,7 @@ if __name__ == "__main__":
 
     wtg_numbers = [3, 7]
     start_dt = pd.Timestamp("2026-02-19 22:30", tz="UTC")
-    end_dt_excl = pd.Timestamp("2026-02-20 08:00", tz="UTC")
+    end_dt_excl = pd.Timestamp("2026-02-20 07:00", tz="UTC")
 
     # Load data for T3, T7 and both LiDARS from 2026-02-19 22:30 till 2026-02-19 08:00
     wtg_10min_df = load_hot_10min_data(
@@ -313,21 +376,42 @@ if __name__ == "__main__":
                 wtg_10min_df[(wtg, WTG_10MIN_NACEL_POS_COL)] + correction
             ) % 360
 
+    dy_toggle_col = "computed_driver_post_processed_toggle_state"
+    dy_wake_steer_col = "computed_core_post_processed_core_wake_steering_offset_degrees"
+    dy_wd_col = "computed_core_post_processed_consensus_wind_direction_true_degrees"
+    dy_northed_yawpos_col = "computed_driver_pre_processed_yaw_direction_true_degrees"
+    dy_yawtarget_col = "computed_driver_post_processed_yaw_target_degrees"
+
     wtg_fl_df = load_hot_fl_data(
         data_dir=LOCAL_TEMPORARY_DIR / "turbine_fastlog" / "Filestore",
         wtg_numbers=wtg_numbers,
         start_dt=start_dt,
         end_dt_excl=end_dt_excl,
+        extra_tags=[dy_toggle_col, dy_northed_yawpos_col, dy_yawtarget_col, dy_wd_col, dy_wake_steer_col],
     )
+
     for wtg, correction in NORTH_CORRECTIONS.items():
         if wtg in wtg_fl_df.columns.get_level_values(0):
-            wtg_fl_df[(wtg, WTG_FL_YAW_POS_COL)] = (wtg_fl_df[(wtg, WTG_FL_YAW_POS_COL)] + correction) % 360
+            wtg_fl_df[(wtg, WTG_FL_NORTHED_YAW_POS_COL)] = (wtg_fl_df[(wtg, WTG_FL_YAW_POS_COL)] + correction) % 360
 
     for wtg_number in wtg_numbers:
+        wtg = f"T{wtg_number:02d}"
         plot_wtg_10min_and_fastlog(
-            wtg=f"T{wtg_number:02d}",
+            wtg=wtg,
             wtg_10min_df=wtg_10min_df,
             wtg_fl_df=wtg_fl_df,
+            start_dt=start_dt,
+            end_dt_excl=end_dt_excl,
+            out_dir=out_dir,
+        )
+        _plot_dynamic_yaw_control_tags(
+            wtg=wtg,
+            wtg_fl_df=wtg_fl_df,
+            toggle_col=dy_toggle_col,
+            wake_steer_col=dy_wake_steer_col,
+            wd_col=dy_wd_col,
+            yawpos_col=dy_northed_yawpos_col,
+            yawtarget_col=dy_yawtarget_col,
             start_dt=start_dt,
             end_dt_excl=end_dt_excl,
             out_dir=out_dir,

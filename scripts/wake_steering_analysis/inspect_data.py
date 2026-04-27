@@ -12,7 +12,6 @@ from hot_open.scada_helpers import load_hot_10min_data
 from hot_open.settings import get_out_dir
 from scripts.logger import setup_logger
 
-
 LOCAL_TEMPORARY_DIR = Path(r"F:\draft v2 datapack")
 logger = logging.getLogger(__name__)
 

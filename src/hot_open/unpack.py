@@ -6,7 +6,6 @@ from pathlib import Path
 import pandas as pd
 from wind_up.caching import with_parquet_cache
 
-
 from .paths import DATA_DIR
 from .scada_helpers import load_hot_10min_data, scada_df_to_wind_up_df
 from .settings import get_cache_dir
@@ -54,9 +53,15 @@ def unpack_local_scada_data_v2(
 
 
 @with_parquet_cache(parquet_cache_dir / "metadata_df.parquet")
-def unpack_local_meta_data(data_dir: Path = DATA_DIR, scada_index_name:str="TimeStamp_StartFormat") -> pd.DataFrame:
+def unpack_local_meta_data(data_dir: Path = DATA_DIR, scada_index_name: str = "TimeStamp_StartFormat") -> pd.DataFrame:
     """Unpack Hill of Towie open source turbine metadata."""
-    timestamp_format = "Start" if scada_index_name=="TimeStamp_StartFormat" else "End" if scada_index_name=="dtTimeStamp" else "Unknown"
+    timestamp_format = (
+        "Start"
+        if scada_index_name == "TimeStamp_StartFormat"
+        else "End"
+        if scada_index_name == "dtTimeStamp"
+        else "Unknown"
+    )
     return (
         pd.read_csv(data_dir / "Hill_of_Towie_turbine_metadata.csv")
         .loc[:, ["Turbine Name", "Latitude", "Longitude"]]

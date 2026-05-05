@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 WTG_10MIN_ACT_POWER_COL = "wtc_ActPower_mean"
 WTG_10MIN_WIND_SPEED_COL = "wtc_AcWindSp_mean"
 WTG_10MIN_NACEL_POS_COL = "wtc_NacelPos_mean"
+WTG_10MIN_YAW_OPE_COUNTS_COL = "wtc_ScYawOpe_counts"
 
 # WTG fastlog columns
 WTG_FL_ACT_POWER_COL = "ActPower_Value"
@@ -115,6 +116,61 @@ def plot_wtg_10min_and_fastlog(
     fig.savefig(plot_path, dpi=150, bbox_inches="tight")
     logger.info("Saved plot to %s", plot_path)
     plt.close(fig)
+
+
+def plot_yaw_ope_counts_check(
+    *,
+    wtg: str,
+    wtg_10min_df: pd.DataFrame,
+    wtg_fl_df: pd.DataFrame,
+    out_dir: Path,
+) -> None:
+    subdir = out_dir / "yaw_ope_counts"
+    subdir.mkdir(exist_ok=True)
+
+    hours = pd.DatetimeIndex(wtg_10min_df.index).floor("h").unique()
+    for hour_start in hours:
+        hour_end = hour_start + pd.Timedelta(hours=1)
+        df_10min = wtg_10min_df[(wtg_10min_df.index >= hour_start) & (wtg_10min_df.index < hour_end)]
+        df_fl = wtg_fl_df[(wtg_fl_df.index >= hour_start) & (wtg_fl_df.index < hour_end)]
+        if df_10min.empty or df_fl.empty:
+            continue
+
+        fig, axes = plt.subplots(2, 1, figsize=(14, 7), sharex=True)
+
+        axes[0].plot(
+            df_fl.index,
+            df_fl[wtg][WTG_FL_NORTHED_YAW_POS_COL],
+            drawstyle="steps-post",
+            label=WTG_FL_NORTHED_YAW_POS_COL,
+            linewidth=0.8,
+        )
+        for t in df_10min.index:
+            axes[0].axvline(t, color="gray", alpha=0.25, linewidth=0.8, linestyle="--")
+        axes[0].set_ylabel("Northed Yaw Pos [deg]")
+        axes[0].legend(loc="upper left", bbox_to_anchor=(1, 1), fontsize="small")
+        axes[0].grid(visible=True, alpha=0.3)
+
+        axes[1].plot(
+            df_10min.index,
+            df_10min[wtg][WTG_10MIN_YAW_OPE_COUNTS_COL],
+            drawstyle="steps-post",
+            label=WTG_10MIN_YAW_OPE_COUNTS_COL,
+            linewidth=1.5,
+        )
+        axes[1].set_ylabel("Yaw Op Count")
+        axes[1].set_xlabel("timestamp")
+        axes[1].tick_params(axis="x", rotation=90)
+        axes[1].legend(loc="upper left", bbox_to_anchor=(1, 1), fontsize="small")
+        axes[1].grid(visible=True, alpha=0.3)
+
+        hour_str = hour_start.strftime("%Y-%m-%d_%H")
+        fig.suptitle(f"{wtg} Yaw Ope Counts Check\n{hour_str} UTC")
+
+        plot_path = subdir / f"yaw_ope_counts_{wtg}_{hour_str}UTC.png"
+        fig.savefig(plot_path, dpi=150, bbox_inches="tight")
+        logger.info("Saved plot to %s", plot_path)
+        plt.close(fig)
 
 
 def _plot_dynamic_yaw_control_tags(
@@ -415,6 +471,12 @@ if __name__ == "__main__":
             end_dt_excl=end_dt_excl,
             out_dir=out_dir,
         )
+        plot_yaw_ope_counts_check(
+            wtg=wtg,
+            wtg_10min_df=wtg_10min_df,
+            wtg_fl_df=wtg_fl_df,
+            out_dir=out_dir,
+        )
 
     zx300_10min_df = load_zx_lidar_10min_data(
         data_dir=LOCAL_TEMPORARY_DIR / "lidar_data",
@@ -435,7 +497,7 @@ if __name__ == "__main__":
 
     # load reanalysis data
     era5_df = pd.read_parquet(
-        Path(__name__).parent / "reanalysis_data" / "ERA5T_57.50N_-3.25E_100m_1hr_20260331.parquet"
+        Path(__file__).parent / "reanalysis_data" / "ERA5T_57.50N_-3.25E_100m_1hr_20260331.parquet"
     )
     era5_df = era5_df[
         (era5_df.index >= (start_dt - pd.Timedelta(minutes=50)))

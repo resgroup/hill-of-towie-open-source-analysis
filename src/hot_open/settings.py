@@ -59,7 +59,7 @@ def get_wind_up_output_dir(analysis_name: str = "hill-of-towie-open-source-analy
     which case the location will be: `[WINDUP_OUTPUT_DIR]/[analysis_name]`
     """
     load_dotenv()
-    location = Path(os.getenv("WINDUP_OUTPUT_DIR", Path.home() / ".windup" / "analyses"))
+    location = Path(os.getenv("WINDUP_OUTPUT_DIR", Path.home() / "temp" / REPO_NAME / "windup_output"))
     analysis_directory = location / analysis_name
     analysis_directory.mkdir(exist_ok=True, parents=True)
     return analysis_directory

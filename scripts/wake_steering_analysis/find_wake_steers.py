@@ -21,7 +21,7 @@ from scripts.wake_steering_analysis.inspect_data import (
 )
 
 logger = logging.getLogger(__name__)
-SMOOTHING_WINDOW = 600 // 2
+SMOOTHING_WINDOW = 600
 
 
 def _shade_toggle(ax, *, steer_df, toggle_col):
@@ -173,6 +173,13 @@ def plot_wake_steering_period(
         - (plot_dep_df[smoothed_pw_col] - plot_ref_df[smoothed_pw_col]).mean(),
         label=f"{dependent_turbine_name} - {ref_name} smoothed power",
         color="C2",
+    )
+    plot_ser = plot_steer_df[smoothed_pw_col] + plot_dep_df[smoothed_pw_col] - 2 * plot_ref_df[smoothed_pw_col]
+    ax.plot(
+        plot_dep_df.index,
+        plot_ser - plot_ser.mean(),
+        label=f"{steering_name}+{dependent_turbine_name} - 2*{ref_name} smoothed power",
+        color="black",
     )
     ax.plot(
         plot_steer_df.index,

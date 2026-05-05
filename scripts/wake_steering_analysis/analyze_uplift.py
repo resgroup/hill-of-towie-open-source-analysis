@@ -1,9 +1,10 @@
 import logging
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from wind_up.combine_results import combine_results
 from wind_up.constants import TIMESTAMP_COL
 from wind_up.interface import AssessmentInputs
 from wind_up.main_analysis import run_wind_up_analysis
@@ -202,63 +203,89 @@ if __name__ == "__main__":
     msg = f"log file is at {log_path}"
     logger.info(msg)
 
-    scada_df = unpack_local_scada_data_v2(data_dir=LOCAL_TEMPORARY_DIR)
-    metadata_df = unpack_local_meta_data(data_dir=LOCAL_TEMPORARY_DIR, scada_index_name=scada_df.index.name)
-    hot_best_era5 = "ERA5T_57.50N_-3.25E_100m_1hr"
-    reanalysis_datasets = [
-        ReanalysisDataset(
-            id=hot_best_era5,
-            data=pd.read_parquet(Path(__name__).parent / "reanalysis_data" / f"{hot_best_era5}_20260331.parquet"),
-        )
-    ]
-    toggle_df = hot_dy_toggle_df(scada_df)
-
-    # analysis is performed by wake steer
-    wakesteer_table = pd.read_csv(Path(__file__).parent / "controller_config" / "wake-steering-lookup.csv")
-    wake_steers = _extract_hot_wake_steers_from_table(wakesteer_table)
-    config_file_name = "HoT_dynamic_yaw.yaml"
+    # whole farm analysis
+    config_file_name = "HOT_dynamic_yaw.yaml"
     save_plots = True
     cfg = WindUpConfig.from_yaml(CONFIG_DIR / config_file_name)
     cfg.out_dir = get_wind_up_output_dir(cfg.assessment_name)
     plot_cfg = PlotConfig(show_plots=False, save_plots=save_plots, plots_dir=cfg.out_dir / "plots")
     cfg.bootstrap_runs_override = 400 // 4  # TODO(AlexClerc): remove
 
-    all_wakesteer_results = []
-    pd.DataFrame([asdict(x) for x in wake_steers]).to_csv(cfg.out_dir / "wake_steer_meta.csv", index=False)
-
-    for wakesteer in wake_steers:
-        msg = f"{wakesteer.upwind_wtg} -> {wakesteer.downwind_wtg}"
-        logger.info(msg)
-        wakesteer_cfg = cfg.model_copy()
-        wakesteer_cfg.test_wtgs = [
-            x.model_copy() for x in cfg.asset.wtgs if x.name in [wakesteer.upwind_wtg, wakesteer.downwind_wtg]
-        ]
-        direction_margin = 0  # TODO need to determine this
-        wakesteer_cfg.ref_wd_filter = [
-            (wakesteer.first_wdir - direction_margin) % 360,
-            (wakesteer.last_wdir + direction_margin) % 360,
-        ]
-        assessment_inputs = AssessmentInputs.from_cfg(
-            cfg=wakesteer_cfg,
-            plot_cfg=plot_cfg,
-            scada_df=scada_df,
-            metadata_df=metadata_df,
-            toggle_df=toggle_df,
-            reanalysis_datasets=reanalysis_datasets,
-            cache_dir=get_cache_dir() / cfg.assessment_name,
-            mast_or_lidar_datasets=_hot_dy_lidar_datasets(
-                data_dir=LOCAL_TEMPORARY_DIR / "lidar_data",
-                start_dt=scada_df.index.min(),
-                end_dt_excl=scada_df.index.max(),
-            ),
+    scada_df = unpack_local_scada_data_v2(data_dir=LOCAL_TEMPORARY_DIR)
+    metadata_df = unpack_local_meta_data(data_dir=LOCAL_TEMPORARY_DIR, scada_index_name=scada_df.index.name)
+    hot_best_era5 = "ERA5T_57.50N_-3.25E_100m_1hr"
+    reanalysis_datasets = [
+        ReanalysisDataset(
+            id=hot_best_era5,
+            data=pd.read_parquet(Path(__file__).parent / "reanalysis_data" / f"{hot_best_era5}_20260331.parquet"),
         )
+    ]
+    toggle_df = hot_dy_toggle_df(scada_df)
 
-        try:
-            results_per_test_ref_df = run_wind_up_analysis(inputs=assessment_inputs)
-        except Exception as e:  # noqa BLE001
-            print(f"skipping due to exception {e}")
-            continue
-        if "unc_one_sigma_frc" not in results_per_test_ref_df.columns:
-            continue
-        if len(results_per_test_ref_df.dropna(subset=["unc_one_sigma_frc"])) < 2:  # noqa PLR2004
-            continue
+    assessment_inputs = AssessmentInputs.from_cfg(
+        cfg=cfg,
+        plot_cfg=plot_cfg,
+        scada_df=scada_df,
+        metadata_df=metadata_df,
+        toggle_df=toggle_df,
+        reanalysis_datasets=reanalysis_datasets,
+        cache_dir=get_cache_dir() / "windup_cache" / cfg.assessment_name,
+        mast_or_lidar_datasets=_hot_dy_lidar_datasets(
+            data_dir=LOCAL_TEMPORARY_DIR / "lidar_data",
+            start_dt=scada_df.index.min(),
+            end_dt_excl=scada_df.index.max(),
+        ),
+    )
+    results_per_test_ref_df = run_wind_up_analysis(assessment_inputs)
+    combined_results_df = combine_results(results_per_test_ref_df, plot_config=plot_cfg, auto_choose_refs=True)
+    combined_results_df.to_csv(
+        cfg.out_dir / f"{cfg.assessment_name}_combined_results_{pd.Timestamp.utcnow().strftime('%Y%m%d_%H%M%S')}.csv",
+    )
+
+    # TODO compare test_YawOperationCounts pre and post
+    # TODO visualize results eg as bubble plot
+
+    # TODO analysis of wake steer data only and the converse
+    # wakesteer_table = pd.read_csv(Path(__file__).parent / "controller_config" / "wake-steering-lookup.csv")
+    # wake_steers = _extract_hot_wake_steers_from_table(wakesteer_table)
+    #
+    # all_wakesteer_results = []
+    # pd.DataFrame([asdict(x) for x in wake_steers]).to_csv(cfg.out_dir / "wake_steer_meta.csv", index=False)
+    #
+    # for wakesteer in wake_steers:
+    #     msg = f"{wakesteer.upwind_wtg} -> {wakesteer.downwind_wtg}"
+    #     logger.info(msg)
+    #     wakesteer_cfg = cfg.model_copy()
+    #     wakesteer_cfg.test_wtgs = [
+    #         x.model_copy() for x in cfg.asset.wtgs if x.name in [wakesteer.upwind_wtg, wakesteer.downwind_wtg]
+    #     ]
+    #     wakesteer_cfg.filter_all_test_wtgs_together=True# critical for wake steering analysis
+    #     direction_margin = 0  # TODO need to determine this; probably easiest way is to get wake steer command in as a 10min signal
+    #     wakesteer_cfg.ref_wd_filter = [
+    #         (wakesteer.first_wdir - direction_margin) % 360,
+    #         (wakesteer.last_wdir + direction_margin) % 360,
+    #     ]
+    #     assessment_inputs = AssessmentInputs.from_cfg(
+    #         cfg=wakesteer_cfg,
+    #         plot_cfg=plot_cfg,
+    #         scada_df=scada_df,
+    #         metadata_df=metadata_df,
+    #         toggle_df=toggle_df,
+    #         reanalysis_datasets=reanalysis_datasets,
+    #         cache_dir=get_cache_dir() / cfg.assessment_name,
+    #         mast_or_lidar_datasets=_hot_dy_lidar_datasets(
+    #             data_dir=LOCAL_TEMPORARY_DIR / "lidar_data",
+    #             start_dt=scada_df.index.min(),
+    #             end_dt_excl=scada_df.index.max(),
+    #         ),
+    #     )
+    #
+    #     try:
+    #         results_per_test_ref_df = run_wind_up_analysis(inputs=assessment_inputs)
+    #     except Exception as e:
+    #         print(f"skipping due to exception {e}")
+    #         continue
+    #     if "unc_one_sigma_frc" not in results_per_test_ref_df.columns:
+    #         continue
+    #     if len(results_per_test_ref_df.dropna(subset=["unc_one_sigma_frc"])) < 2:
+    #         continue

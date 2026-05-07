@@ -48,7 +48,7 @@ if __name__ == "__main__":
             pp_df_dir / f"{downwind_wtg_name}_{ref_name}_post_df.parquet",
         ]
         dfs = [pd.read_parquet(p) for p in paths if p.exists()]
-        if len(dfs)==0:
+        if len(dfs) == 0:
             continue
         combined_index = reduce(lambda a, b: a.union(b), (df.index for df in dfs))
         filter_data = scada_df.index.isin(combined_index) & scada_df["TurbineName"].isin(

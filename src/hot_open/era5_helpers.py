@@ -44,7 +44,7 @@ _era5_cache_dir.mkdir(parents=True, exist_ok=True)
 
 def _build_era5_df(response: object, fields: list[str]) -> pd.DataFrame:
     """Build a tidy hourly DataFrame from a single Open-Meteo response object."""
-    hourly_data = response.Hourly()  # type: ignore[attr-defined]
+    hourly_data = response.Hourly()  # type: ignore[attr-defined]  # openmeteo_requests has no type stubs
     return pd.DataFrame(
         {
             "timestamp": pd.date_range(
@@ -68,8 +68,9 @@ def get_era5_hourly_df(
 ) -> pd.DataFrame:
     """Fetch hourly ERA5 data from Open-Meteo and return as a DataFrame.
 
-    Results are parquet-cached at the default HOT lat/lon. If parameters differ
-    from the defaults, delete the cache file to force a fresh fetch.
+    Warning: the cache path is fixed regardless of parameters. Calling with
+    non-default arguments returns the cached default result if the cache file
+    already exists. Delete the cache file to force a fresh fetch with new params.
     """
     openmeteo = openmeteo_requests.Client(
         session=retry(

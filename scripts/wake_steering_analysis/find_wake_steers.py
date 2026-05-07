@@ -320,5 +320,5 @@ if __name__ == "__main__":
             out_dir=out_dir,
         )
         plot_start += plot_timedelta
-        msg = f"now {plot_start=}"
-        logger.debug(msg)
+        msg = f"finished {plot_start=}"
+        logger.info(msg)

@@ -12,10 +12,15 @@ from wind_up.models import PlotConfig, WindUpConfig
 from wind_up.reanalysis_data import ReanalysisDataset
 
 from hot_open.settings import get_cache_dir, get_out_dir, get_wind_up_output_dir
-from hot_open.unpack import unpack_local_meta_data, unpack_local_scada_data_v2
+from hot_open.unpack import unpack_local_meta_data
 from scripts.logger import setup_logger
 from scripts.wake_steering_analysis.inspect_data import LOCAL_TEMPORARY_DIR
-from scripts.wake_steering_analysis.overall_uplift import CONFIG_DIR, _hot_dy_lidar_datasets, hot_dy_toggle_df
+from scripts.wake_steering_analysis.overall_uplift import (
+    CONFIG_DIR,
+    _hot_dy_lidar_datasets,
+    hot_dy_scada_df,
+    hot_dy_toggle_df,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +113,7 @@ if __name__ == "__main__":
     plot_cfg = PlotConfig(show_plots=False, save_plots=save_plots, plots_dir=cfg.out_dir / "plots")
     cfg.bootstrap_runs_override = 400 // 4  # TODO(AlexClerc): remove
 
-    scada_df = unpack_local_scada_data_v2(data_dir=LOCAL_TEMPORARY_DIR)
+    scada_df = hot_dy_scada_df()
     metadata_df = unpack_local_meta_data(data_dir=LOCAL_TEMPORARY_DIR, scada_index_name=scada_df.index.name)
     hot_best_era5 = "ERA5T_57.50N_-3.25E_100m_1hr"
     reanalysis_datasets = [
@@ -139,7 +144,7 @@ if __name__ == "__main__":
         else:
             wakesteer_cfg.non_wtg_ref_names = []
             wakesteer_cfg.ref_wtgs = [x.model_copy() for x in cfg.asset.wtgs if x.name == ref_name]
-        direction_margin = 0  # TODO need to determine this
+        direction_margin = 0  # 0 looks great for LiDAR. Could be wider for T1 but still looks OK.
         wakesteer_cfg.ref_wd_filter = [
             (wakesteer.first_wdir - direction_margin) % 360,
             (wakesteer.last_wdir + direction_margin) % 360,

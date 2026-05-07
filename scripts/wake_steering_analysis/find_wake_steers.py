@@ -47,7 +47,7 @@ def _finalize_and_save(axes, *, plot_start, plot_end, title, plot_dir):
     plot_dir.mkdir(parents=True, exist_ok=True)
     plt.savefig(plot_dir / f"{title.replace(':', '')}.png", bbox_inches="tight")
     plt.close()
-    logger.info(f"finished {plot_start=} {title}")
+    logger.info("finished %s %s", plot_start, title)
 
 
 def _add_smoothed(df, *, col, new_col, min_periods=SMOOTHING_WINDOW // 2):
@@ -224,8 +224,8 @@ if __name__ == "__main__":
     )
 
     wtg_numbers = [1, 3, 7]
-    start_dt = pd.Timestamp("2026-02-19 22:30", tz="UTC")
-    end_dt_excl = pd.Timestamp("2026-02-20 08:00", tz="UTC")
+    start_dt = pd.Timestamp("2026-01-07 13:00", tz="UTC")
+    end_dt_excl = pd.Timestamp("2026-05-01 08:00", tz="UTC")
 
     toggle_col = "computed_driver_post_processed_toggle_state"
     yawpos_col = "computed_driver_pre_processed_yaw_direction_true_degrees"
@@ -280,7 +280,7 @@ if __name__ == "__main__":
     minutes_to_include_before = 10
     minutes_to_include_after = 10
     toggle_period_minutes = 50 * 2
-    toggle_periods_in_one_plot = 4
+    toggle_periods_in_one_plot = 3
     plot_start = first_toggle_off - dt.timedelta(minutes=minutes_to_include_before)
     plot_duration = (
         dt.timedelta(minutes=minutes_to_include_before)

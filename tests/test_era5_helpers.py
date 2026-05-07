@@ -28,22 +28,22 @@ class TestBuildEra5Df:
     def test_columns_match_fields(self) -> None:
         fields = ["wind_speed_10m", "wind_direction_10m"]
         df = _build_era5_df(_make_mock_response(), fields)
-        assert list(df.columns) == ["timestamp", "wind_speed_10m", "wind_direction_10m"]
+        assert list(df.columns) == ["wind_speed_10m", "wind_direction_10m"]
 
     def test_row_count_matches_hours(self) -> None:
         fields = ["wind_speed_10m"]
         df = _build_era5_df(_make_mock_response(n_hours=5), fields)
         assert len(df) == 5
 
-    def test_timestamp_is_utc(self) -> None:
+    def test_index_is_utc_datetimeindex(self) -> None:
         fields = ["wind_speed_10m"]
         df = _build_era5_df(_make_mock_response(), fields)
-        assert df["timestamp"].dtype == "datetime64[ns, UTC]"
+        assert df.index.dtype == "datetime64[ns, UTC]"
 
     def test_timestamp_starts_at_expected_value(self) -> None:
         fields = ["wind_speed_10m"]
         df = _build_era5_df(_make_mock_response(), fields)
-        assert df["timestamp"].iloc[0] == pd.Timestamp("2024-01-01", tz="UTC")
+        assert df.index[0] == pd.Timestamp("2024-01-01", tz="UTC")
 
     def test_field_values_are_propagated(self) -> None:
         fields = ["wind_speed_10m", "wind_direction_10m"]

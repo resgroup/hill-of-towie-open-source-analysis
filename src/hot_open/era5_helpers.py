@@ -55,11 +55,11 @@ def _build_era5_df(response: object, fields: list[str]) -> pd.DataFrame:
             )
         }
         | {field: hourly_data.Variables(i).ValuesAsNumpy() for i, field in enumerate(fields)}
-    )
+    ).set_index("timestamp")
 
 
 @with_parquet_cache(_era5_cache_dir / f"ERA5_{HOT_LAT:.2f}_{HOT_LON:.2f}.parquet")
-def get_era5_hourly_df(
+def get_hot_era5_hourly_df(
     lat: float = HOT_LAT,
     lon: float = HOT_LON,
     start_date: str = HOT_ERA5_START,

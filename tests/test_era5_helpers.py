@@ -2,6 +2,7 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from hot_open.era5_helpers import _build_era5_df
 
@@ -45,8 +46,6 @@ class TestBuildEra5Df:
         assert df["timestamp"].iloc[0] == pd.Timestamp("2024-01-01", tz="UTC")
 
     def test_field_values_are_propagated(self) -> None:
-        import pytest
-
         fields = ["wind_speed_10m", "wind_direction_10m"]
         df = _build_era5_df(_make_mock_response(), fields)
         assert df["wind_speed_10m"].iloc[0] == pytest.approx(0.0)  # index 0

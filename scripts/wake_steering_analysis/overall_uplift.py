@@ -1,9 +1,14 @@
 import logging
 from pathlib import Path
 
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
+
+from hot_open.era5_helpers import get_hot_era5_hourly_df, HOT_LAT, HOT_LON
+from wind_up.caching import with_parquet_cache
 from wind_up.combine_results import combine_results
-from wind_up.constants import TIMESTAMP_COL
+from wind_up.constants import TIMESTAMP_COL, DataColumns
 from wind_up.interface import AssessmentInputs
 from wind_up.main_analysis import run_wind_up_analysis
 from wind_up.models import PlotConfig, WindUpConfig
@@ -121,45 +126,83 @@ def _hot_dy_lidar_datasets(data_dir: Path, start_dt, end_dt_excl) -> list[MastOr
     return lidar_datasets
 
 
+def _check_fl_scada_power(scada_df: pd.DataFrame, out_dir: Path | None) -> None:
+    scada_power_col = DataColumns.active_power_mean
+    fl_power_col = "mean_act_power_fl"
+    valid = scada_df[[scada_power_col, fl_power_col]].dropna()
+    valid = valid[valid[scada_power_col] > 10]
+    corr = valid[scada_power_col].corr(valid[fl_power_col])
+    ratio = (valid[fl_power_col] / valid[scada_power_col]).mean()
+    logger.info("FL vs SCADA power check: corr=%.5f, FL/SCADA ratio=%.4f (n=%d)", corr, ratio, len(valid))
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.scatter(valid[scada_power_col], valid[fl_power_col], alpha=0.2, s=1, rasterized=True)
+    max_val = max(valid[scada_power_col].max(), valid[fl_power_col].max())
+    ax.plot([0, max_val], [0, max_val], "r--", lw=1, label="1:1")
+    ax.grid()
+    ax.set_xlabel("SCADA ActivePowerMean (kW)")
+    ax.set_ylabel("FL ActPower_Value 10min mean (kW)")
+    ax.set_title(f"FL vs SCADA power\ncorr={corr:.5f}, FL/SCADA ratio={ratio:.4f}")
+    ax.legend()
+    if out_dir is not None:
+        fig.savefig(out_dir / "fl_vs_scada_power_check.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    if corr < 0.999 or not (0.98 <= ratio <= 1.02):
+        msg = f"FL vs SCADA power mismatch: {corr=:.5f}, {ratio=:.4f}"
+        raise ValueError(msg)
+
+
+@with_parquet_cache(get_cache_dir() / "unpack_scada_data" / "hot_dy_scada_df.parquet")
 def hot_dy_scada_df() -> pd.DataFrame:
     dy_toggle_col = "computed_driver_post_processed_toggle_state"
     dy_wake_steer_col = "computed_core_post_processed_core_wake_steering_offset_degrees"
     dy_yawtarget_col = "computed_driver_post_processed_yaw_target_degrees"
-    # TODO add power check, verify FL and SCADA power are the same
-    wtg_fl_df = load_hot_fl_data(
-        data_dir=LOCAL_TEMPORARY_DIR / "turbine_fastlog" / "Filestore",
-        wtg_numbers=range(1, 21 + 1),
-        start_dt=pd.Timestamp("2026-01-01 00:00", tz="UTC"),  # start of FL dataset
-        end_dt_excl=pd.Timestamp("2026-05-01 00:00", tz="UTC"),  # end of FL dataset
-        extra_tags=[dy_toggle_col, dy_yawtarget_col, dy_wake_steer_col],
-    )
-    fl_10min_abs_mean_df = (
-        wtg_fl_df.loc[:, wtg_fl_df.columns.get_level_values(1).isin([dy_toggle_col, dy_wake_steer_col])]
-        .abs()
-        .resample("10min")
-        .mean()
-    )
-    fl_10min_count_df = (
-        wtg_fl_df.loc[:, wtg_fl_df.columns.get_level_values(1).isin([dy_yawtarget_col])].resample("10min").count()
-    )
-    fl_10min_df = fl_10min_abs_mean_df.join(fl_10min_count_df, how="outer")
-    rename_map = {
-        dy_toggle_col: "mean_toggle_state",
-        dy_wake_steer_col: "mean_abs_wake_steer_command",
-        dy_yawtarget_col: "count_yaw_target_command_active",
-    }
-    fl_10min_df.columns = fl_10min_df.columns.set_levels(
-        fl_10min_df.columns.levels[1].map(lambda x: rename_map.get(x, x)),
-        level=1,
-    )
+
+    fl_data_dir = LOCAL_TEMPORARY_DIR / "turbine_fastlog" / "Filestore"
+    fl_start_dt = pd.Timestamp("2026-01-01 00:00", tz="UTC")
+    fl_end_dt_excl = pd.Timestamp("2026-05-01 00:00", tz="UTC")
+
+    per_turbine_10min: list[pd.DataFrame] = []
+    for wtg_number in range(1, 21 + 1):
+        logger.info("loading FL data for T%02d (%d/21)", wtg_number, wtg_number)
+        wtg_fl_df = load_hot_fl_data(
+            data_dir=fl_data_dir,
+            wtg_numbers=[wtg_number],
+            start_dt=fl_start_dt,
+            end_dt_excl=fl_end_dt_excl,
+            extra_tags=[dy_toggle_col, dy_yawtarget_col, dy_wake_steer_col],
+        )
+        turbine_df = wtg_fl_df.droplevel(0, axis=1)
+        if "ActPower_Value" not in turbine_df.columns:
+            turbine_df["ActPower_Value"] = np.nan
+        turbine_10min = (
+            turbine_df[[dy_toggle_col, dy_wake_steer_col]]
+            .abs()
+            .resample("10min")
+            .mean()
+            .rename(columns={dy_toggle_col: "mean_toggle_state", dy_wake_steer_col: "mean_abs_wake_steer_command"})
+            .join(
+                turbine_df[[dy_yawtarget_col]]
+                .resample("10min")
+                .count()
+                .rename(columns={dy_yawtarget_col: "count_yaw_target_command_active"}),
+                how="outer",
+            )
+            .join(
+                turbine_df[["ActPower_Value"]]
+                .resample("10min")
+                .mean()
+                .rename(columns={"ActPower_Value": "mean_act_power_fl"}),
+                how="outer",
+            )
+            .assign(TurbineName=f"T{wtg_number:02d}")
+        )
+        del wtg_fl_df, turbine_df
+        per_turbine_10min.append(turbine_10min)
+
+    fl_10min_df = pd.concat(per_turbine_10min)
+    fl_10min_df.index.name = "TimeStamp_StartFormat"
+    fl_stacked = fl_10min_df.set_index("TurbineName", append=True)
     scada_df = unpack_local_scada_data_v2(data_dir=LOCAL_TEMPORARY_DIR)
-    # join scada_df and fl_10min_df (left join) using both the index and the TurbineName column
-    fl_stacked = (
-        fl_10min_df.stack(level=0, future_stack=True)
-        .reset_index(level=1)
-        .rename(columns={"device_id": "TurbineName"})
-        .set_index("TurbineName", append=True)
-    )
     scada_df = (
         scada_df.set_index("TurbineName", append=True).join(fl_stacked, how="left").reset_index(level="TurbineName")
     )
@@ -182,36 +225,35 @@ if __name__ == "__main__":
     cfg.bootstrap_runs_override = 400 // 4  # TODO(AlexClerc): remove
 
     scada_df = hot_dy_scada_df()
-    if False:
-        metadata_df = unpack_local_meta_data(data_dir=LOCAL_TEMPORARY_DIR, scada_index_name=scada_df.index.name)
-        hot_best_era5 = "ERA5T_57.50N_-3.25E_100m_1hr"
-        reanalysis_datasets = [
-            ReanalysisDataset(
-                id=hot_best_era5,
-                data=pd.read_parquet(Path(__file__).parent / "reanalysis_data" / f"{hot_best_era5}_20260331.parquet"),
-            )
-        ]
-        toggle_df = hot_dy_toggle_df(scada_df)
+    _check_fl_scada_power(scada_df, out_dir=out_dir)
 
-        assessment_inputs = AssessmentInputs.from_cfg(
-            cfg=cfg,
-            plot_cfg=plot_cfg,
-            scada_df=scada_df,
-            metadata_df=metadata_df,
-            toggle_df=toggle_df,
-            reanalysis_datasets=reanalysis_datasets,
-            cache_dir=get_cache_dir() / "windup_cache" / cfg.assessment_name,
-            mast_or_lidar_datasets=_hot_dy_lidar_datasets(
-                data_dir=LOCAL_TEMPORARY_DIR / "lidar_data",
-                start_dt=scada_df.index.min(),
-                end_dt_excl=scada_df.index.max(),
-            ),
+    metadata_df = unpack_local_meta_data(data_dir=LOCAL_TEMPORARY_DIR, scada_index_name=scada_df.index.name)
+    reanalysis_datasets = [
+        ReanalysisDataset(
+            id=f"ERA5_{HOT_LAT:.2f}_{HOT_LON:.2f}",
+            data=get_hot_era5_hourly_df(),
         )
-        results_per_test_ref_df = run_wind_up_analysis(assessment_inputs)
-        combined_results_df = combine_results(results_per_test_ref_df, plot_config=plot_cfg, auto_choose_refs=True)
-        combined_results_df.to_csv(
-            cfg.out_dir
-            / f"{cfg.assessment_name}_combined_results_{pd.Timestamp.utcnow().strftime('%Y%m%d_%H%M%S')}.csv",
-        )
+    ]
+    toggle_df = hot_dy_toggle_df(scada_df)
 
-        # TODO visualize results eg as bubble plot
+    assessment_inputs = AssessmentInputs.from_cfg(
+        cfg=cfg,
+        plot_cfg=plot_cfg,
+        scada_df=scada_df,
+        metadata_df=metadata_df,
+        toggle_df=toggle_df,
+        reanalysis_datasets=reanalysis_datasets,
+        cache_dir=get_cache_dir() / "windup_cache" / cfg.assessment_name,
+        mast_or_lidar_datasets=_hot_dy_lidar_datasets(
+            data_dir=LOCAL_TEMPORARY_DIR / "lidar_data",
+            start_dt=scada_df.index.min(),
+            end_dt_excl=scada_df.index.max(),
+        ),
+    )
+    results_per_test_ref_df = run_wind_up_analysis(assessment_inputs)
+    combined_results_df = combine_results(results_per_test_ref_df, plot_config=plot_cfg, auto_choose_refs=False)
+    combined_results_df.to_csv(
+        cfg.out_dir / f"{cfg.assessment_name}_combined_results_{pd.Timestamp.utcnow().strftime('%Y%m%d_%H%M%S')}.csv",
+    )
+
+    # TODO visualize results eg as bubble plot

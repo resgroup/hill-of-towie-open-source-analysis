@@ -5,6 +5,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+from hot_open.era5_helpers import get_hot_era5_hourly_df, HOT_LAT, HOT_LON
 from wind_up.combine_results import calc_net_uplift
 from wind_up.interface import AssessmentInputs
 from wind_up.main_analysis import run_wind_up_analysis
@@ -118,8 +120,8 @@ if __name__ == "__main__":
     hot_best_era5 = "ERA5T_57.50N_-3.25E_100m_1hr"
     reanalysis_datasets = [
         ReanalysisDataset(
-            id=hot_best_era5,
-            data=pd.read_parquet(Path(__file__).parent / "reanalysis_data" / f"{hot_best_era5}_20260331.parquet"),
+            id=f"ERA5_{HOT_LAT:.2f}_{HOT_LON:.2f}",
+            data=get_hot_era5_hourly_df(),
         )
     ]
     toggle_df = hot_dy_toggle_df(scada_df)

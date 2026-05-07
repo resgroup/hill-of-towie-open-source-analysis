@@ -3,6 +3,8 @@ from functools import reduce
 from pathlib import Path
 
 import pandas as pd
+
+from hot_open.era5_helpers import HOT_LAT, HOT_LON, get_hot_era5_hourly_df
 from wake_steering_analysis.overall_uplift import CONFIG_DIR, _hot_dy_lidar_datasets, hot_dy_toggle_df
 from wind_up.combine_results import combine_results
 from wind_up.interface import AssessmentInputs
@@ -23,7 +25,6 @@ if __name__ == "__main__":
     msg = f"log file is at {log_path}"
     logger.info(msg)
 
-    # whole farm analysis
     config_file_name = "HOT_dynamic_yaw.yaml"
     save_plots = True
     cfg = WindUpConfig.from_yaml(CONFIG_DIR / config_file_name)
@@ -62,8 +63,8 @@ if __name__ == "__main__":
     hot_best_era5 = "ERA5T_57.50N_-3.25E_100m_1hr"
     reanalysis_datasets = [
         ReanalysisDataset(
-            id=hot_best_era5,
-            data=pd.read_parquet(Path(__file__).parent / "reanalysis_data" / f"{hot_best_era5}_20260331.parquet"),
+            id=f"ERA5_{HOT_LAT:.2f}_{HOT_LON:.2f}",
+            data=get_hot_era5_hourly_df(),
         )
     ]
     toggle_df = hot_dy_toggle_df(scada_df)

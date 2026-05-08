@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pandas as pd
-
 from hot_open.helpers import WPSBackupFileField, load_hot_10min_data
 
 

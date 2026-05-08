@@ -2246,10 +2246,13 @@ wheels = [
 name = "hot-open"
 source = { editable = "." }
 dependencies = [
+    { name = "openmeteo-requests" },
     { name = "pandas" },
     { name = "python-dotenv" },
     { name = "requests" },
+    { name = "requests-cache" },
     { name = "res-wind-up" },
+    { name = "retry-requests" },
     { name = "tqdm" },
 ]
 
@@ -2275,21 +2278,21 @@ wedowind = [
     { name = "jupyterlab" },
     { name = "jupytext" },
     { name = "kagglehub" },
-    { name = "openmeteo-requests" },
     { name = "plotly" },
     { name = "polars" },
-    { name = "requests-cache" },
-    { name = "retry-requests" },
     { name = "xarray", version = "2025.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "xarray", version = "2025.11.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "openmeteo-requests", specifier = ">=1.4.0" },
     { name = "pandas", specifier = ">=2.3.3" },
     { name = "python-dotenv", specifier = ">=1.1.0" },
     { name = "requests", specifier = ">=2.32.3" },
+    { name = "requests-cache", specifier = ">=1.2.1" },
     { name = "res-wind-up", specifier = ">=0.4.8" },
+    { name = "retry-requests", specifier = ">=2.0.0" },
     { name = "tqdm", specifier = ">=4.67.0" },
 ]
 
@@ -2314,11 +2317,8 @@ wedowind = [
     { name = "jupyterlab", specifier = ">=4.4.1" },
     { name = "jupytext", specifier = ">=1.17.0" },
     { name = "kagglehub", specifier = ">=0.3.13" },
-    { name = "openmeteo-requests", specifier = ">=1.4.0" },
     { name = "plotly", specifier = ">=6.0.1" },
     { name = "polars", specifier = ">=1.27.1" },
-    { name = "requests-cache", specifier = ">=1.2.1" },
-    { name = "retry-requests", specifier = ">=2.0.0" },
     { name = "xarray", specifier = ">=2025.4.0" },
 ]
 

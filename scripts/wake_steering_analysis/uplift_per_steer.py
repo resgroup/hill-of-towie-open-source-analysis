@@ -17,9 +17,10 @@ from wind_up.reanalysis_data import MastOrLiDARDataset
 from hot_open.era5_helpers import get_hot_reanalysis_datasets
 from hot_open.fastlog_helpers import load_hot_fl_data
 from hot_open.lidar_helpers import load_zx_lidar_10min_data
-from hot_open.settings import get_cache_dir, get_out_dir, get_wind_up_output_dir, get_filestore_dir
+from hot_open.settings import get_cache_dir, get_filestore_dir, get_out_dir, get_wind_up_output_dir
 from hot_open.unpack import unpack_local_meta_data, unpack_local_scada_data_v2
 from scripts.logger import setup_logger
+from scripts.wake_steering_analysis.combine_uplift_per_steer import combine_wakesteer_results
 from scripts.wake_steering_analysis.inspect_data import LOCAL_TEMPORARY_DIR
 
 logger = logging.getLogger(__name__)
@@ -380,3 +381,5 @@ if __name__ == "__main__":
         )
         pd.DataFrame(all_wakesteer_results).to_csv(cfg.out_dir / "uplift_per_steer_results_interim.csv", index=False)
     pd.DataFrame(all_wakesteer_results).to_csv(cfg.out_dir / "uplift_per_steer_results.csv", index=False)
+    combined_results = combine_wakesteer_results(all_wakesteer_results)
+    combined_results.to_csv(cfg.out_dir / "uplift_per_steer_combined_results.csv")

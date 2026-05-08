@@ -3,19 +3,17 @@ from functools import reduce
 from pathlib import Path
 
 import pandas as pd
-
-from hot_open.era5_helpers import HOT_LAT, HOT_LON, get_hot_era5_hourly_df
-from wake_steering_analysis.overall_uplift import CONFIG_DIR, _hot_dy_lidar_datasets, hot_dy_toggle_df
-from wind_up.combine_results import combine_results
+from wind_up.combine_results import calculate_total_uplift_of_test_and_ref_turbines, combine_results
 from wind_up.interface import AssessmentInputs
 from wind_up.main_analysis import run_wind_up_analysis
 from wind_up.models import PlotConfig, WindUpConfig
-from wind_up.reanalysis_data import ReanalysisDataset
 
+from hot_open.era5_helpers import get_hot_reanalysis_datasets
 from hot_open.settings import get_cache_dir, get_out_dir, get_wind_up_output_dir
 from hot_open.unpack import unpack_local_meta_data, unpack_local_scada_data_v2
 from scripts.logger import setup_logger
 from scripts.wake_steering_analysis.inspect_data import LOCAL_TEMPORARY_DIR
+from scripts.wake_steering_analysis.uplift_per_steer import CONFIG_DIR, _hot_dy_lidar_datasets, hot_dy_toggle_df
 
 logger = logging.getLogger(__name__)
 if __name__ == "__main__":
@@ -59,23 +57,14 @@ if __name__ == "__main__":
         scada_df.loc[filter_data, "exclude_row"] = 1
         total_excluded += newly_excluded
         logger.info("%s: %d rows newly excluded, running total %d", dir.stem, newly_excluded, total_excluded)
-    metadata_df = unpack_local_meta_data(data_dir=LOCAL_TEMPORARY_DIR, scada_index_name=scada_df.index.name)
-    hot_best_era5 = "ERA5T_57.50N_-3.25E_100m_1hr"
-    reanalysis_datasets = [
-        ReanalysisDataset(
-            id=f"ERA5_{HOT_LAT:.2f}_{HOT_LON:.2f}",
-            data=get_hot_era5_hourly_df(),
-        )
-    ]
-    toggle_df = hot_dy_toggle_df(scada_df)
 
     assessment_inputs = AssessmentInputs.from_cfg(
         cfg=cfg,
         plot_cfg=plot_cfg,
         scada_df=scada_df,
-        metadata_df=metadata_df,
-        toggle_df=toggle_df,
-        reanalysis_datasets=reanalysis_datasets,
+        metadata_df=unpack_local_meta_data(data_dir=LOCAL_TEMPORARY_DIR, scada_index_name=scada_df.index.name),
+        toggle_df=hot_dy_toggle_df(scada_df),
+        reanalysis_datasets=get_hot_reanalysis_datasets(),
         cache_dir=get_cache_dir() / "windup_cache" / cfg.assessment_name,
         mast_or_lidar_datasets=_hot_dy_lidar_datasets(
             data_dir=LOCAL_TEMPORARY_DIR / "lidar_data",
@@ -84,7 +73,9 @@ if __name__ == "__main__":
         ),
     )
     results_per_test_ref_df = run_wind_up_analysis(assessment_inputs)
-    combined_results_df = combine_results(results_per_test_ref_df, plot_config=plot_cfg, auto_choose_refs=True)
+    combined_results_df = combine_results(results_per_test_ref_df, plot_config=plot_cfg, auto_choose_refs=False)
     combined_results_df.to_csv(
         cfg.out_dir / f"{cfg.assessment_name}_combined_results_{pd.Timestamp.utcnow().strftime('%Y%m%d_%H%M%S')}.csv",
     )
+    wf_results = calculate_total_uplift_of_test_and_ref_turbines(combined_results_df, plot_cfg=plot_cfg)
+    wf_results.to_csv(cfg.out_dir / f"wf_results_{pd.Timestamp.utcnow().strftime('%Y%m%d_%H%M%S')}.csv")

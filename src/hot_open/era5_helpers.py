@@ -7,6 +7,7 @@ import pandas as pd
 import requests_cache
 from retry_requests import retry
 from wind_up.caching import with_parquet_cache
+from wind_up.reanalysis_data import ReanalysisDataset
 
 from .settings import get_cache_dir
 
@@ -95,3 +96,13 @@ def get_hot_era5_hourly_df(
         },
     )
     return _build_era5_df(responses[0], fields)
+
+
+def get_hot_reanalysis_datasets() -> list[ReanalysisDataset]:
+    """Return a list of ReanalysisDataset objects for the HOT site."""
+    return [
+        ReanalysisDataset(
+            id=f"ERA5_{HOT_LAT:.2f}_{HOT_LON:.2f}",
+            data=get_hot_era5_hourly_df(),
+        )
+    ]

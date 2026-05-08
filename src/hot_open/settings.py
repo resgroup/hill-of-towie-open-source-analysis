@@ -15,7 +15,7 @@ REPO_NAME = REPO_ROOT.stem
 def get_data_dir(*, log_message: bool = False) -> Path:
     """Get the HOT open data directory where input parquet files should be.
 
-    Can be customized by setting the "HOT_DATA_DIR" enviroment variable.
+    Can be customized by setting the "HOT_OPEN_DATA_DIR" enviroment variable.
     """
     load_dotenv()
     path = Path(os.getenv("HOT_OPEN_DATA_DIR", Path.home() / "temp" / REPO_NAME / "data"))

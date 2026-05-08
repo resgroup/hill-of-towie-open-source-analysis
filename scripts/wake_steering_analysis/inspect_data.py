@@ -38,8 +38,8 @@ ZXTM_FL_WS_COL = "PD Horizontal Wind Speed (m/s) at Hub Height"
 ZXTM_WD_COL = "Met Compass Bearing (deg)"
 
 # ERA5 reanalysis columns
-ERA5_WS_COL = "100_m_hws_mean_mps"
-ERA5_WD_COL = "100_m_hwd_mean_deg-n_true"
+ERA5_WS_COL = "wind_speed_100m"
+ERA5_WD_COL = "wind_direction_100m"
 
 
 def plot_wtg_10min_and_fastlog(

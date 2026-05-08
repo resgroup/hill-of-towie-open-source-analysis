@@ -12,6 +12,20 @@ REPO_ROOT = Path(__file__).parents[2]
 REPO_NAME = REPO_ROOT.stem
 
 
+def get_data_dir(*, log_message: bool = False) -> Path:
+    """Get the HOT open data directory where input parquet files should be.
+
+    Can be customized by setting the "HOT_DATA_DIR" enviroment variable.
+    """
+    load_dotenv()
+    path = Path(os.getenv("HOT_DATA_DIR", Path.home() / "temp" / REPO_NAME / "data"))
+    if log_message:
+        msg = f"Data directory is {path}"
+        logger.info(msg)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def get_out_dir(*, dir_name: str, subdir_name: str | None = None, subsubdir_name: str | None = None) -> Path:
     """Get the output directory.
 
@@ -28,7 +42,7 @@ def get_out_dir(*, dir_name: str, subdir_name: str | None = None, subsubdir_name
 
 
 def get_cache_dir(*, log_message: bool = False) -> Path:
-    """Get the cache directory where input parquet files should be.
+    """Get the cache directory where cached intermediate files should be.
 
     Can be customized by setting the "HOT_OPEN_CACHE_DIR" enviroment variable.
     """

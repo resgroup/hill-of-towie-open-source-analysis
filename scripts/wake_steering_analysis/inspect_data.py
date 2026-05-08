@@ -9,10 +9,10 @@ import pandas as pd
 from hot_open.fastlog_helpers import load_hot_fl_data
 from hot_open.lidar_helpers import load_zx_lidar_10min_data, load_zx_lidar_fl_data
 from hot_open.scada_helpers import load_hot_10min_data
-from hot_open.settings import get_out_dir
+from hot_open.settings import get_data_dir, get_out_dir
 from scripts.logger import setup_logger
 
-LOCAL_TEMPORARY_DIR = Path(r"F:\draft v2 datapack")
+LOCAL_TEMPORARY_DIR = get_data_dir()
 logger = logging.getLogger(__name__)
 
 # WTG 10-minute SCADA columns

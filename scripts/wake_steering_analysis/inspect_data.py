@@ -9,7 +9,7 @@ import pandas as pd
 from hot_open.fastlog_helpers import load_hot_fl_data
 from hot_open.lidar_helpers import load_zx_lidar_10min_data, load_zx_lidar_fl_data
 from hot_open.scada_helpers import load_hot_10min_data
-from hot_open.settings import get_data_dir, get_out_dir
+from hot_open.settings import get_data_dir, get_out_dir, get_filestore_dir
 from scripts.logger import setup_logger
 
 LOCAL_TEMPORARY_DIR = get_data_dir()
@@ -438,7 +438,7 @@ if __name__ == "__main__":
     dy_yawtarget_col = "computed_driver_post_processed_yaw_target_degrees"
 
     wtg_fl_df = load_hot_fl_data(
-        data_dir=LOCAL_TEMPORARY_DIR / "turbine_fastlog" / "Filestore",
+        data_dir=get_filestore_dir(),
         wtg_numbers=wtg_numbers,
         start_dt=start_dt,
         end_dt_excl=end_dt_excl,

@@ -17,7 +17,7 @@ from wind_up.reanalysis_data import MastOrLiDARDataset
 from hot_open.era5_helpers import get_hot_reanalysis_datasets
 from hot_open.fastlog_helpers import load_hot_fl_data
 from hot_open.lidar_helpers import load_zx_lidar_10min_data
-from hot_open.settings import get_cache_dir, get_out_dir, get_wind_up_output_dir
+from hot_open.settings import get_cache_dir, get_out_dir, get_wind_up_output_dir, get_filestore_dir
 from hot_open.unpack import unpack_local_meta_data, unpack_local_scada_data_v2
 from scripts.logger import setup_logger
 from scripts.wake_steering_analysis.inspect_data import LOCAL_TEMPORARY_DIR
@@ -158,7 +158,7 @@ def hot_dy_scada_df() -> pd.DataFrame:
     dy_wake_steer_col = "computed_core_post_processed_core_wake_steering_offset_degrees"
     dy_yawtarget_col = "computed_driver_post_processed_yaw_target_degrees"
 
-    fl_data_dir = LOCAL_TEMPORARY_DIR / "turbine_fastlog" / "Filestore"
+    fl_data_dir = get_filestore_dir()
     fl_start_dt = pd.Timestamp("2026-01-01 00:00", tz="UTC")
     fl_end_dt_excl = pd.Timestamp("2026-05-01 00:00", tz="UTC")
 

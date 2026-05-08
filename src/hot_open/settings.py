@@ -18,7 +18,7 @@ def get_data_dir(*, log_message: bool = False) -> Path:
     Can be customized by setting the "HOT_DATA_DIR" enviroment variable.
     """
     load_dotenv()
-    path = Path(os.getenv("HOT_DATA_DIR", Path.home() / "temp" / REPO_NAME / "data"))
+    path = Path(os.getenv("HOT_OPEN_DATA_DIR", Path.home() / "temp" / REPO_NAME / "data"))
     if log_message:
         msg = f"Data directory is {path}"
         logger.info(msg)

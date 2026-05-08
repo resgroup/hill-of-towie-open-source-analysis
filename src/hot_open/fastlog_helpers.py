@@ -22,11 +22,18 @@ logger = logging.getLogger(__name__)
 TIMESTAMP_NAME = "timestamp"
 SIEMENS_TAGS = [
     "AcWindDr_Source",
+    "AcWindDr_Value",
     "AcWindSp_AcWindSp",
     "ActLimit_Power",
     "ActPower_Value",
+    "GenState_GenState",
+    "MainSRpm_Value",
+    "PitcPosA_Value",
+    "PitcPosB_Value",
+    "PitcPosC_Value",
     "PowerRed_PowerRed",
     "PowerRef_PowerRef",
+    "ReactPwr_Value",
     "YawExec_YawExec",
     "YawPos_Value",
 ]

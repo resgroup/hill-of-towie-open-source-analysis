@@ -6,6 +6,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from hot_open.era5_helpers import get_hot_era5_hourly_df
 from hot_open.fastlog_helpers import load_hot_fl_data
 from hot_open.lidar_helpers import load_zx_lidar_10min_data, load_zx_lidar_fl_data
 from hot_open.scada_helpers import load_hot_10min_data
@@ -496,9 +497,7 @@ if __name__ == "__main__":
     zxtm_10min_df[ZXTM_WD_COL] = (zxtm_10min_df[ZXTM_WD_COL] + NORTH_CORRECTIONS["ZXTM"]) % 360
 
     # load reanalysis data
-    era5_df = pd.read_parquet(
-        Path(__file__).parent / "reanalysis_data" / "ERA5T_57.50N_-3.25E_100m_1hr_20260331.parquet"
-    )
+    era5_df = get_hot_era5_hourly_df()
     era5_df = era5_df[
         (era5_df.index >= (start_dt - pd.Timedelta(minutes=50)))
         & (era5_df.index < (end_dt_excl + pd.Timedelta(minutes=50)))

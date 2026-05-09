@@ -8,7 +8,8 @@ from wind_up.models import PlotConfig, WindUpConfig
 
 from hot_open.settings import get_out_dir, get_wind_up_output_dir
 from scripts.logger import setup_logger
-from scripts.wake_steering_analysis.uplift_per_steer import CONFIG_DIR
+
+CONFIG_DIR = Path(__file__).parent / "wind_up_config"
 
 logger = logging.getLogger(__name__)
 

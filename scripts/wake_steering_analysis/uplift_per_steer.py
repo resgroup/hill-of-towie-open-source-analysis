@@ -20,12 +20,13 @@ from hot_open.lidar_helpers import load_zx_lidar_10min_data
 from hot_open.settings import get_cache_dir, get_filestore_dir, get_out_dir, get_wind_up_output_dir
 from hot_open.unpack import unpack_local_meta_data, unpack_local_scada_data_v2
 from scripts.logger import setup_logger
-from scripts.wake_steering_analysis.combine_uplift_per_steer import combine_wakesteer_results
+from scripts.wake_steering_analysis.combine_uplift_per_steer import (
+    combine_wakesteer_results_with_yaw,
+)
+from scripts.wake_steering_analysis.hot_wake_steering_helpers import CONFIG_DIR
 from scripts.wake_steering_analysis.inspect_data import LOCAL_TEMPORARY_DIR
 
 logger = logging.getLogger(__name__)
-
-CONFIG_DIR = Path(__file__).parent / "wind_up_config"
 
 
 def _hot_initialize_toggle(*, initial_time: pd.Timestamp, toggle_half_period_minutes: int) -> tuple[int, float]:
@@ -381,5 +382,5 @@ if __name__ == "__main__":
         )
         pd.DataFrame(all_wakesteer_results).to_csv(cfg.out_dir / "uplift_per_steer_results_interim.csv", index=False)
     pd.DataFrame(all_wakesteer_results).to_csv(cfg.out_dir / "uplift_per_steer_results.csv", index=False)
-    combined_results = combine_wakesteer_results(all_wakesteer_results)
-    combined_results.to_csv(cfg.out_dir / "uplift_per_steer_combined_results.csv")
+    combined_results_df = combine_wakesteer_results_with_yaw(all_wakesteer_results)
+    combined_results_df.to_csv(cfg.out_dir / "uplift_per_steer_combined_results_with_yaw.csv")

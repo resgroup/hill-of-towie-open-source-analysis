@@ -1,21 +1,12 @@
 import logging
-from functools import reduce
 from pathlib import Path
 
 import pandas as pd
+from wind_up.models import WindUpConfig
 
-from hot_open.era5_helpers import HOT_LAT, HOT_LON, get_hot_era5_hourly_df
-from wake_steering_analysis.overall_uplift import CONFIG_DIR, _hot_dy_lidar_datasets, hot_dy_toggle_df
-from wind_up.combine_results import combine_results
-from wind_up.interface import AssessmentInputs
-from wind_up.main_analysis import run_wind_up_analysis
-from wind_up.models import PlotConfig, WindUpConfig
-from wind_up.reanalysis_data import ReanalysisDataset
-
-from hot_open.settings import get_cache_dir, get_out_dir, get_wind_up_output_dir
-from hot_open.unpack import unpack_local_meta_data, unpack_local_scada_data_v2
+from hot_open.settings import get_out_dir, get_wind_up_output_dir
 from scripts.logger import setup_logger
-from scripts.wake_steering_analysis.inspect_data import LOCAL_TEMPORARY_DIR
+from scripts.wake_steering_analysis.hot_wake_steering_helpers import CONFIG_DIR
 
 logger = logging.getLogger(__name__)
 if __name__ == "__main__":
@@ -37,14 +28,14 @@ if __name__ == "__main__":
         for dir in list(uplift_per_steer_dir.glob("T[0-9]*_T[0-9]*_*")):
             upwind_wtg_name = dir.stem.split("_")[0]
             downwind_wtg_name = dir.stem.split("_")[1]
-            if not (wtg_name==upwind_wtg_name or wtg_name==downwind_wtg_name):
+            if not (wtg_name == upwind_wtg_name or wtg_name == downwind_wtg_name):
                 continue
             ref_name = "_".join(dir.stem.split("_")[2:])
             pp_df_dir = dir / "pp_df"
 
-            pre_df_path=pp_df_dir / f"{wtg_name}_{ref_name}_pre_df.parquet"
-            post_df_path=pp_df_dir / f"{wtg_name}_{ref_name}_post_df.parquet"
-            if not all([x.exists() for x in [pre_df_path,post_df_path]]):
+            pre_df_path = pp_df_dir / f"{wtg_name}_{ref_name}_pre_df.parquet"
+            post_df_path = pp_df_dir / f"{wtg_name}_{ref_name}_post_df.parquet"
+            if not all([x.exists() for x in [pre_df_path, post_df_path]]):
                 continue
             _pre_df = pd.read_parquet(pre_df_path)
             _pre_df = _pre_df.drop(columns=[x for x in _pre_df.columns if x.startswith("ref_")])
@@ -57,11 +48,11 @@ if __name__ == "__main__":
         # TODO I also want "computed_core_post_processed_core_wake_steering_offset_degrees" but I need to gather the data from server and I need to resample to 10min prior to wind-up analysis
         pw_col = "test_ActivePowerMean"
         ya_col = "test_YawOperationCounts"
-        toggle_col='test_mean_toggle_state'
-        control_active_col="test_count_yaw_target_command_active"
-        abs_wakesteer_col='test_mean_abs_wake_steer_command'
-        pre_df = pre_df.dropna(subset=[pw_col, ya_col,toggle_col,control_active_col])
-        post_df = post_df.dropna(subset=[pw_col, ya_col,toggle_col,control_active_col])
+        toggle_col = "test_mean_toggle_state"
+        control_active_col = "test_count_yaw_target_command_active"
+        abs_wakesteer_col = "test_mean_abs_wake_steer_command"
+        pre_df = pre_df.dropna(subset=[pw_col, ya_col, toggle_col, control_active_col])
+        post_df = post_df.dropna(subset=[pw_col, ya_col, toggle_col, control_active_col])
         # measure yaw actions per hour and yaw actions per MWh pre and post
         timebase_s = 600
         hours_pre = len(pre_df) * timebase_s / 3600
@@ -96,4 +87,3 @@ if __name__ == "__main__":
             }
         )
     pd.DataFrame(results).to_csv(out_dir / f"{Path(__file__).stem}_results.csv")
-

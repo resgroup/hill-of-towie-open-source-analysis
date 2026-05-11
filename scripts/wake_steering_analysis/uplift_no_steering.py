@@ -19,13 +19,7 @@ from scripts.wake_steering_analysis.uplift_per_steer import _hot_dy_lidar_datase
 
 logger = logging.getLogger(__name__)
 
-if __name__ == "__main__":
-    out_dir = get_out_dir(dir_name=Path(__file__).stem)
-    log_path = out_dir / f"{Path(__file__).stem}.log"
-    setup_logger(log_path)
-    msg = f"log file is at {log_path}"
-    logger.info(msg)
-
+def run_uplift_no_steering() -> None:
     config_file_name = "HOT_dynamic_yaw.yaml"
     save_plots = True
     cfg = WindUpConfig.from_yaml(CONFIG_DIR / config_file_name)
@@ -81,3 +75,12 @@ if __name__ == "__main__":
     )
     wf_results = calculate_total_uplift_of_test_and_ref_turbines(combined_results_df, plot_cfg=plot_cfg)
     wf_results.to_csv(cfg.out_dir / f"wf_results_{pd.Timestamp.utcnow().strftime('%Y%m%d_%H%M%S')}.csv")
+
+
+if __name__ == "__main__":
+    out_dir = get_out_dir(dir_name=Path(__file__).stem)
+    log_path = out_dir / f"{Path(__file__).stem}.log"
+    setup_logger(log_path)
+    msg = f"log file is at {log_path}"
+    logger.info(msg)
+    run_uplift_no_steering()

@@ -286,13 +286,7 @@ def _extract_hot_wake_steers_from_table(wakesteer_table: pd.DataFrame) -> list[H
     return wake_steers
 
 
-if __name__ == "__main__":
-    out_dir = get_out_dir(dir_name=Path(__file__).stem)
-    log_path = out_dir / f"{Path(__file__).stem}.log"
-    setup_logger(log_path)
-    msg = f"log file is at {log_path}"
-    logger.info(msg)
-
+def run_uplift_per_steer() -> None:
     config_file_name = "HOT_dynamic_yaw.yaml"
     save_plots = True
     cfg = WindUpConfig.from_yaml(CONFIG_DIR / config_file_name)
@@ -386,3 +380,12 @@ if __name__ == "__main__":
     pd.DataFrame(all_wakesteer_results).to_csv(cfg.out_dir / "uplift_per_steer_results.csv", index=False)
     combined_results_df = combine_wakesteer_results_with_yaw(pd.DataFrame(all_wakesteer_results), cfg.out_dir)
     combined_results_df.to_csv(cfg.out_dir / "uplift_per_steer_combined_results_with_yaw.csv")
+
+
+if __name__ == "__main__":
+    out_dir = get_out_dir(dir_name=Path(__file__).stem)
+    log_path = out_dir / f"{Path(__file__).stem}.log"
+    setup_logger(log_path)
+    msg = f"log file is at {log_path}"
+    logger.info(msg)
+    run_uplift_per_steer()

@@ -35,14 +35,6 @@ def _calc_cc_only_tdf(
             column="uplift_frc",
             aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum() / trdf.loc[x.index, weight_col].sum(),
         ),
-        hours_off=pd.NamedAgg(
-            column="hours_off",
-            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum() / trdf.loc[x.index, weight_col].sum(),
-        ),
-        hours_on=pd.NamedAgg(
-            column="hours_on",
-            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum() / trdf.loc[x.index, weight_col].sum(),
-        ),
         mean_toggle_col_pre=pd.NamedAgg(
             column="mean_toggle_col_pre",
             aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum() / trdf.loc[x.index, weight_col].sum(),
@@ -136,7 +128,7 @@ def combine_cc_only_results(per_turbine_results, *, plot_config: PlotConfig | No
     trdf = per_turbine_results.copy()
     weight_col = "unc_weight"
     trdf[weight_col] = 1 / (trdf["unc_one_sigma_frc"] ** 2)
-    ref_list = sorted(trdf["reference"].unique())
+    ref_list = sorted(trdf["ref"].unique())
     tdf = _calc_cc_only_tdf(trdf, ref_list, weight_col)
     if plot_config is not None:
         plot_testref_and_combined_results(trdf=trdf, tdf=tdf, plot_cfg=plot_config)
@@ -181,6 +173,6 @@ if __name__ == "__main__":
     )
     plot_cfg = PlotConfig(show_plots=False, save_plots=save_plots, plots_dir=cfg.out_dir / "plots")
 
-    per_turbine_results = pd.read_csv(cfg.out_dir / "HOT_dynamic_yaw_CC_only_results_per_test_ref_20260509_081651.csv")
+    per_turbine_results = pd.read_csv(cfg.out_dir / "HOT_dynamic_yaw_CC_only_results_per_test_ref_20260511_122201.csv")
     combined_results_df = combine_cc_results_with_yaw(per_turbine_results, cfg.out_dir)
     combined_results_df.to_csv(cfg.out_dir / "HOT_dynamic_yaw_CC_combined_results_with_yaw.csv")

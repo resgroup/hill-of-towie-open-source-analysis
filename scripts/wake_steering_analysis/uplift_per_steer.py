@@ -313,6 +313,9 @@ if __name__ == "__main__":
         logger.info(msg)
 
         wakesteer_cfg = cfg.model_copy()
+        wakesteer_cfg.use_lt_distribution = (
+            False  # long term extrapolation is complex for wake steering and needs to be done outside wind-up
+        )
         wakesteer_cfg.test_wtgs = [
             x.model_copy() for x in cfg.asset.wtgs if x.name in [wakesteer.upwind_wtg, wakesteer.downwind_wtg]
         ]

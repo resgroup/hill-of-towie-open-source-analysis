@@ -18,6 +18,7 @@ from scripts.wake_steering_analysis.inspect_data import LOCAL_TEMPORARY_DIR
 from scripts.wake_steering_analysis.uplift_per_steer import _hot_dy_lidar_datasets, hot_dy_scada_df, hot_dy_toggle_df
 
 logger = logging.getLogger(__name__)
+
 if __name__ == "__main__":
     out_dir = get_out_dir(dir_name=Path(__file__).stem)
     log_path = out_dir / f"{Path(__file__).stem}.log"
@@ -32,7 +33,6 @@ if __name__ == "__main__":
     cfg.assessment_name = "HOT_dynamic_yaw_CC_only"
     cfg.out_dir = get_wind_up_output_dir(cfg.assessment_name)
     plot_cfg = PlotConfig(show_plots=False, save_plots=save_plots, plots_dir=cfg.out_dir / "plots")
-    cfg.bootstrap_runs_override = 400 // 4  # TODO(AlexClerc): remove
 
     scada_df = hot_dy_scada_df()
     scada_df["exclude_row"] = 0

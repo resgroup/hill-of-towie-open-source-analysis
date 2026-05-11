@@ -298,7 +298,6 @@ if __name__ == "__main__":
     cfg = WindUpConfig.from_yaml(CONFIG_DIR / config_file_name)
     cfg.out_dir = get_wind_up_output_dir(cfg.assessment_name)
     plot_cfg = PlotConfig(show_plots=False, save_plots=save_plots, plots_dir=cfg.out_dir / "plots")
-    cfg.bootstrap_runs_override = 400 // 4  # TODO(AlexClerc): remove
 
     scada_df = hot_dy_scada_df()
 
@@ -307,8 +306,8 @@ if __name__ == "__main__":
     all_wakesteer_results = []
     pd.DataFrame([asdict(x) for x in wake_steers]).to_csv(cfg.out_dir / "wake_steer_meta.csv", index=False)
     lidar_refs = ["ZTM_5060", "ZX300_2428"]
-    ok_refs = ["T01", "T13", "T18", "ZX300_2428"]
-    for wakesteer, ref_name in itertools.product(wake_steers, ok_refs):
+    possible_refs = ["T01", "T06", "T09", "T13", "T17", "T18", "T20", "ZX300_2428"]
+    for wakesteer, ref_name in itertools.product(wake_steers, possible_refs):
         msg = f"{wakesteer.upwind_wtg} -> {wakesteer.downwind_wtg} with ref {ref_name}"
         logger.info(msg)
 
@@ -325,7 +324,7 @@ if __name__ == "__main__":
         else:
             wakesteer_cfg.non_wtg_ref_names = []
             wakesteer_cfg.ref_wtgs = [x.model_copy() for x in cfg.asset.wtgs if x.name == ref_name]
-        direction_margin = 0  # 0 looks great for LiDAR. Could be wider for T1 but still looks OK.
+        direction_margin = 1  # 0 looks great for LiDAR. Could be wider for T1 but still looks OK.
         wakesteer_cfg.ref_wd_filter = [
             (wakesteer.first_wdir - direction_margin) % 360,
             (wakesteer.last_wdir + direction_margin) % 360,

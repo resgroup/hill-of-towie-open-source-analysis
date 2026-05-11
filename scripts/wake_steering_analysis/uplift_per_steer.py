@@ -382,5 +382,5 @@ if __name__ == "__main__":
         )
         pd.DataFrame(all_wakesteer_results).to_csv(cfg.out_dir / "uplift_per_steer_results_interim.csv", index=False)
     pd.DataFrame(all_wakesteer_results).to_csv(cfg.out_dir / "uplift_per_steer_results.csv", index=False)
-    combined_results_df = combine_wakesteer_results_with_yaw(all_wakesteer_results)
+    combined_results_df = combine_wakesteer_results_with_yaw(pd.DataFrame(all_wakesteer_results), cfg.out_dir)
     combined_results_df.to_csv(cfg.out_dir / "uplift_per_steer_combined_results_with_yaw.csv")

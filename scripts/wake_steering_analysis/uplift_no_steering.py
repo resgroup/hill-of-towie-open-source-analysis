@@ -3,7 +3,7 @@ from functools import reduce
 from pathlib import Path
 
 import pandas as pd
-from wake_steering_analysis.combine_uplift_no_steering import combine_cc_results_with_yaw
+from scripts.wake_steering_analysis.combine_uplift_no_steering import combine_cc_results_with_yaw
 from wind_up.combine_results import calculate_total_uplift_of_test_and_ref_turbines
 from wind_up.interface import AssessmentInputs
 from wind_up.main_analysis import run_wind_up_analysis
@@ -75,7 +75,7 @@ if __name__ == "__main__":
         ),
     )
     results_per_test_ref_df = run_wind_up_analysis(assessment_inputs)
-    combined_results_df = combine_cc_results_with_yaw(results_per_test_ref_df, plot_config=plot_cfg)
+    combined_results_df = combine_cc_results_with_yaw(results_per_test_ref_df, cfg.out_dir, plot_config=plot_cfg)
     combined_results_df.to_csv(
         cfg.out_dir / f"{cfg.assessment_name}_combined_results_{pd.Timestamp.utcnow().strftime('%Y%m%d_%H%M%S')}.csv",
     )

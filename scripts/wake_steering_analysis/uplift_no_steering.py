@@ -3,17 +3,19 @@ from functools import reduce
 from pathlib import Path
 
 import pandas as pd
-from wind_up.combine_results import calculate_total_uplift_of_test_and_ref_turbines, combine_results
+from wake_steering_analysis.combine_uplift_no_steering import combine_cc_results_with_yaw
+from wind_up.combine_results import calculate_total_uplift_of_test_and_ref_turbines
 from wind_up.interface import AssessmentInputs
 from wind_up.main_analysis import run_wind_up_analysis
 from wind_up.models import PlotConfig, WindUpConfig
 
 from hot_open.era5_helpers import get_hot_reanalysis_datasets
 from hot_open.settings import get_cache_dir, get_out_dir, get_wind_up_output_dir
-from hot_open.unpack import unpack_local_meta_data, unpack_local_scada_data_v2
+from hot_open.unpack import unpack_local_meta_data
 from scripts.logger import setup_logger
+from scripts.wake_steering_analysis.hot_wake_steering_helpers import CONFIG_DIR
 from scripts.wake_steering_analysis.inspect_data import LOCAL_TEMPORARY_DIR
-from scripts.wake_steering_analysis.uplift_per_steer import CONFIG_DIR, _hot_dy_lidar_datasets, hot_dy_toggle_df
+from scripts.wake_steering_analysis.uplift_per_steer import _hot_dy_lidar_datasets, hot_dy_scada_df, hot_dy_toggle_df
 
 logger = logging.getLogger(__name__)
 if __name__ == "__main__":
@@ -32,7 +34,7 @@ if __name__ == "__main__":
     plot_cfg = PlotConfig(show_plots=False, save_plots=save_plots, plots_dir=cfg.out_dir / "plots")
     cfg.bootstrap_runs_override = 400 // 4  # TODO(AlexClerc): remove
 
-    scada_df = unpack_local_scada_data_v2(data_dir=LOCAL_TEMPORARY_DIR)
+    scada_df = hot_dy_scada_df()
     scada_df["exclude_row"] = 0
     total_excluded = 0
     for dir in list(uplift_per_steer_dir.glob("T[0-9]*_T[0-9]*_*")):
@@ -73,7 +75,7 @@ if __name__ == "__main__":
         ),
     )
     results_per_test_ref_df = run_wind_up_analysis(assessment_inputs)
-    combined_results_df = combine_results(results_per_test_ref_df, plot_config=plot_cfg, auto_choose_refs=False)
+    combined_results_df = combine_cc_results_with_yaw(results_per_test_ref_df, plot_config=plot_cfg)
     combined_results_df.to_csv(
         cfg.out_dir / f"{cfg.assessment_name}_combined_results_{pd.Timestamp.utcnow().strftime('%Y%m%d_%H%M%S')}.csv",
     )

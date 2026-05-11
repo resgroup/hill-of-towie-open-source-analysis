@@ -3,7 +3,6 @@ from functools import reduce
 from pathlib import Path
 
 import pandas as pd
-from scripts.wake_steering_analysis.combine_uplift_no_steering import combine_cc_results_with_yaw
 from wind_up.combine_results import calculate_total_uplift_of_test_and_ref_turbines
 from wind_up.interface import AssessmentInputs
 from wind_up.main_analysis import run_wind_up_analysis
@@ -13,6 +12,7 @@ from hot_open.era5_helpers import get_hot_reanalysis_datasets
 from hot_open.settings import get_cache_dir, get_out_dir, get_wind_up_output_dir
 from hot_open.unpack import unpack_local_meta_data
 from scripts.logger import setup_logger
+from scripts.wake_steering_analysis.combine_uplift_no_steering import combine_cc_results_with_yaw
 from scripts.wake_steering_analysis.hot_wake_steering_helpers import CONFIG_DIR
 from scripts.wake_steering_analysis.inspect_data import LOCAL_TEMPORARY_DIR
 from scripts.wake_steering_analysis.uplift_per_steer import _hot_dy_lidar_datasets, hot_dy_scada_df, hot_dy_toggle_df

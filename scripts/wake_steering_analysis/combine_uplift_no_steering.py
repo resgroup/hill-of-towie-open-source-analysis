@@ -45,83 +45,67 @@ def _calc_cc_only_tdf(
         ),
         mean_toggle_col_pre=pd.NamedAgg(
             column="mean_toggle_col_pre",
-            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum()
-            / trdf.loc[x.index, weight_col][x.notna()].sum(),
+            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum() / trdf.loc[x.index, weight_col].sum(),
         ),
         mean_toggle_col_post=pd.NamedAgg(
             column="mean_toggle_col_post",
-            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum()
-            / trdf.loc[x.index, weight_col][x.notna()].sum(),
+            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum() / trdf.loc[x.index, weight_col].sum(),
         ),
         mean_control_active_col_pre=pd.NamedAgg(
             column="mean_control_active_col_pre",
-            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum()
-            / trdf.loc[x.index, weight_col][x.notna()].sum(),
+            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum() / trdf.loc[x.index, weight_col].sum(),
         ),
         mean_control_active_col_post=pd.NamedAgg(
             column="mean_control_active_col_post",
-            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum()
-            / trdf.loc[x.index, weight_col][x.notna()].sum(),
+            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum() / trdf.loc[x.index, weight_col].sum(),
         ),
         mean_abs_wakesteer_col_pre=pd.NamedAgg(
             column="mean_abs_wakesteer_col_pre",
-            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum()
-            / trdf.loc[x.index, weight_col][x.notna()].sum(),
+            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum() / trdf.loc[x.index, weight_col].sum(),
         ),
         mean_abs_wakesteer_col_post=pd.NamedAgg(
             column="mean_abs_wakesteer_col_post",
-            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum()
-            / trdf.loc[x.index, weight_col][x.notna()].sum(),
+            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum() / trdf.loc[x.index, weight_col].sum(),
         ),
         pp_hours_pre=pd.NamedAgg(
             column="pp_hours_pre",
-            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum()
-            / trdf.loc[x.index, weight_col][x.notna()].sum(),
+            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum() / trdf.loc[x.index, weight_col].sum(),
         ),
         pp_hours_post=pd.NamedAgg(
             column="pp_hours_post",
-            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum()
-            / trdf.loc[x.index, weight_col][x.notna()].sum(),
+            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum() / trdf.loc[x.index, weight_col].sum(),
         ),
         pp_mwh_pre=pd.NamedAgg(
             column="pp_mwh_pre",
-            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum()
-            / trdf.loc[x.index, weight_col][x.notna()].sum(),
+            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum() / trdf.loc[x.index, weight_col].sum(),
         ),
         pp_mwh_post=pd.NamedAgg(
             column="pp_mwh_post",
-            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum()
-            / trdf.loc[x.index, weight_col][x.notna()].sum(),
+            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum() / trdf.loc[x.index, weight_col].sum(),
         ),
         ya_pre=pd.NamedAgg(
             column="ya_pre",
-            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum()
-            / trdf.loc[x.index, weight_col][x.notna()].sum(),
+            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum() / trdf.loc[x.index, weight_col].sum(),
         ),
         ya_post=pd.NamedAgg(
             column="ya_post",
-            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum()
-            / trdf.loc[x.index, weight_col][x.notna()].sum(),
+            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum() / trdf.loc[x.index, weight_col].sum(),
         ),
         yaph_pre=pd.NamedAgg(
             column="yaph_pre",
-            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum()
-            / trdf.loc[x.index, weight_col][x.notna()].sum(),
+            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum() / trdf.loc[x.index, weight_col].sum(),
         ),
         yaph_post=pd.NamedAgg(
             column="yaph_post",
-            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum()
-            / trdf.loc[x.index, weight_col][x.notna()].sum(),
+            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum() / trdf.loc[x.index, weight_col].sum(),
         ),
         yapmwh_pre=pd.NamedAgg(
             column="yapmwh_pre",
-            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum()
-            / trdf.loc[x.index, weight_col][x.notna()].sum(),
+            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum() / trdf.loc[x.index, weight_col].sum(),
         ),
         yapmwh_post=pd.NamedAgg(
             column="yapmwh_post",
-            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum()
-            / trdf.loc[x.index, weight_col][x.notna()].sum(),
+            aggfunc=lambda x: (x * trdf.loc[x.index, weight_col]).sum() / trdf.loc[x.index, weight_col].sum(),
         ),
         sigma_uncorr=pd.NamedAgg(
             column="unc_one_sigma_frc",

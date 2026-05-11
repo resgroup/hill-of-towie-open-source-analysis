@@ -29,10 +29,10 @@ ref_wtgs:
 #    - T03
 #    - T04
 #    - T05
-#    - T06 # poor quality reference
+    - T06 # poor quality reference
 #    - T07 # not actually controlled but not a good ref due to T3 steering
 #    - T08
-#    - T09 # drift compared to other references
+    - T09 # drift compared to other references
 #    - T10
 #    - T11
 #    - T12
@@ -40,10 +40,10 @@ ref_wtgs:
 #    - T14
 #    - T15
 #    - T16
-#    - T17 # drift compared to other references
+    - T17 # drift compared to other references
     - T18
 #    - T19
-#    - T20 # drift compared to other references
+    - T20 # drift compared to other references
 #    - T21
 non_wtg_ref_names:
     - ZX300_2428 # LiDAR near T11

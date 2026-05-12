@@ -144,8 +144,13 @@ def _calc_wakesteer_tdf(
     return tdf
 
 
-def combine_wakesteer_results(all_wakesteer_results) -> pd.DataFrame:
+def combine_wakesteer_results(all_wakesteer_results, exclude_refs: list[str] | None = None) -> pd.DataFrame:
+    if exclude_refs is None:
+        exclude_refs = []
     trdf = all_wakesteer_results.copy()
+    if len(exclude_refs) > 0:
+        logger.info(f"excluding refs {exclude_refs}")
+        trdf = trdf.loc[~trdf["reference"].isin(exclude_refs), :]
     trdf["unc_one_sigma_frc"] = (trdf["net_p5_uplift"] - trdf["net_p95_uplift"]) / 2 / norm.ppf(0.95)
     weight_col = "unc_weight"
     trdf[weight_col] = 1 / (trdf["unc_one_sigma_frc"] ** 2)
@@ -153,7 +158,9 @@ def combine_wakesteer_results(all_wakesteer_results) -> pd.DataFrame:
     return _calc_wakesteer_tdf(trdf, ref_list, weight_col)
 
 
-def combine_wakesteer_results_with_yaw(all_wakesteer_results, wind_up_out_dir: Path):
+def combine_wakesteer_results_with_yaw(
+    all_wakesteer_results, *, wind_up_out_dir: Path, exclude_refs: list[str] | None = None
+):
     yaw_stats_rows = {}
     for row in all_wakesteer_results.itertuples():
         stats = _load_yaw_stats_for_steer(row, wind_up_out_dir)
@@ -162,7 +169,7 @@ def combine_wakesteer_results_with_yaw(all_wakesteer_results, wind_up_out_dir: P
     all_wakesteer_results = all_wakesteer_results.join(yaw_stats_df)
     all_wakesteer_results.to_csv(wind_up_out_dir / "uplift_per_steer_results_with_yaw.csv", index=False)
     logger.info("saved uplift_per_steer_results_with_yaw.csv")
-    return combine_wakesteer_results(all_wakesteer_results)
+    return combine_wakesteer_results(all_wakesteer_results, exclude_refs=exclude_refs)
 
 
 if __name__ == "__main__":

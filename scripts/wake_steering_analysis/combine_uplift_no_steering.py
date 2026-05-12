@@ -204,7 +204,9 @@ def combine_cc_results_with_yaw(
         wind_up_out_dir / "HOT_dynamic_yaw_CC_only_results_per_test_ref_with_yaw.csv", index=False
     )
     logger.info("saved HOT_dynamic_yaw_CC_only_results_per_test_ref_with_yaw.csv")
-    return combine_cc_only_results(per_turbine_results, plot_config=plot_config, exclude_refs=exclude_refs)
+    tdf = combine_cc_only_results(per_turbine_results, plot_config=plot_config, exclude_refs=exclude_refs)
+    tdf["yaph_change"] = (tdf["yaph_post"] - tdf["yaph_pre"]) / tdf["yaph_pre"]
+    return tdf
 
 
 if __name__ == "__main__":

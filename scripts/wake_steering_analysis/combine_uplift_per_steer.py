@@ -155,7 +155,9 @@ def combine_wakesteer_results(all_wakesteer_results, exclude_refs: list[str] | N
     weight_col = "unc_weight"
     trdf[weight_col] = 1 / (trdf["unc_one_sigma_frc"] ** 2)
     ref_list = sorted(trdf["reference"].unique())
-    return _calc_wakesteer_tdf(trdf, ref_list, weight_col)
+    tdf = _calc_wakesteer_tdf(trdf, ref_list, weight_col)
+    tdf["yaph_change"] = (tdf["yaph_post"] - tdf["yaph_pre"]) / tdf["yaph_pre"]
+    return tdf
 
 
 def combine_wakesteer_results_with_yaw(

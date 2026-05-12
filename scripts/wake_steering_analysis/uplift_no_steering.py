@@ -19,6 +19,7 @@ from scripts.wake_steering_analysis.uplift_per_steer import _hot_dy_lidar_datase
 
 logger = logging.getLogger(__name__)
 
+
 def run_uplift_no_steering() -> None:
     config_file_name = "HOT_dynamic_yaw.yaml"
     save_plots = True

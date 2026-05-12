@@ -76,7 +76,9 @@ def run_uplift_no_steering() -> None:
         ),
     )
     results_per_test_ref_df = run_wind_up_analysis(assessment_inputs)
-    combined_cc_results_df = combine_cc_results_with_yaw(results_per_test_ref_df, wind_up_out_dir=cfg.out_dir, plot_config=plot_cfg)
+    combined_cc_results_df = combine_cc_results_with_yaw(
+        results_per_test_ref_df, wind_up_out_dir=cfg.out_dir, plot_config=plot_cfg
+    )
     combined_cc_results_df.to_csv(
         cfg.out_dir / f"{cfg.assessment_name}_combined_results_{pd.Timestamp.utcnow().strftime('%Y%m%d_%H%M%S')}.csv",
     )

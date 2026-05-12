@@ -232,5 +232,5 @@ if __name__ == "__main__":
     plot_cfg = PlotConfig(show_plots=False, save_plots=save_plots, plots_dir=cfg.out_dir / "plots")
 
     per_turbine_results = pd.read_csv(cfg.out_dir / "HOT_dynamic_yaw_CC_only_results_per_test_ref_20260511_122201.csv")
-    combined_results_df = combine_cc_results_with_yaw(per_turbine_results, cfg.out_dir)
+    combined_results_df = combine_cc_results_with_yaw(per_turbine_results, wind_up_out_dir=cfg.out_dir)
     combined_results_df.to_csv(cfg.out_dir / "HOT_dynamic_yaw_CC_combined_results_with_yaw.csv")

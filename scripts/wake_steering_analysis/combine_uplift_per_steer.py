@@ -188,5 +188,5 @@ if __name__ == "__main__":
     plot_cfg = PlotConfig(show_plots=False, save_plots=save_plots, plots_dir=cfg.out_dir / "plots")
 
     all_wakesteer_results = pd.read_csv(cfg.out_dir / "uplift_per_steer_results.csv")
-    combined_results = combine_wakesteer_results_with_yaw(all_wakesteer_results, cfg.out_dir)
+    combined_results = combine_wakesteer_results_with_yaw(all_wakesteer_results, wind_up_out_dir=cfg.out_dir)
     combined_results.to_csv(cfg.out_dir / "uplift_per_steer_combined_results_with_yaw.csv")

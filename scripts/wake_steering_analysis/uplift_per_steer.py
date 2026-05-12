@@ -380,7 +380,9 @@ def run_uplift_per_steer() -> None:
         )
         pd.DataFrame(all_wakesteer_results).to_csv(cfg.out_dir / "uplift_per_steer_results_interim.csv", index=False)
     pd.DataFrame(all_wakesteer_results).to_csv(cfg.out_dir / "uplift_per_steer_results.csv", index=False)
-    ws_combined_results = combine_wakesteer_results_with_yaw(pd.DataFrame(all_wakesteer_results), wind_up_out_dir=cfg.out_dir)
+    ws_combined_results = combine_wakesteer_results_with_yaw(
+        pd.DataFrame(all_wakesteer_results), wind_up_out_dir=cfg.out_dir
+    )
     ws_combined_results.to_csv(cfg.out_dir / "uplift_per_steer_combined_results_with_yaw.csv")
     min_ws_hours = 100
     ws_combined_results_filt = ws_combined_results[ws_combined_results["hours_on"] >= min_ws_hours]
@@ -391,10 +393,11 @@ def run_uplift_per_steer() -> None:
     plot_cfg = PlotConfig(show_plots=False, save_plots=save_plots, plots_dir=cfg.out_dir / "plots")
     (cfg.out_dir / "plots").mkdir(parents=True, exist_ok=True)
     cfg = add_smart_lat_long_to_cfg(md=unpack_local_meta_data(), cfg=cfg)
-
+    west_cfg = cfg.copy()
+    west_cfg.asset.wtgs = [x for x in cfg.asset.wtgs if x.name not in [f"T{i:02d}" for i in range(16, 21 + 1)]]
     title = f"{cfg.asset.name} WS upwind turbine mean abs wakesteer"
     bubble_plot(
-        cfg=cfg,
+        cfg=west_cfg,
         series=ws_combined_results_filt.set_index("upwind_wtg")["mean_abs_wakesteer_col_post"],
         title=title,
         cbarunits="deg",
@@ -409,7 +412,7 @@ def run_uplift_per_steer() -> None:
     )
     title = f"{cfg.asset.name} WS test turbine uplift"
     bubble_plot(
-        cfg=cfg,
+        cfg=west_cfg,
         series=pd.concat([upwind_uplifts, downwind_uplifts]).set_index("test_wtg")["p50_uplift"].sort_index() * 100,
         title=title,
         cbarunits="%",
@@ -423,6 +426,9 @@ def run_uplift_per_steer() -> None:
     plt.xlabel("Mean abs wakesteer command [deg]")
     plt.ylabel("Yaw activity change [%]")
     plt.grid()
+    plt.title(title)
+    plt.ylim(0, 50)
+    plt.xlim(0, 5)
     plt.savefig(plot_cfg.plots_dir / f"{title}.png")
     plt.close()
 

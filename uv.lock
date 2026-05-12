@@ -2291,7 +2291,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.1.0" },
     { name = "requests", specifier = ">=2.32.3" },
     { name = "requests-cache", specifier = ">=1.2.1" },
-    { name = "res-wind-up", specifier = ">=0.4.9" },
+    { name = "res-wind-up", specifier = ">=0.4.10" },
     { name = "retry-requests", specifier = ">=2.0.0" },
     { name = "tqdm", specifier = ">=4.67.0" },
 ]
@@ -5879,7 +5879,7 @@ wheels = [
 
 [[package]]
 name = "res-wind-up"
-version = "0.4.9"
+version = "0.4.10"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "eval-type-backport" },
@@ -5899,9 +5899,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "utm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/2e/4d/5ea1883cb33979efb32402ef59b45428b064d7acc8e2d92e5b9bf3b689ad/res_wind_up-0.4.9.tar.gz", hash = "sha256:7b31aeb9fc39040355976097aeffe9675345de26bf0e391ef228a419d61c3275", size = 99308, upload-time = "2026-05-08T15:37:31.159Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7d/c7/7ea76b768951dc0d367e40663fad85ad62f04428adf989635cc9f36844ac/res_wind_up-0.4.10.tar.gz", hash = "sha256:e2ec4d4da145862f7803782d3357e088226329bf4a6c0599de7e03490d74e189", size = 99395, upload-time = "2026-05-12T17:12:22.302Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c8/e8/4d76ef2da1f2471c0e3c3ec99894b8a855103278c83ea8179b524a654cf6/res_wind_up-0.4.9-py3-none-any.whl", hash = "sha256:5b3f4948ef1ddcc4ec35d4cb0482a82ae4a52fbb6838c825d6fc046c9a6e9ea9", size = 96482, upload-time = "2026-05-08T15:37:29.566Z" },
+    { url = "https://files.pythonhosted.org/packages/67/59/506abeed2e2c3697b52971ea6f0cf3627db378176698d9a60352d17da254/res_wind_up-0.4.10-py3-none-any.whl", hash = "sha256:d76efe75e063db538bfdf8cce8c3d9900f1f77d4c41727aa1e7143e237b21c0c", size = 96564, upload-time = "2026-05-12T17:12:20.352Z" },
 ]
 
 [[package]]

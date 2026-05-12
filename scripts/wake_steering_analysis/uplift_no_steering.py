@@ -7,6 +7,8 @@ from wind_up.combine_results import calculate_total_uplift_of_test_and_ref_turbi
 from wind_up.interface import AssessmentInputs
 from wind_up.main_analysis import run_wind_up_analysis
 from wind_up.models import PlotConfig, WindUpConfig
+from wind_up.plots.scada_funcs_plots import bubble_plot
+from wind_up.smart_data import add_smart_lat_long_to_cfg
 
 from hot_open.era5_helpers import get_hot_reanalysis_datasets
 from hot_open.settings import get_cache_dir, get_out_dir, get_wind_up_output_dir
@@ -32,10 +34,14 @@ def run_uplift_no_steering() -> None:
     scada_df = hot_dy_scada_df()
     scada_df["exclude_row"] = 0
     total_excluded = 0
+    test_wtgs = [x.name for x in cfg.test_wtgs]
+    refs = [x.name for x in cfg.ref_wtgs] + cfg.non_wtg_ref_names
     for dir in list(uplift_per_steer_dir.glob("T[0-9]*_T[0-9]*_*")):
         upwind_wtg_name = dir.stem.split("_")[0]
         downwind_wtg_name = dir.stem.split("_")[1]
         ref_name = "_".join(dir.stem.split("_")[2:])
+        if (upwind_wtg_name not in test_wtgs) or (downwind_wtg_name not in test_wtgs) or (ref_name not in refs):
+            continue
         pp_df_dir = dir / "pp_df"
         paths = [
             pp_df_dir / f"{upwind_wtg_name}_{ref_name}_pre_df.parquet",
@@ -70,12 +76,58 @@ def run_uplift_no_steering() -> None:
         ),
     )
     results_per_test_ref_df = run_wind_up_analysis(assessment_inputs)
-    combined_results_df = combine_cc_results_with_yaw(results_per_test_ref_df, cfg.out_dir, plot_config=plot_cfg)
-    combined_results_df.to_csv(
+    combined_cc_results_df = combine_cc_results_with_yaw(results_per_test_ref_df, wind_up_out_dir=cfg.out_dir, plot_config=plot_cfg)
+    combined_cc_results_df.to_csv(
         cfg.out_dir / f"{cfg.assessment_name}_combined_results_{pd.Timestamp.utcnow().strftime('%Y%m%d_%H%M%S')}.csv",
     )
-    wf_results = calculate_total_uplift_of_test_and_ref_turbines(combined_results_df, plot_cfg=plot_cfg)
-    wf_results.to_csv(cfg.out_dir / f"wf_results_{pd.Timestamp.utcnow().strftime('%Y%m%d_%H%M%S')}.csv")
+    wf_cc_results = calculate_total_uplift_of_test_and_ref_turbines(combined_cc_results_df, plot_cfg=plot_cfg)
+    wf_cc_results.to_csv(cfg.out_dir / f"wf_results_{pd.Timestamp.utcnow().strftime('%Y%m%d_%H%M%S')}.csv")
+
+    cfg = add_smart_lat_long_to_cfg(md=unpack_local_meta_data(), cfg=cfg)
+    plot_cfg = PlotConfig(show_plots=False, save_plots=save_plots, plots_dir=cfg.out_dir / "plots")
+    (cfg.out_dir / "plots").mkdir(parents=True, exist_ok=True)
+
+    hot_elevations = pd.read_csv(Path(__file__).parent / "Hill of Towie_elevations.csv", index_col=0)
+    title = f"{cfg.asset.name} turbine elevation"
+    bubble_plot(
+        cfg=cfg,
+        series=hot_elevations["Elevation"],
+        title=title,
+        cbarunits="m",
+        save_path=plot_cfg.plots_dir / f"{title}.png",
+        show_plot=plot_cfg.show_plots,
+    )
+    title = f"{cfg.asset.name} CC test turbine yaw activity change"
+    bubble_plot(
+        cfg=cfg,
+        series=combined_cc_results_df[~combined_cc_results_df["is_ref"]]
+        .set_index("test_wtg")["yaph_change"]
+        .sort_index()
+        * 100,
+        title=title,
+        cbarunits="%",
+        save_path=plot_cfg.plots_dir / f"{title}.png",
+        show_plot=plot_cfg.show_plots,
+    )
+    title = f"{cfg.asset.name} CC test turbine uplift"
+    bubble_plot(
+        cfg=cfg,
+        series=combined_cc_results_df[~combined_cc_results_df["is_ref"]]
+        .set_index("test_wtg")["p50_uplift"]
+        .sort_index()
+        * 100,
+        title=title,
+        cbarunits="%",
+        save_path=plot_cfg.plots_dir / f"{title}.png",
+        show_plot=plot_cfg.show_plots,
+    )
+
+    msg = f"CC test results P50 {100 * wf_cc_results.loc['test', 'p50_uplift']:.2f}%, P95 {100 * wf_cc_results.loc['test', 'p95_uplift']:.2f}%"
+    logger.info(msg)
+    msg = f"CC ref results P50 {100 * wf_cc_results.loc['ref', 'p50_uplift']:.2f}%, P95 {100 * wf_cc_results.loc['ref', 'p95_uplift']:.2f}%"
+    logger.info(msg)
+    msg = f"CC test results yaw activity change {100 * combined_cc_results_df[~combined_cc_results_df['is_ref']]['yaph_change'].mean():.1f}%"
+    logger.info(msg)
 
 
 if __name__ == "__main__":

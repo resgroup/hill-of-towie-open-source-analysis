@@ -12,7 +12,9 @@ from wind_up.constants import TIMESTAMP_COL, DataColumns
 from wind_up.interface import AssessmentInputs
 from wind_up.main_analysis import run_wind_up_analysis
 from wind_up.models import PlotConfig, WindUpConfig
+from wind_up.plots.scada_funcs_plots import bubble_plot
 from wind_up.reanalysis_data import MastOrLiDARDataset
+from wind_up.smart_data import add_smart_lat_long_to_cfg
 
 from hot_open.era5_helpers import get_hot_reanalysis_datasets
 from hot_open.fastlog_helpers import load_hot_fl_data
@@ -299,9 +301,9 @@ def run_uplift_per_steer() -> None:
     wake_steers = _extract_hot_wake_steers_from_table(wakesteer_table)
     all_wakesteer_results = []
     pd.DataFrame([asdict(x) for x in wake_steers]).to_csv(cfg.out_dir / "wake_steer_meta.csv", index=False)
-    lidar_refs = ["ZTM_5060", "ZX300_2428"]
-    possible_refs = ["T01", "T06", "T09", "T13", "T17", "T18", "T20", "ZX300_2428"]
-    for wakesteer, ref_name in itertools.product(wake_steers, possible_refs):
+    lidar_refs = ["ZX300_2428"]
+    refs = [x.name for x in cfg.ref_wtgs] + cfg.non_wtg_ref_names
+    for wakesteer, ref_name in itertools.product(wake_steers, refs):
         msg = f"{wakesteer.upwind_wtg} -> {wakesteer.downwind_wtg} with ref {ref_name}"
         logger.info(msg)
 
@@ -378,8 +380,56 @@ def run_uplift_per_steer() -> None:
         )
         pd.DataFrame(all_wakesteer_results).to_csv(cfg.out_dir / "uplift_per_steer_results_interim.csv", index=False)
     pd.DataFrame(all_wakesteer_results).to_csv(cfg.out_dir / "uplift_per_steer_results.csv", index=False)
-    combined_results_df = combine_wakesteer_results_with_yaw(pd.DataFrame(all_wakesteer_results), cfg.out_dir)
-    combined_results_df.to_csv(cfg.out_dir / "uplift_per_steer_combined_results_with_yaw.csv")
+    ws_combined_results = combine_wakesteer_results_with_yaw(pd.DataFrame(all_wakesteer_results), wind_up_out_dir=cfg.out_dir)
+    ws_combined_results.to_csv(cfg.out_dir / "uplift_per_steer_combined_results_with_yaw.csv")
+    min_ws_hours = 100
+    ws_combined_results_filt = ws_combined_results[ws_combined_results["hours_on"] >= min_ws_hours]
+    del ws_combined_results
+
+    cfg = WindUpConfig.from_yaml(CONFIG_DIR / config_file_name)
+    cfg.out_dir = get_wind_up_output_dir(cfg.assessment_name)
+    plot_cfg = PlotConfig(show_plots=False, save_plots=save_plots, plots_dir=cfg.out_dir / "plots")
+    (cfg.out_dir / "plots").mkdir(parents=True, exist_ok=True)
+    cfg = add_smart_lat_long_to_cfg(md=unpack_local_meta_data(), cfg=cfg)
+
+    title = f"{cfg.asset.name} WS upwind turbine mean abs wakesteer"
+    bubble_plot(
+        cfg=cfg,
+        series=ws_combined_results_filt.set_index("upwind_wtg")["mean_abs_wakesteer_col_post"],
+        title=title,
+        cbarunits="deg",
+        save_path=plot_cfg.plots_dir / f"{title}.png",
+        show_plot=plot_cfg.show_plots,
+    )
+    upwind_uplifts = ws_combined_results_filt[["upwind_wtg", "upwind_uplift_p50"]].rename(
+        columns={"upwind_wtg": "test_wtg", "upwind_uplift_p50": "p50_uplift"}
+    )
+    downwind_uplifts = ws_combined_results_filt[["downwind_wtg", "downwind_uplift_p50"]].rename(
+        columns={"downwind_wtg": "test_wtg", "downwind_uplift_p50": "p50_uplift"}
+    )
+    title = f"{cfg.asset.name} WS test turbine uplift"
+    bubble_plot(
+        cfg=cfg,
+        series=pd.concat([upwind_uplifts, downwind_uplifts]).set_index("test_wtg")["p50_uplift"].sort_index() * 100,
+        title=title,
+        cbarunits="%",
+        save_path=plot_cfg.plots_dir / f"{title}.png",
+        show_plot=plot_cfg.show_plots,
+    )
+    # make a scatter plot of yaw activity change vs wake steer command
+    title = f"{cfg.asset.name} yaw activity change vs wakesteer command"
+    plt.figure()
+    plt.scatter(ws_combined_results_filt["mean_abs_wakesteer_col_post"], 100 * ws_combined_results_filt["yaph_change"])
+    plt.xlabel("Mean abs wakesteer command [deg]")
+    plt.ylabel("Yaw activity change [%]")
+    plt.grid()
+    plt.savefig(plot_cfg.plots_dir / f"{title}.png")
+    plt.close()
+
+    msg = f"WS results P50 {100 * ws_combined_results_filt['p50_net_uplift'].mean():.2f}%, P95 {100 * ws_combined_results_filt['p95_net_uplift'].mean():.2f}%"
+    logger.info(msg)
+    msg = f"WS test results yaw activity change {100 * ws_combined_results_filt['yaph_change'].mean():.1f}%"
+    logger.info(msg)
 
 
 if __name__ == "__main__":

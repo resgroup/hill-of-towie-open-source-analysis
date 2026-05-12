@@ -124,19 +124,75 @@ def _calc_cc_only_tdf(
     return tdf
 
 
-def combine_cc_only_results(per_turbine_results, *, plot_config: PlotConfig | None = None) -> pd.DataFrame:
+def combine_cc_only_results(
+    per_turbine_results,
+    *,
+    auto_choose_refs: bool = False,
+    exclude_refs: list[str] | None = None,
+    plot_config: PlotConfig | None = None,
+) -> pd.DataFrame:
+    """This is a copy of wind-up combine_cc_only_results except for use of _calc_cc_only_tdf"""
+    if exclude_refs is None:
+        exclude_refs = []
+
+    msg = "#" * 78 + "\n# combine results per test turbine\n" + "#" * 78
+    logger.info(msg)
+
     trdf = per_turbine_results.copy()
+
+    if trdf.groupby(["test_wtg", "ref"]).size().max() > 1:
+        msg = "trdf must have no more than one row per test-ref pair"
+        raise ValueError(msg)
+
+    # remove reference predictions of themselves
+    trdf = trdf.loc[trdf["test_wtg"] != trdf["ref"], :]
+
+    if len(exclude_refs) > 0:
+        logger.info(f"excluding refs {exclude_refs}")
+        trdf = trdf.loc[~trdf["test_wtg"].isin(exclude_refs), :]
+        trdf = trdf.loc[~trdf["ref"].isin(exclude_refs), :]
+
+    if (trdf["unc_one_sigma_frc"] <= 0).any() or trdf["unc_one_sigma_frc"].isna().any():
+        msg = "unc_one_sigma_frc must be positive and non-NaN"
+        raise ValueError(msg)
+
     weight_col = "unc_weight"
     trdf[weight_col] = 1 / (trdf["unc_one_sigma_frc"] ** 2)
+
     ref_list = sorted(trdf["ref"].unique())
+
+    min_refs = 3
+    if auto_choose_refs:
+        if len(ref_list) >= min_refs:
+            best_ref_list = _choose_best_refs(trdf, ref_list, min_refs=min_refs)
+            refs_to_remove = [x for x in ref_list if x not in best_ref_list]
+            trdf = trdf.loc[~trdf["test_wtg"].isin(refs_to_remove), :]
+            trdf = trdf.loc[~trdf["ref"].isin(refs_to_remove), :]
+            ref_list = sorted(trdf["ref"].unique())
+        else:
+            result_manager.warning(f"len(ref_list) < {min_refs}, skipping auto_choose_refs")
+
+    logger.info(f"ref_list = {ref_list}")
     tdf = _calc_cc_only_tdf(trdf, ref_list, weight_col)
+
+    # change column order for readability
+    cols = list(tdf.columns)
+    first_cols = ["test_wtg", "p50_uplift", "p95_uplift", "p5_uplift", "sigma"]
+    cols = first_cols + [x for x in cols if x not in first_cols]
+    tdf = tdf[cols]
+
     if plot_config is not None:
         plot_testref_and_combined_results(trdf=trdf, tdf=tdf, plot_cfg=plot_config)
+
     return tdf
 
 
 def combine_cc_results_with_yaw(
-    per_turbine_results, wind_up_out_dir: Path, *, plot_config: PlotConfig | None = None
+    per_turbine_results,
+    *,
+    wind_up_out_dir: Path,
+    plot_config: PlotConfig | None = None,
+    exclude_refs: list[str] | None = None,
 ) -> pd.DataFrame:
     yaw_stats_rows = {}
     for row in per_turbine_results.itertuples():
@@ -148,7 +204,7 @@ def combine_cc_results_with_yaw(
         wind_up_out_dir / "HOT_dynamic_yaw_CC_only_results_per_test_ref_with_yaw.csv", index=False
     )
     logger.info("saved HOT_dynamic_yaw_CC_only_results_per_test_ref_with_yaw.csv")
-    return combine_cc_only_results(per_turbine_results, plot_config=plot_config)
+    return combine_cc_only_results(per_turbine_results, plot_config=plot_config, exclude_refs=exclude_refs)
 
 
 if __name__ == "__main__":

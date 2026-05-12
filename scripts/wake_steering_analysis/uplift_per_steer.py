@@ -318,7 +318,7 @@ def run_uplift_per_steer() -> None:
         else:
             wakesteer_cfg.non_wtg_ref_names = []
             wakesteer_cfg.ref_wtgs = [x.model_copy() for x in cfg.asset.wtgs if x.name == ref_name]
-        direction_margin = 1  # 0 looks great for LiDAR. Could be wider for T1 but still looks OK.
+        direction_margin = 0  # 0 looks great for LiDAR. T1 is a little shifted but still looks OK.
         wakesteer_cfg.ref_wd_filter = [
             (wakesteer.first_wdir - direction_margin) % 360,
             (wakesteer.last_wdir + direction_margin) % 360,

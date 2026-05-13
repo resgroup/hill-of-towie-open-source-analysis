@@ -1,14 +1,13 @@
 import pandas as pd
+from wake_steering_analysis.inspect_data import LOCAL_TEMPORARY_DIR
 
 from hot_open.fastlog_helpers import load_hot_fl_data
 from hot_open.lidar_helpers import load_zx_lidar_fl_data
 from hot_open.settings import get_filestore_dir
-from wake_steering_analysis.inspect_data import LOCAL_TEMPORARY_DIR
 
-if __name__ == '__main__':
-
-    start_dt= pd.Timestamp("2026-01-14 00:00:00",tz="UTC")
-    end_dt_excl=pd.Timestamp("2026-01-14 12:00:00",tz="UTC")
+if __name__ == "__main__":
+    start_dt = pd.Timestamp("2026-01-14 00:00:00", tz="UTC")
+    end_dt_excl = pd.Timestamp("2026-01-14 12:00:00", tz="UTC")
 
     zx300_fl_df = load_zx_lidar_fl_data(
         data_dir=LOCAL_TEMPORARY_DIR / "lidar_data",

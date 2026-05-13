@@ -80,10 +80,10 @@ def run_uplift_no_steering() -> None:
         results_per_test_ref_df, wind_up_out_dir=cfg.out_dir, plot_config=plot_cfg
     )
     combined_cc_results_df.to_csv(
-        cfg.out_dir / f"{cfg.assessment_name}_combined_results_{pd.Timestamp.utcnow().strftime('%Y%m%d_%H%M%S')}.csv",
+        cfg.out_dir / f"{cfg.assessment_name}_combined_cc_results.csv",
     )
     wf_cc_results = calculate_total_uplift_of_test_and_ref_turbines(combined_cc_results_df, plot_cfg=plot_cfg)
-    wf_cc_results.to_csv(cfg.out_dir / f"wf_results_{pd.Timestamp.utcnow().strftime('%Y%m%d_%H%M%S')}.csv")
+    wf_cc_results.to_csv(cfg.out_dir / "wf_cc_results.csv")
 
     cfg = add_smart_lat_long_to_cfg(md=unpack_local_meta_data(), cfg=cfg)
     plot_cfg = PlotConfig(show_plots=False, save_plots=save_plots, plots_dir=cfg.out_dir / "plots")

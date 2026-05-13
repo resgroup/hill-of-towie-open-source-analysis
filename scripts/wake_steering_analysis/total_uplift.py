@@ -14,7 +14,7 @@ if __name__ == "__main__":
     msg = f"log file is at {log_path}"
     logger.info(msg)
 
-    rerun_windup = False
+    rerun_windup = True
     ws_uplift, ws_uplift_uncertainty, ws_steering_turbine_yaph_change = hot_dy_uplift_per_steer(
         rerun_windup=rerun_windup
     )

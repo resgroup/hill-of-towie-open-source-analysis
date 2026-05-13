@@ -288,12 +288,35 @@ def _extract_hot_wake_steers_from_table(wakesteer_table: pd.DataFrame) -> list[H
     return wake_steers
 
 
-def run_uplift_per_steer() -> None:
+def _post_process_ws_results(ws_combined_results: pd.DataFrame) -> tuple[float, float, float]:
+    min_ws_hours = 100
+    ws_combined_results_filt = ws_combined_results[ws_combined_results["hours_on"] >= min_ws_hours]
+
+    ws_uplift = ws_combined_results_filt["p50_net_uplift"].mean()
+    ws_uplift_uncertainty = (1 / len(ws_combined_results_filt["sigma"])) * (
+        (ws_combined_results_filt["sigma"] ** 2).sum() ** 0.5
+    )
+    ws_steering_turbine_yaph_change = ws_combined_results_filt["yaph_change"].mean()
+    msg = f"WS results P50 {100 * ws_uplift:.2f}%, uncertainty {100 * ws_uplift_uncertainty:.2f}%"
+    logger.info(msg)
+    msg = f"WS test results yaw activity change for steering turbines: {100 * ws_steering_turbine_yaph_change:.1f}%"
+    logger.info(msg)
+    return ws_uplift, ws_uplift_uncertainty, ws_steering_turbine_yaph_change
+
+
+def hot_dy_uplift_per_steer(rerun_windup: bool = True) -> tuple[float, float, float]:
     config_file_name = "HOT_dynamic_yaw.yaml"
     save_plots = True
     cfg = WindUpConfig.from_yaml(CONFIG_DIR / config_file_name)
     cfg.out_dir = get_wind_up_output_dir(cfg.assessment_name)
     plot_cfg = PlotConfig(show_plots=False, save_plots=save_plots, plots_dir=cfg.out_dir / "plots")
+
+    if not rerun_windup:
+        ws_combined_results = pd.read_csv(cfg.out_dir / "uplift_per_steer_combined_results_with_yaw.csv")
+        ws_uplift, ws_uplift_uncertainty, ws_steering_turbine_yaph_change = _post_process_ws_results(
+            ws_combined_results
+        )
+        return ws_uplift, ws_uplift_uncertainty, ws_steering_turbine_yaph_change
 
     scada_df = hot_dy_scada_df()
 
@@ -384,6 +407,8 @@ def run_uplift_per_steer() -> None:
         pd.DataFrame(all_wakesteer_results), wind_up_out_dir=cfg.out_dir
     )
     ws_combined_results.to_csv(cfg.out_dir / "uplift_per_steer_combined_results_with_yaw.csv")
+    ws_uplift, ws_uplift_uncertainty, ws_steering_turbine_yaph_change = _post_process_ws_results(ws_combined_results)
+
     min_ws_hours = 100
     ws_combined_results_filt = ws_combined_results[ws_combined_results["hours_on"] >= min_ws_hours]
     del ws_combined_results
@@ -432,10 +457,7 @@ def run_uplift_per_steer() -> None:
     plt.savefig(plot_cfg.plots_dir / f"{title}.png")
     plt.close()
 
-    msg = f"WS results P50 {100 * ws_combined_results_filt['p50_net_uplift'].mean():.2f}%, P95 {100 * ws_combined_results_filt['p95_net_uplift'].mean():.2f}%"
-    logger.info(msg)
-    msg = f"WS test results yaw activity change {100 * ws_combined_results_filt['yaph_change'].mean():.1f}%"
-    logger.info(msg)
+    return ws_uplift, ws_uplift_uncertainty, ws_steering_turbine_yaph_change
 
 
 if __name__ == "__main__":
@@ -444,4 +466,4 @@ if __name__ == "__main__":
     setup_logger(log_path)
     msg = f"log file is at {log_path}"
     logger.info(msg)
-    run_uplift_per_steer()
+    hot_dy_uplift_per_steer()

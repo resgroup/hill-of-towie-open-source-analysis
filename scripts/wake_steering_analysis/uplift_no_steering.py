@@ -22,7 +22,20 @@ from scripts.wake_steering_analysis.uplift_per_steer import _hot_dy_lidar_datase
 logger = logging.getLogger(__name__)
 
 
-def run_uplift_no_steering() -> None:
+def _post_process_cc_results(*, wf_cc_results: pd.DataFrame, combined_cc_results_df) -> tuple[float, float, float]:
+    cc_uplift = wf_cc_results.loc["test", "p50_uplift"]
+    cc_uplift_uncertainty = wf_cc_results.loc["test", "sigma"]
+    cc_yaph_change = combined_cc_results_df[~combined_cc_results_df["is_ref"]]["yaph_change"].mean()
+    msg = f"CC test results P50 {100 * cc_uplift:.2f}%, uncertainty {100 * cc_uplift_uncertainty:.2f}%"
+    logger.info(msg)
+    msg = f"CC ref results P50 {100 * wf_cc_results.loc['ref', 'p50_uplift']:.2f}%"
+    logger.info(msg)
+    msg = f"CC test results yaw activity change {100 * cc_yaph_change:.1f}%"
+    logger.info(msg)
+    return cc_uplift, cc_uplift_uncertainty, cc_yaph_change
+
+
+def hot_dy_uplift_no_steering(rerun_windup: bool = True) -> tuple[float, float, float]:
     config_file_name = "HOT_dynamic_yaw.yaml"
     save_plots = True
     cfg = WindUpConfig.from_yaml(CONFIG_DIR / config_file_name)
@@ -30,6 +43,15 @@ def run_uplift_no_steering() -> None:
     cfg.assessment_name = "HOT_dynamic_yaw_CC_only"
     cfg.out_dir = get_wind_up_output_dir(cfg.assessment_name)
     plot_cfg = PlotConfig(show_plots=False, save_plots=save_plots, plots_dir=cfg.out_dir / "plots")
+
+    if not rerun_windup:
+        wf_cc_results = pd.read_csv(cfg.out_dir / "wf_cc_results.csv", index_col=0)
+        combined_cc_results_df = pd.read_csv(cfg.out_dir / f"{cfg.assessment_name}_combined_cc_results.csv")
+        cc_uplift, cc_uplift_uncertainty, cc_yaph_change = _post_process_cc_results(
+            wf_cc_results=wf_cc_results, combined_cc_results_df=combined_cc_results_df
+        )
+
+        return cc_uplift, cc_uplift_uncertainty, cc_yaph_change
 
     scada_df = hot_dy_scada_df()
     scada_df["exclude_row"] = 0
@@ -124,12 +146,10 @@ def run_uplift_no_steering() -> None:
         show_plot=plot_cfg.show_plots,
     )
 
-    msg = f"CC test results P50 {100 * wf_cc_results.loc['test', 'p50_uplift']:.2f}%, P95 {100 * wf_cc_results.loc['test', 'p95_uplift']:.2f}%"
-    logger.info(msg)
-    msg = f"CC ref results P50 {100 * wf_cc_results.loc['ref', 'p50_uplift']:.2f}%, P95 {100 * wf_cc_results.loc['ref', 'p95_uplift']:.2f}%"
-    logger.info(msg)
-    msg = f"CC test results yaw activity change {100 * combined_cc_results_df[~combined_cc_results_df['is_ref']]['yaph_change'].mean():.1f}%"
-    logger.info(msg)
+    cc_uplift, cc_uplift_uncertainty, cc_yaph_change = _post_process_cc_results(
+        wf_cc_results=wf_cc_results, combined_cc_results_df=combined_cc_results_df
+    )
+    return cc_uplift, cc_uplift_uncertainty, cc_yaph_change
 
 
 if __name__ == "__main__":
@@ -138,4 +158,4 @@ if __name__ == "__main__":
     setup_logger(log_path)
     msg = f"log file is at {log_path}"
     logger.info(msg)
-    run_uplift_no_steering()
+    hot_dy_uplift_no_steering()

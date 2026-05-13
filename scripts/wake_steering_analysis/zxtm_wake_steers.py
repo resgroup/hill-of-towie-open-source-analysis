@@ -10,7 +10,7 @@ import pandas as pd
 from hot_open.circular_math import circdiff_degrees
 from hot_open.fastlog_helpers import load_hot_fl_data
 from hot_open.lidar_helpers import load_zx_lidar_fl_data
-from hot_open.settings import get_out_dir
+from hot_open.settings import get_filestore_dir, get_out_dir
 from scripts.logger import setup_logger
 from scripts.wake_steering_analysis.inspect_data import (
     LOCAL_TEMPORARY_DIR,
@@ -174,7 +174,9 @@ def plot_wake_steering_period(
         label=f"{dependent_turbine_name} - {ref_name} smoothed power",
         color="C2",
     )
-    plot_ser = plot_steer_df[smoothed_pw_col] + plot_dep_df[smoothed_pw_col] - 2 * plot_ref_df[smoothed_pw_col]
+    plot_ser = (
+        plot_steer_df[smoothed_pw_col] + plot_dep_df[smoothed_pw_col] - 2 * plot_ref_df[smoothed_pw_col]
+    )  # TODO try normalizing
     ax.plot(
         plot_dep_df.index,
         plot_ser - plot_ser.mean(),
@@ -195,7 +197,7 @@ def plot_wake_steering_period(
     ax = axes[axid]
     ax.plot(
         plot_zxtm_df.index,
-        plot_zxtm_df[smoothed_right_ws_col] - plot_zxtm_df[smoothed_left_ws_col],
+        plot_zxtm_df[smoothed_right_ws_col] - plot_zxtm_df[smoothed_left_ws_col],  # TODO try normalizing
         label="ZXTM smoothed right - left ws",
     )
     ax.plot(plot_steer_df.index, steering_yawerr / 5, label=f"{steering_name} yaw error / 5", color="grey", alpha=0.5)
@@ -224,8 +226,8 @@ if __name__ == "__main__":
     )
 
     wtg_numbers = [1, 3, 7]
-    start_dt = pd.Timestamp("2026-01-07 13:00", tz="UTC")
-    end_dt_excl = pd.Timestamp("2026-05-01 08:00", tz="UTC")
+    start_dt = pd.Timestamp("2026-02-19 00:00", tz="UTC")  # pd.Timestamp("2026-01-07 13:00", tz="UTC")
+    end_dt_excl = pd.Timestamp("2026-02-22 00:00", tz="UTC")  # pd.Timestamp("2026-05-01 08:00", tz="UTC")
 
     toggle_col = "computed_driver_post_processed_toggle_state"
     yawpos_col = "computed_driver_pre_processed_yaw_direction_true_degrees"
@@ -233,7 +235,7 @@ if __name__ == "__main__":
     wake_steer_col = "computed_core_post_processed_core_wake_steering_offset_degrees"
 
     wtg_fl_df = load_hot_fl_data(
-        data_dir=LOCAL_TEMPORARY_DIR / "turbine_fastlog" / "Filestore",
+        data_dir=get_filestore_dir(),
         wtg_numbers=wtg_numbers,
         start_dt=start_dt,
         end_dt_excl=end_dt_excl,
@@ -262,8 +264,8 @@ if __name__ == "__main__":
         remove_bad_values=True,
     )
     zxtm_fl_df[ZXTM_WD_COL] = (zxtm_fl_df[ZXTM_WD_COL] + NORTH_CORRECTIONS["ZXTM"]) % 360
-    left_ws_col = "Left LOS Speed (m/s) at Rotor Segment Height 100.0m"
-    right_ws_col = "Right LOS Speed (m/s) at Rotor Segment Height 100.0m"
+    left_ws_col = "Left LOS Speed (m/s) at Rotor Segment Height 59.0m"
+    right_ws_col = "Right LOS Speed (m/s) at Rotor Segment Height 59.0m"
 
     pw_col = WTG_FL_ACT_POWER_COL
     smoothed_pw_col = "smoothed_pw"
@@ -280,7 +282,7 @@ if __name__ == "__main__":
     minutes_to_include_before = 10
     minutes_to_include_after = 10
     toggle_period_minutes = 50 * 2
-    toggle_periods_in_one_plot = 3
+    toggle_periods_in_one_plot = 2
     plot_start = first_toggle_off - dt.timedelta(minutes=minutes_to_include_before)
     plot_duration = (
         dt.timedelta(minutes=minutes_to_include_before)

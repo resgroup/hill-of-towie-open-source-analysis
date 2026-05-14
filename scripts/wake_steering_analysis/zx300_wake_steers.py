@@ -5,8 +5,8 @@ import logging
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
 import pandas as pd
+from matplotlib import ticker
 
 from hot_open.circular_math import circdiff_degrees
 from hot_open.fastlog_helpers import load_hot_fl_data
@@ -117,8 +117,8 @@ def _plot_wake_steering_period(
 
     axid += 1
     ax = axes[axid]
-    zx300_hh_ws_col='Horizontal Wind Speed (m/s) at 58m'
-    zx300_hh_wd_col = 'Wind Direction (deg) at 58m'
+    zx300_hh_ws_col = "Horizontal Wind Speed (m/s) at 58m"
+    zx300_hh_wd_col = "Wind Direction (deg) at 58m"
     ax_twin = ax.twinx()
     ax.plot(plot_zx300_df.index, plot_zx300_df[zx300_hh_ws_col], label=zx300_hh_ws_col)
     ax_twin.plot(plot_zx300_df.index, plot_zx300_df[zx300_hh_wd_col], label=zx300_hh_wd_col, color="C1")
@@ -205,7 +205,9 @@ def _plot_wake_steering_period(
             plot_zxtm_df[smoothed_right_ws_col] - plot_zxtm_df[smoothed_left_ws_col],  # TODO try normalizing
             label="ZXTM smoothed right - left ws",
         )
-        ax.plot(plot_steer_df.index, steering_yawerr / 5, label=f"{steering_name} yaw error / 5", color="grey", alpha=0.5)
+        ax.plot(
+            plot_steer_df.index, steering_yawerr / 5, label=f"{steering_name} yaw error / 5", color="grey", alpha=0.5
+        )
         _shade_toggle(ax, steer_df=plot_steer_df, toggle_col=toggle_col)
         ax.set_ylabel("wind speed diff [m/s]")
 
@@ -230,7 +232,7 @@ if __name__ == "__main__":
         }
     )
 
-    wtg_numbers = [11,13, 14]
+    wtg_numbers = [11, 13, 14]
     # Jan 14, Feb 23, Mar 20, Apr 4
     start_dt = pd.Timestamp("2026-01-14 00:00", tz="UTC")  # pd.Timestamp("2026-01-07 13:00", tz="UTC")
     end_dt_excl = pd.Timestamp("2026-01-15 00:00", tz="UTC")  # pd.Timestamp("2026-05-01 08:00", tz="UTC")

@@ -402,12 +402,12 @@ def plot_wind_speed_and_direction_comparison(
     plt.close(fig)
 
 
-NORTH_CORRECTIONS = { # copied from HOT_DY_Design_northing.yaml
+NORTH_CORRECTIONS = {  # copied from HOT_DY_Design_northing.yaml
     "T03": -177.46022644042966,
     "T07": 39.44209289550781,
-    "T11":-20.931736755371105,
-    "T13":1.2261276245117188,
-    "T14":-11.6356185913086,
+    "T11": -20.931736755371105,
+    "T13": 1.2261276245117188,
+    "T14": -11.6356185913086,
     "ZXTM": -131,
 }
 

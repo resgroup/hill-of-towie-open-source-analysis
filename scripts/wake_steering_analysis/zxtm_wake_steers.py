@@ -200,8 +200,16 @@ def plot_wake_steering_period(
         plot_zxtm_df[smoothed_right_ws_col] - plot_zxtm_df[smoothed_left_ws_col],  # TODO try normalizing
         label="ZXTM smoothed right - left ws",
     )
-    ax.plot(plot_steer_df.index, steering_yawerr / 5, label=f"{steering_name} yaw error / 5", color="C1", alpha=0.5) # during wake steering we expect yaw error and (right-left) wind speed to look similar
-    ax.plot(plot_steer_df.index, (plot_steer_df[yawpos_col]-207)/5, label=f"{steering_name} (yaw pos - 207) / 5", color="grey", alpha=0.5) # with no wake steering we expect yaw error and (yawpos-bearing) to look similar
+    ax.plot(
+        plot_steer_df.index, steering_yawerr / 5, label=f"{steering_name} yaw error / 5", color="C1", alpha=0.5
+    )  # during wake steering we expect yaw error and (right-left) wind speed to look similar
+    ax.plot(
+        plot_steer_df.index,
+        (plot_steer_df[yawpos_col] - 207) / 5,
+        label=f"{steering_name} (yaw pos - 207) / 5",
+        color="grey",
+        alpha=0.5,
+    )  # with no wake steering we expect yaw error and (yawpos-bearing) to look similar
     _shade_toggle(ax, steer_df=plot_steer_df, toggle_col=toggle_col)
     ax.set_ylabel("wind speed diff [m/s]")
 
@@ -264,9 +272,9 @@ if __name__ == "__main__":
         end_dt_excl=end_dt_excl,
         remove_bad_values=True,
     )
-    range_min = 100 # 10, 48, 64, 85, 126 or 208
+    range_min = 100  # 10, 48, 64, 85, 126 or 208
     range_max = 300  # 10, 48, 64, 85, 126 or 208
-    zxtm_fl_df=zxtm_fl_df[(zxtm_fl_df['Range (m)'] >= range_min)&(zxtm_fl_df['Range (m)'] <= range_max)]
+    zxtm_fl_df = zxtm_fl_df[(zxtm_fl_df["Range (m)"] >= range_min) & (zxtm_fl_df["Range (m)"] <= range_max)]
     zxtm_fl_df[ZXTM_WD_COL] = (zxtm_fl_df[ZXTM_WD_COL] + NORTH_CORRECTIONS["ZXTM"]) % 360
     left_ws_col = "Left LOS Speed (m/s) at Rotor Segment Height 59.0m"
     right_ws_col = "Right LOS Speed (m/s) at Rotor Segment Height 59.0m"

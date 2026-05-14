@@ -315,7 +315,7 @@ def _init_figure(
 
     fig.suptitle(
         f"Hill of Towie — T03 wake steering for T07 (T01 reference) — {PLOT_START:%Y-%m-%d %H:%M}–{PLOT_END:%H:%M} UTC",
-        fontsize=11,
+        fontsize=14,
     )
 
     # --- Timeline (drawn once, fully static) ---
@@ -329,7 +329,7 @@ def _init_figure(
     _shade_toggle(ax_tl, steer_df=steer_df, toggle_col=TOGGLE_COL)
     ax_tl.set_xlim(PLOT_START, PLOT_END)
     ax_tl.set_ylabel("direction [degN]")
-    ax_tl.legend(bbox_to_anchor=(1.01, 1), loc="upper left", fontsize=7, frameon=True)
+    ax_tl.legend(bbox_to_anchor=(1.01, 1), loc="upper left", fontsize=10, frameon=True)
     ax_tl.grid(True, alpha=0.4)
     plt.setp(ax_tl.xaxis.get_majorticklabels(), rotation=45, ha="right")
     vline = ax_tl.axvline(PLOT_START, color="black", linewidth=1.5, linestyle="--", zorder=5)
@@ -343,10 +343,10 @@ def _init_figure(
     ax_be.set_xlim(min(all_x) - 100, max(all_x) + 100)
     ax_be.set_ylim(min(all_y) - 100, max(all_y) + 110)  # room above for name+power
     ax_be.set_aspect("equal", adjustable="datalim")
-    ax_be.set_xlabel("easting (m)", fontsize=8)
-    ax_be.set_ylabel("northing (m)", fontsize=8)
+    ax_be.set_xlabel("easting (m)", fontsize=10)
+    ax_be.set_ylabel("northing (m)", fontsize=10)
     ax_be.grid(True, alpha=0.3)
-    title_artist = ax_be.set_title("", fontsize=9)
+    title_artist = ax_be.set_title("", fontsize=10)
 
     # Tower circles + name labels — static (never move).
     # Name sits above the tower (well clear of the 41 m rotor reach); power is
@@ -354,7 +354,7 @@ def _init_figure(
     # read as one block.
     for name, (tx, ty) in TURBINE_COORDS.items():
         ax_be.add_patch(mpatches.Circle((tx, ty), radius=1.5, facecolor="gray", edgecolor="black", zorder=4))
-        ax_be.text(tx, ty + 75, name, ha="center", va="bottom", fontsize=10, fontweight="bold", zorder=6)
+        ax_be.text(tx, ty + 75-25, name, ha="center", va="bottom", fontsize=10, fontweight="bold", zorder=6)
 
     # Dynamic turbine artists — placeholder data, updated each frame
     pw_norm = Normalize(pw_vmin, pw_vmax)
@@ -380,11 +380,11 @@ def _init_figure(
         # Power label: directly under the turbine name, fixed position.
         power_text = ax_be.text(
             tx,
-            ty + 60,
+            ty + 60-25,
             "",
             ha="center",
             va="bottom",
-            fontsize=9,
+            fontsize=10,
             zorder=6,
         )
         turbine_artists[name] = (nacelle, rotor, power_text)
@@ -416,12 +416,12 @@ def _init_figure(
     ws_xlim = (ws_vmin - 0.2, ws_vmax + 0.2)
     profile_lines: dict[tuple[str, float], Line2D] = {}
     profile_dots: dict[tuple[str, float], object] = {}
-    for side, ax, ttl in [("Right", ax_rp, "Right LOS"), ("Left", ax_lp, "Left LOS")]:
+    for side, ax, ttl in [("Right", ax_rp, "Right Beam"), ("Left", ax_lp, "Left Beam")]:
         ax.set_xlim(ws_xlim)
-        ax.set_ylim(min(PROFILE_HEIGHTS_M) - 5, max(PROFILE_HEIGHTS_M) + 5)
-        ax.set_xlabel("wind speed (m/s)", fontsize=8)
-        ax.set_ylabel("height AGL (m)", fontsize=8)
-        ax.set_title(ttl, fontsize=9)
+        ax.set_ylim(18, 100) # HOT rotor extent
+        ax.set_xlabel("wind speed (m/s)", fontsize=10)
+        ax.set_ylabel("height above T07 ground level (m)", fontsize=10)
+        ax.set_title(ttl, fontsize=10)
         ax.grid(True, alpha=0.4)
         for range_val, color in zip(PROFILE_RANGES_M, _RANGE_COLORS):
             (line,) = ax.plot(
@@ -441,7 +441,7 @@ def _init_figure(
                 zorder=7, edgecolors="k", linewidths=0.4,
             )
             profile_dots[(side, range_val)] = dot
-        ax.legend(loc="lower right", fontsize=7, title="Range", title_fontsize=7)
+        ax.legend(loc="lower right", fontsize=10, title="Range", title_fontsize=10)
 
     # --- Colourbars: horizontal, side-by-side along the figure bottom ---
     # Positioned in figure coords (independent of any subplot) so they stay
@@ -458,7 +458,7 @@ def _init_figure(
     pw_sm = plt.cm.ScalarMappable(norm=pw_norm, cmap=pw_cmap)
     pw_sm.set_array([])
     cb_pw = fig.colorbar(pw_sm, cax=cax_pw, orientation="horizontal")
-    cb_pw.set_label("power (MW)", fontsize=8)
+    cb_pw.set_label("power (MW)", fontsize=10)
     cb_pw.ax.xaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{x / 1000:.1f}"))
     cb_pw.ax.tick_params(labelsize=7)
 
@@ -466,7 +466,7 @@ def _init_figure(
     ws_sm = plt.cm.ScalarMappable(norm=ws_norm, cmap=ws_cmap)
     ws_sm.set_array([])
     cb_ws = fig.colorbar(ws_sm, cax=cax_ws, orientation="horizontal")
-    cb_ws.set_label("wind speed (m/s)", fontsize=8)
+    cb_ws.set_label("wind speed (m/s)", fontsize=10)
     cb_ws.ax.tick_params(labelsize=7)
 
     return {

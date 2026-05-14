@@ -46,6 +46,7 @@ import pandas as pd
 from matplotlib.animation import PillowWriter
 from matplotlib.colors import Normalize
 from matplotlib.lines import Line2D
+from matplotlib.ticker import FuncFormatter
 from tqdm import tqdm
 
 from hot_open.fastlog_helpers import load_hot_fl_data
@@ -65,11 +66,11 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Tunable constants
 # ---------------------------------------------------------------------------
-PLOT_START = pd.Timestamp("2026-02-20 00:00", tz="UTC")
-PLOT_END = pd.Timestamp("2026-02-20 07:00", tz="UTC")
-FRAME_INTERVAL_S = 10        # seconds of real data per animation frame
-ANIMATION_DURATION_S = 60    # target GIF duration in seconds
-SMOOTHING_WINDOW = 600       # rolling-mean window in seconds
+PLOT_START = pd.Timestamp("2026-02-20 01:00", tz="UTC")
+PLOT_END = pd.Timestamp("2026-02-20 03:00", tz="UTC")
+FRAME_INTERVAL_S = 20        # seconds of real data per animation frame
+ANIMATION_DURATION_S = 30    # target GIF duration in seconds
+SMOOTHING_WINDOW = 300       # rolling-mean window in seconds
 
 # Load from this earlier start so the rolling mean is fully populated at PLOT_START
 LOAD_START = PLOT_START - pd.Timedelta(seconds=SMOOTHING_WINDOW)
@@ -87,8 +88,7 @@ HALF_ANGLE_DEG = 15.0        # ZXTM cone half-angle
 # ZXTM column definitions
 # ---------------------------------------------------------------------------
 PROFILE_HEIGHTS_M: list[float] = [26.2, 42.6, 59.0, 75.4, 91.8]
-PROFILE_RANGES_M: list[float] = [85.0, 126.0, 208.0]   # used in vertical profiles
-ZXTM_ALL_RANGES_M: list[float] = [10.0, 48.0, 64.0, 85.0, 126.0, 208.0]
+PROFILE_RANGES_M: list[float] = [85.0, 126.0, 208.0]   # used in vertical profiles AND birds-eye points
 
 WS_COLS: list[str] = [
     f"{side} LOS Speed (m/s) at Rotor Segment Height {h}m"
@@ -163,7 +163,7 @@ def _load_zxtm_data() -> dict[float, pd.DataFrame]:
     """Load ZXTM lidar fastlog, smooth each range independently.
 
     Returns {range_m: smoothed_df} where each df has WS_COLS smoothed with a
-    600 s rolling mean (min_periods = SMOOTHING_WINDOW // 5).
+    600 s rolling mean (min_periods = SMOOTHING_WINDOW // 10).
     """
     zxtm_fl_df = load_zx_lidar_fl_data(
         data_dir=LOCAL_TEMPORARY_DIR / "lidar_data",
@@ -178,7 +178,7 @@ def _load_zxtm_data() -> dict[float, pd.DataFrame]:
     for range_val, group in zxtm_fl_df.groupby("Range (m)"):
         available = [col for col in WS_COLS if col in group.columns]
         smoothed = group[available].rolling(
-            window=SMOOTHING_WINDOW, min_periods=SMOOTHING_WINDOW // 5
+            window=SMOOTHING_WINDOW, min_periods=SMOOTHING_WINDOW // 10
         ).mean()
         # Clip to animation window after smoothing so warm-up rows are excluded
         result[float(range_val)] = smoothed.loc[PLOT_START:PLOT_END]
@@ -225,162 +225,7 @@ def _local_to_world(
     return tx + dx * cos_y + dy * sin_y, ty - dx * sin_y + dy * cos_y
 
 
-def _draw_turbine(
-    ax: plt.Axes,
-    *,
-    tx: float,
-    ty: float,
-    yaw_deg: float,
-    power: float,
-    name: str,
-    pw_norm: Normalize,
-    pw_cmap,
-) -> None:
-    yaw_rad = np.deg2rad(yaw_deg)
-
-    # Tower (static 3 m diameter circle)
-    ax.add_patch(
-        mpatches.Circle((tx, ty), radius=1.5, facecolor="gray", edgecolor="black", zorder=4)
-    )
-
-    # Nacelle polygon: 6 m forward, 4 m behind, ±2 m wide
-    corners_local = [
-        (-NACELLE_HALF_WIDTH_M, -NACELLE_REAR_M),
-        (NACELLE_HALF_WIDTH_M, -NACELLE_REAR_M),
-        (NACELLE_HALF_WIDTH_M, NACELLE_FRONT_M),
-        (-NACELLE_HALF_WIDTH_M, NACELLE_FRONT_M),
-    ]
-    corners_world = [_local_to_world(tx, ty, yaw_rad, dx, dy) for dx, dy in corners_local]
-    color = pw_cmap(pw_norm(power))
-    ax.add_patch(
-        mpatches.Polygon(
-            corners_world, closed=True, facecolor=color, edgecolor="black", zorder=3
-        )
-    )
-
-    # Rotor line (82 m, centred at nacelle front)
-    half_r = ROTOR_DIAMETER_M / 2
-    r_left = _local_to_world(tx, ty, yaw_rad, -half_r, NACELLE_FRONT_M)
-    r_right = _local_to_world(tx, ty, yaw_rad, half_r, NACELLE_FRONT_M)
-    ax.plot([r_left[0], r_right[0]], [r_left[1], r_right[1]], "k-", linewidth=2.5, zorder=5)
-
-    # Turbine name (offset upward in screen space regardless of yaw)
-    ax.text(tx, ty + 55, name, ha="center", va="bottom", fontsize=8, zorder=6)
-
-    # Power annotation to the right of the nacelle
-    ann_pos = _local_to_world(tx, ty, yaw_rad, NACELLE_HALF_WIDTH_M + 5, 0.0)
-    ax.text(ann_pos[0], ann_pos[1], f"{power:.0f} kW", ha="left", va="center", fontsize=7, zorder=6)
-
-
-# ---------------------------------------------------------------------------
-# Task 6: Draw ZXTM LiDAR points
-# ---------------------------------------------------------------------------
-
-
-def _draw_zxtm_points(
-    ax: plt.Axes,
-    *,
-    t07_x: float,
-    t07_y: float,
-    t07_yaw_deg: float,
-    zxtm_smoothed: dict[float, pd.DataFrame],
-    ts: pd.Timestamp,
-    ws_norm: Normalize,
-    ws_cmap,
-) -> None:
-    yaw_rad = np.deg2rad(t07_yaw_deg)
-    half_angle_rad = np.deg2rad(HALF_ANGLE_DEG)
-    # Range (m) is the horizontal forward distance to the scan plane.
-    # The beam's slant distance in plan view is Range / cos(half_angle).
-    dist_factor = 1.0 / np.cos(half_angle_rad)
-
-    xs: list[float] = []
-    ys: list[float] = []
-    colors: list = []
-    sizes: list[float] = []
-
-    for range_val in ZXTM_ALL_RANGES_M:
-        if range_val not in zxtm_smoothed:
-            continue
-        df = zxtm_smoothed[range_val]
-        idx = df.index.get_indexer([ts], method="nearest")[0]
-        if idx < 0:
-            continue
-        row = df.iloc[idx]
-
-        dist = range_val * dist_factor
-        right_angle = yaw_rad + half_angle_rad
-        left_angle = yaw_rad - half_angle_rad
-
-        for ws, angle in [
-            (row.get("Right LOS Speed (m/s) at Rotor Segment Height 59.0m", np.nan), right_angle),
-            (row.get("Left LOS Speed (m/s) at Rotor Segment Height 59.0m", np.nan), left_angle),
-        ]:
-            xs.append(t07_x + dist * np.sin(angle))
-            ys.append(t07_y + dist * np.cos(angle))
-            norm_ws = float(ws_norm(ws)) if not pd.isna(ws) else 0.5
-            colors.append(ws_cmap(norm_ws))
-            sizes.append(30.0 + norm_ws * 170.0)
-
-    if xs:
-        ax.scatter(xs, ys, c=colors, s=sizes, zorder=6, edgecolors="k", linewidths=0.4)
-
-
-# ---------------------------------------------------------------------------
-# Task 7: Draw vertical wind speed profiles
-# ---------------------------------------------------------------------------
-
-
 _RANGE_COLORS = [plt.cm.Greens(v) for v in (0.40, 0.65, 0.90)]  # 85, 126, 208 m
-
-
-def _draw_vertical_profiles(
-    ax_right: plt.Axes,
-    ax_left: plt.Axes,
-    *,
-    ts: pd.Timestamp,
-    zxtm_smoothed: dict[float, pd.DataFrame],
-    ws_xlim: tuple[float, float],
-) -> None:
-    for ax, side, title in [
-        (ax_right, "Right", "Right LOS"),
-        (ax_left, "Left", "Left LOS"),
-    ]:
-        ax.cla()
-        ax.set_xlim(ws_xlim)
-        ax.set_ylim(min(PROFILE_HEIGHTS_M) - 5, max(PROFILE_HEIGHTS_M) + 5)
-        ax.set_xlabel("wind speed (m/s)", fontsize=8)
-        ax.set_ylabel("height AGL (m)", fontsize=8)
-        ax.set_title(title, fontsize=9)
-        ax.grid(True, alpha=0.4)
-
-        for range_val, color in zip(PROFILE_RANGES_M, _RANGE_COLORS):
-            if range_val not in zxtm_smoothed:
-                continue
-            df = zxtm_smoothed[range_val]
-            idx = df.index.get_indexer([ts], method="nearest")[0]
-            if idx < 0:
-                continue
-            row = df.iloc[idx]
-            ws_vals = [
-                row.get(f"{side} LOS Speed (m/s) at Rotor Segment Height {h}m", np.nan)
-                for h in PROFILE_HEIGHTS_M
-            ]
-            ax.plot(
-                ws_vals,
-                PROFILE_HEIGHTS_M,
-                color=color,
-                marker="o",
-                markersize=4,
-                linewidth=1.5,
-                label=f"{range_val:.0f} m",
-            )
-        ax.legend(loc="lower right", fontsize=7)
-
-
-# ---------------------------------------------------------------------------
-# Task 8: Initialize figure and shade toggle regions
-# ---------------------------------------------------------------------------
 
 
 def _shade_toggle(ax: plt.Axes, *, steer_df: pd.DataFrame, toggle_col: str) -> None:
@@ -402,15 +247,24 @@ def _init_figure(
     pw_vmax: float,
     ws_vmin: float,
     ws_vmax: float,
-) -> tuple[plt.Figure, plt.Axes, plt.Axes, plt.Axes, plt.Axes, Line2D]:
-    """Build figure, draw timeline once. Returns (fig, ax_tl, ax_be, ax_rp, ax_lp, vline)."""
-    fig = plt.figure(figsize=(16, 10))
+) -> dict:
+    """Build figure with every artist created up-front.
+
+    Static elements (axes limits, labels, grid, tower circles, name labels,
+    colourbars, legend, timeline) are drawn once. Per-frame elements (nacelle
+    polygons, rotor lines, power text, ZXTM scatter, profile lines, time
+    cursor, title) are created with placeholder data and updated in place via
+    set_xy / set_data / set_text in the animation loop. Nothing calls cla(),
+    so the axes box can never shift and the colourbars stay rock-stable.
+    """
+    fig = plt.figure(figsize=(14, 12))
     gs = fig.add_gridspec(
         2, 3,
-        width_ratios=[1, 2, 1],
-        height_ratios=[1, 2],
-        hspace=0.40,
-        wspace=0.35,
+        width_ratios=[1.2, 3, 1.2],
+        height_ratios=[1, 3],
+        hspace=0.32,
+        wspace=0.18,
+        left=0.06, right=0.84, top=0.92, bottom=0.13,
     )
     ax_tl = fig.add_subplot(gs[0, :])   # timeline — spans all columns
     ax_rp = fig.add_subplot(gs[1, 0])   # Right vertical profile (left column)
@@ -418,46 +272,142 @@ def _init_figure(
     ax_lp = fig.add_subplot(gs[1, 2])   # Left vertical profile (right column)
 
     fig.suptitle(
-        "Hill of Towie — T03 wake steering for T07 — 2026-02-20",
+        f"Hill of Towie — T03 wake steering for T07 (T01 reference) — "
+        f"{PLOT_START:%Y-%m-%d %H:%M}–{PLOT_END:%H:%M} UTC",
         fontsize=11,
     )
 
-    # --- Timeline (drawn once) ---
+    # --- Timeline (drawn once, fully static) ---
     ref_df = wtg_data[REF_NAME]
     steer_df = wtg_data[STEERING_NAME]
     dep_df = wtg_data[DEP_NAME]
-
-    ax_tl.plot(ref_df.index, ref_df[WD_COL], color="C0", linestyle=":", alpha=0.5,
-               label=f"{REF_NAME} wind dir")
-    ax_tl.plot(ref_df.index, ref_df[YAW_POS_COL], color="C0",
-               label=f"{REF_NAME} yaw pos")
-    ax_tl.plot(steer_df.index, steer_df[WD_COL], color="C1", linestyle=":", alpha=0.5,
-               label=f"{STEERING_NAME} wind dir")
-    ax_tl.plot(steer_df.index, steer_df[YAW_POS_COL], color="C1",
-               label=f"{STEERING_NAME} yaw pos")
-    ax_tl.plot(dep_df.index, dep_df[WD_COL], color="C2", linestyle=":", alpha=0.5,
-               label=f"{DEP_NAME} wind dir")
-    ax_tl.plot(dep_df.index, dep_df[YAW_POS_COL], color="C2",
-               label=f"{DEP_NAME} yaw pos")
+    for c_idx, (name, df) in enumerate(
+        [(REF_NAME, ref_df), (STEERING_NAME, steer_df), (DEP_NAME, dep_df)]
+    ):
+        c = f"C{c_idx}"
+        ax_tl.plot(df.index, df[WD_COL], color=c, linestyle=":", alpha=0.5,
+                   label=f"{name} wind dir")
+        ax_tl.plot(df.index, df[YAW_POS_COL], color=c, label=f"{name} yaw pos")
     _shade_toggle(ax_tl, steer_df=steer_df, toggle_col=TOGGLE_COL)
+    ax_tl.set_xlim(PLOT_START, PLOT_END)
     ax_tl.set_ylabel("direction [degN]")
     ax_tl.legend(bbox_to_anchor=(1.01, 1), loc="upper left", fontsize=7, frameon=True)
     ax_tl.grid(True, alpha=0.4)
     plt.setp(ax_tl.xaxis.get_majorticklabels(), rotation=45, ha="right")
-
-    # Vertical time cursor — x-position updated each frame
     vline = ax_tl.axvline(PLOT_START, color="black", linewidth=1.5, linestyle="--", zorder=5)
 
-    # --- Colorbars (drawn once, stable across frames) ---
-    pw_sm = plt.cm.ScalarMappable(norm=Normalize(pw_vmin, pw_vmax), cmap="plasma")
+    # --- Birds-eye axes setup (static — labels, limits, aspect set ONCE) ---
+    # adjustable="datalim" pins the box position; the data limits expand if
+    # needed to honour equal aspect, which keeps the plotting region (and the
+    # colourbars beside it) at a fixed location frame-after-frame.
+    all_x = [c[0] for c in TURBINE_COORDS.values()]
+    all_y = [c[1] for c in TURBINE_COORDS.values()]
+    ax_be.set_xlim(min(all_x) - 100, max(all_x) + 100)
+    ax_be.set_ylim(min(all_y) - 80, max(all_y) + 80)
+    ax_be.set_aspect("equal", adjustable="datalim")
+    ax_be.set_xlabel("easting (m)", fontsize=8)
+    ax_be.set_ylabel("northing (m)", fontsize=8)
+    ax_be.grid(True, alpha=0.3)
+    title_artist = ax_be.set_title("", fontsize=9)
+
+    # Tower circles + name labels — static (never move)
+    for name, (tx, ty) in TURBINE_COORDS.items():
+        ax_be.add_patch(
+            mpatches.Circle((tx, ty), radius=1.5, facecolor="gray", edgecolor="black", zorder=4)
+        )
+        ax_be.text(tx, ty + 55, name, ha="center", va="bottom",
+                   fontsize=9, fontweight="bold", zorder=6)
+
+    # Dynamic turbine artists — placeholder data, updated each frame
+    pw_norm = Normalize(pw_vmin, pw_vmax)
+    pw_cmap = plt.cm.plasma
+    turbine_artists: dict[str, tuple[mpatches.Polygon, Line2D, plt.Text]] = {}
+    for name, (tx, ty) in TURBINE_COORDS.items():
+        nacelle = mpatches.Polygon(
+            [[tx, ty]] * 4, closed=True,
+            facecolor="lightgray", edgecolor="black", zorder=3,
+        )
+        ax_be.add_patch(nacelle)
+        rotor, = ax_be.plot(
+            [tx, tx], [ty, ty],
+            color=pw_cmap(0.5), linewidth=5, solid_capstyle="round", zorder=5,
+        )
+        # Power label sits at a FIXED screen-space offset from the tower
+        # (no yaw rotation), so the number doesn't swing around the turbine.
+        power_text = ax_be.text(
+            tx + 8, ty - 18, "", ha="left", va="top", fontsize=8, zorder=6,
+        )
+        turbine_artists[name] = (nacelle, rotor, power_text)
+
+    # --- ZXTM scatter — one artist, updated each frame ---
+    ws_norm = Normalize(ws_vmin, ws_vmax)
+    ws_cmap = plt.cm.RdBu_r
+    n_pts = 2 * len(PROFILE_RANGES_M)
+    t07_x, t07_y = TURBINE_COORDS[DEP_NAME]
+    zxtm_scatter = ax_be.scatter(
+        [t07_x] * n_pts, [t07_y] * n_pts,
+        c=[(ws_vmin + ws_vmax) / 2] * n_pts, s=[40.0] * n_pts,
+        cmap=ws_cmap, norm=ws_norm,
+        zorder=6, edgecolors="k", linewidths=0.4,
+    )
+
+    # --- Vertical profile axes (static; lines updated each frame) ---
+    ws_xlim = (ws_vmin - 0.2, ws_vmax + 0.2)
+    profile_lines: dict[tuple[str, float], Line2D] = {}
+    for side, ax, ttl in [("Right", ax_rp, "Right LOS"), ("Left", ax_lp, "Left LOS")]:
+        ax.set_xlim(ws_xlim)
+        ax.set_ylim(min(PROFILE_HEIGHTS_M) - 5, max(PROFILE_HEIGHTS_M) + 5)
+        ax.set_xlabel("wind speed (m/s)", fontsize=8)
+        ax.set_ylabel("height AGL (m)", fontsize=8)
+        ax.set_title(ttl, fontsize=9)
+        ax.grid(True, alpha=0.4)
+        for range_val, color in zip(PROFILE_RANGES_M, _RANGE_COLORS):
+            line, = ax.plot(
+                [np.nan] * len(PROFILE_HEIGHTS_M), PROFILE_HEIGHTS_M,
+                color=color, marker="o", markersize=4, linewidth=1.5,
+                label=f"{range_val:.0f} m",
+            )
+            profile_lines[(side, range_val)] = line
+        ax.legend(loc="lower right", fontsize=7, title="Range", title_fontsize=7)
+
+    # --- Colourbars on fixed-position figure axes (independent of ax_be) ---
+    fig.canvas.draw()
+    be_pos = ax_be.get_position()
+
+    cax_pw = fig.add_axes([
+        be_pos.x1 + 0.010,
+        be_pos.y0 + be_pos.height * 0.25,
+        0.012,
+        be_pos.height * 0.50,
+    ])
+    pw_sm = plt.cm.ScalarMappable(norm=pw_norm, cmap=pw_cmap)
     pw_sm.set_array([])
-    fig.colorbar(pw_sm, ax=ax_be, location="right", label="power (kW)", shrink=0.5, pad=0.02)
+    cb_pw = fig.colorbar(pw_sm, cax=cax_pw)
+    cb_pw.set_label("power (MW)", fontsize=8)
+    cb_pw.ax.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{x / 1000:.1f}"))
+    cb_pw.ax.tick_params(labelsize=7)
 
-    ws_sm = plt.cm.ScalarMappable(norm=Normalize(ws_vmin, ws_vmax), cmap="RdBu_r")
-    ws_sm.set_array([])
-    fig.colorbar(ws_sm, ax=ax_be, location="bottom", label="wind speed (m/s)", shrink=0.5, pad=0.06)
+    cax_ws = fig.add_axes([
+        be_pos.x0 + be_pos.width * 0.10,
+        0.04,
+        be_pos.width * 0.80,
+        0.012,
+    ])
+    cb_ws = fig.colorbar(zxtm_scatter, cax=cax_ws, orientation="horizontal")
+    cb_ws.set_label("wind speed (m/s)", fontsize=8)
+    cb_ws.ax.tick_params(labelsize=7)
 
-    return fig, ax_tl, ax_be, ax_rp, ax_lp, vline
+    return {
+        "fig": fig,
+        "vline": vline,
+        "title_artist": title_artist,
+        "turbine_artists": turbine_artists,
+        "zxtm_scatter": zxtm_scatter,
+        "profile_lines": profile_lines,
+        "pw_norm": pw_norm,
+        "pw_cmap": pw_cmap,
+        "ws_norm": ws_norm,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -474,28 +424,24 @@ def _run_animation(
     ws_vmin: float,
     ws_vmax: float,
     out_dir: Path,
-    smoke_test:bool=False,
+    smoke_test: bool = False,
 ) -> None:
-    fig, ax_tl, ax_be, ax_rp, ax_lp, vline = _init_figure(
-        wtg_data, pw_vmin, pw_vmax, ws_vmin, ws_vmax
-    )
-
-    pw_norm = Normalize(pw_vmin, pw_vmax)
-    pw_cmap = plt.cm.plasma
-    ws_norm = Normalize(ws_vmin, ws_vmax)
-    ws_cmap = plt.cm.RdBu_r
-    ws_xlim = (ws_vmin - 0.2, ws_vmax + 0.2)
-
-    all_x = [c[0] for c in TURBINE_COORDS.values()]
-    all_y = [c[1] for c in TURBINE_COORDS.values()]
-    be_xlim = (min(all_x) - 300, max(all_x) + 300)
-    be_ylim = (min(all_y) - 300, max(all_y) + 300)
+    handles = _init_figure(wtg_data, pw_vmin, pw_vmax, ws_vmin, ws_vmax)
+    fig = handles["fig"]
+    vline = handles["vline"]
+    title_artist = handles["title_artist"]
+    turbine_artists = handles["turbine_artists"]
+    zxtm_scatter = handles["zxtm_scatter"]
+    profile_lines = handles["profile_lines"]
+    pw_norm = handles["pw_norm"]
+    pw_cmap = handles["pw_cmap"]
+    ws_norm = handles["ws_norm"]
 
     ref_df = wtg_data[REF_NAME]
-    steer_df = wtg_data[STEERING_NAME]
-    dep_df = wtg_data[DEP_NAME]
     t07_x, t07_y = TURBINE_COORDS[DEP_NAME]
-    name_to_df = {REF_NAME: ref_df, STEERING_NAME: steer_df, DEP_NAME: dep_df}
+    half_angle_rad = np.deg2rad(HALF_ANGLE_DEG)
+    dist_factor = 1.0 / np.cos(half_angle_rad)
+    ws_fill = (ws_vmin + ws_vmax) / 2  # fallback colour value for missing data
 
     timestamps = ref_df.resample(f"{FRAME_INTERVAL_S}s").first().index
     fps = len(timestamps) / ANIMATION_DURATION_S
@@ -506,50 +452,105 @@ def _run_animation(
 
     writer = PillowWriter(fps=fps)
     if smoke_test:
-        timestamps=timestamps[250:300]
+        timestamps = timestamps[:50]
+
+    nacelle_corners_local = np.array([
+        [-NACELLE_HALF_WIDTH_M, -NACELLE_REAR_M],
+        [NACELLE_HALF_WIDTH_M, -NACELLE_REAR_M],
+        [NACELLE_HALF_WIDTH_M, NACELLE_FRONT_M],
+        [-NACELLE_HALF_WIDTH_M, NACELLE_FRONT_M],
+    ])
+    half_r = ROTOR_DIAMETER_M / 2
+
     with writer.saving(fig, str(output_path), dpi=100):
         for i, ts in enumerate(tqdm(timestamps, desc="frames")):
-            # --- Birds-eye ---
-            ax_be.cla()
-            ax_be.set_xlim(be_xlim)
-            ax_be.set_ylim(be_ylim)
-            ax_be.set_aspect("equal")
-            ax_be.set_xlabel("easting (m)", fontsize=8)
-            ax_be.set_ylabel("northing (m)", fontsize=8)
-            ax_be.set_title(ts.strftime("%H:%M:%S UTC"), fontsize=9)
-            ax_be.grid(True, alpha=0.3)
+            title_artist.set_text(ts.strftime("%H:%M:%S UTC"))
 
+            # --- Turbines: update each one's nacelle / rotor / power label ---
             t07_yaw = 0.0
             for name, (tx, ty) in TURBINE_COORDS.items():
-                df = name_to_df[name]
+                df = wtg_data[name]
                 idx = df.index.get_indexer([ts], method="nearest")[0]
                 row = df.iloc[idx]
                 raw_yaw = row[YAW_POS_COL]
                 yaw = float(raw_yaw) if not pd.isna(raw_yaw) else 0.0
                 power = float(row["smoothed_pw"]) if not pd.isna(row["smoothed_pw"]) else 0.0
-                _draw_turbine(
-                    ax_be,
-                    tx=tx, ty=ty, yaw_deg=yaw, power=power,
-                    name=name, pw_norm=pw_norm, pw_cmap=pw_cmap,
-                )
+
+                nacelle, rotor, power_text = turbine_artists[name]
+                yaw_rad = np.deg2rad(yaw)
+                cos_y, sin_y = np.cos(yaw_rad), np.sin(yaw_rad)
+                # vectorised local-to-world for the 4 nacelle corners
+                dx = nacelle_corners_local[:, 0]
+                dy = nacelle_corners_local[:, 1]
+                world_x = tx + dx * cos_y + dy * sin_y
+                world_y = ty - dx * sin_y + dy * cos_y
+                nacelle.set_xy(np.column_stack([world_x, world_y]))
+
+                r_left = _local_to_world(tx, ty, yaw_rad, -half_r, NACELLE_FRONT_M)
+                r_right = _local_to_world(tx, ty, yaw_rad, half_r, NACELLE_FRONT_M)
+                rotor.set_data([r_left[0], r_right[0]], [r_left[1], r_right[1]])
+                rotor.set_color(pw_cmap(pw_norm(power)))
+
+                power_text.set_text(f"{power / 1000:.1f} MW")
+
                 if name == DEP_NAME:
                     t07_yaw = yaw
-            _draw_zxtm_points(
-                ax_be,
-                t07_x=t07_x, t07_y=t07_y, t07_yaw_deg=t07_yaw,
-                zxtm_smoothed=zxtm_smoothed, ts=ts,
-                ws_norm=ws_norm, ws_cmap=ws_cmap,
-            )
 
-            # --- Vertical profiles ---
-            _draw_vertical_profiles(
-                ax_rp, ax_lp, ts=ts, zxtm_smoothed=zxtm_smoothed, ws_xlim=ws_xlim
-            )
+            # --- ZXTM scatter: rebuild offsets / values / sizes ---
+            yaw_rad = np.deg2rad(t07_yaw)
+            xs: list[float] = []
+            ys: list[float] = []
+            values: list[float] = []
+            sizes: list[float] = []
+            for range_val in PROFILE_RANGES_M:
+                df = zxtm_smoothed.get(range_val)
+                if df is None:
+                    continue
+                idx = df.index.get_indexer([ts], method="nearest")[0]
+                if idx < 0:
+                    continue
+                row = df.iloc[idx]
+                dist = range_val * dist_factor
+                for col_side, angle_off in [("Right", +half_angle_rad), ("Left", -half_angle_rad)]:
+                    ws = row.get(
+                        f"{col_side} LOS Speed (m/s) at Rotor Segment Height 59.0m", np.nan
+                    )
+                    angle = yaw_rad + angle_off
+                    xs.append(t07_x + dist * np.sin(angle))
+                    ys.append(t07_y + dist * np.cos(angle))
+                    if pd.isna(ws):
+                        values.append(ws_fill)
+                        sizes.append(30.0)
+                    else:
+                        values.append(float(ws))
+                        sizes.append(30.0 + float(ws_norm(ws)) * 170.0)
+            if xs:
+                zxtm_scatter.set_offsets(np.column_stack([xs, ys]))
+                zxtm_scatter.set_array(np.array(values))
+                zxtm_scatter.set_sizes(sizes)
+            else:
+                zxtm_scatter.set_offsets(np.empty((0, 2)))
 
-            # --- Timeline cursor ---
+            # --- Vertical profile lines: just update xdata ---
+            for side in ("Right", "Left"):
+                for range_val in PROFILE_RANGES_M:
+                    line = profile_lines[(side, range_val)]
+                    df = zxtm_smoothed.get(range_val)
+                    if df is None:
+                        line.set_xdata([np.nan] * len(PROFILE_HEIGHTS_M))
+                        continue
+                    idx = df.index.get_indexer([ts], method="nearest")[0]
+                    if idx < 0:
+                        line.set_xdata([np.nan] * len(PROFILE_HEIGHTS_M))
+                        continue
+                    row = df.iloc[idx]
+                    line.set_xdata([
+                        row.get(f"{side} LOS Speed (m/s) at Rotor Segment Height {h}m", np.nan)
+                        for h in PROFILE_HEIGHTS_M
+                    ])
+
             vline.set_xdata([ts, ts])
 
-            fig.canvas.draw()
             writer.grab_frame()
 
             if i % 200 == 0:
@@ -560,7 +561,7 @@ def _run_animation(
 
 
 if __name__ == "__main__":
-    smoke_test=True
+    smoke_test=False
     out_dir = get_out_dir(dir_name=Path(__file__).stem)
     log_path = out_dir / f"{Path(__file__).stem}.log"
     setup_logger(log_path)

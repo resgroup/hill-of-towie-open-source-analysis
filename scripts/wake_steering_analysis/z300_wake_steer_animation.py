@@ -52,7 +52,7 @@ logger = logging.getLogger(__name__)
 # Tunable constants
 # ---------------------------------------------------------------------------
 PLOT_START = pd.Timestamp("2026-04-04 03:30", tz="UTC")
-PLOT_END = pd.Timestamp("2026-03-15 08:30", tz="UTC")
+PLOT_END = pd.Timestamp("2026-04-04 08:30", tz="UTC")
 FRAME_INTERVAL_S = 30  # seconds of real data per animation frame
 ANIMATION_DURATION_S = 60  # target GIF duration in seconds
 SMOOTHING_WINDOW = 120  # rolling-mean window in seconds

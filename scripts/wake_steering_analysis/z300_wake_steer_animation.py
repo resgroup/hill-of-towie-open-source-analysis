@@ -214,7 +214,7 @@ def _load_zx300_data() -> tuple[pd.DataFrame, dict[int, str], dict[int, str], di
     zx300_fl_df = add_shear_and_veer(zx300_fl_df)
     horiz_ws, wd, vert_ws = _detect_heights(zx300_fl_df)
 
-    smoothed_cols = sorted({*horiz_ws.values(), *wd.values(), *vert_ws.values()})
+    smoothed_cols = sorted({*horiz_ws.values(), *wd.values(), *vert_ws.values(), SHEAR_COL})
     # Time-window rolling so the smoothing length is "120 seconds of data" regardless of
     # sampling rate (ZX300 fastlog is not necessarily 1 Hz).
     smoothed = zx300_fl_df[smoothed_cols].sort_index().rolling(window=f"{SMOOTHING_WINDOW}s", min_periods=1).mean()

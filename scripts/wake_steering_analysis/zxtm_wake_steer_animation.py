@@ -354,7 +354,7 @@ def _init_figure(
     # read as one block.
     for name, (tx, ty) in TURBINE_COORDS.items():
         ax_be.add_patch(mpatches.Circle((tx, ty), radius=1.5, facecolor="gray", edgecolor="black", zorder=4))
-        ax_be.text(tx, ty + 75-25, name, ha="center", va="bottom", fontsize=10, fontweight="bold", zorder=6)
+        ax_be.text(tx, ty + 75 - 25, name, ha="center", va="bottom", fontsize=10, fontweight="bold", zorder=6)
 
     # Dynamic turbine artists — placeholder data, updated each frame
     pw_norm = Normalize(pw_vmin, pw_vmax)
@@ -380,7 +380,7 @@ def _init_figure(
         # Power label: directly under the turbine name, fixed position.
         power_text = ax_be.text(
             tx,
-            ty + 60-25,
+            ty + 60 - 25,
             "",
             ha="center",
             va="bottom",
@@ -418,7 +418,7 @@ def _init_figure(
     profile_dots: dict[tuple[str, float], object] = {}
     for side, ax, ttl in [("Right", ax_rp, "Right Beam"), ("Left", ax_lp, "Left Beam")]:
         ax.set_xlim(ws_xlim)
-        ax.set_ylim(18, 100) # HOT rotor extent
+        ax.set_ylim(18, 100)  # HOT rotor extent
         ax.set_xlabel("wind speed (m/s)", fontsize=10)
         ax.set_ylabel("height above T07 ground level (m)", fontsize=10)
         ax.set_title(ttl, fontsize=10)
@@ -435,10 +435,15 @@ def _init_figure(
             )
             profile_lines[(side, range_val)] = line
             dot = ax.scatter(
-                [ws_vmin], [59.0],
-                c=[(ws_vmin + ws_vmax) / 2], s=[40.0],
-                cmap=ws_cmap, norm=ws_norm,
-                zorder=7, edgecolors="k", linewidths=0.4,
+                [ws_vmin],
+                [59.0],
+                c=[(ws_vmin + ws_vmax) / 2],
+                s=[40.0],
+                cmap=ws_cmap,
+                norm=ws_norm,
+                zorder=7,
+                edgecolors="k",
+                linewidths=0.4,
             )
             profile_dots[(side, range_val)] = dot
         ax.legend(loc="lower right", fontsize=10, title="Range", title_fontsize=10)

@@ -689,7 +689,7 @@ def _run_animation(
 
             else:
                 hub_ws_dot.set_offsets([[float(hub_ws), HUB_HEIGHT_PLOT_M]])
-                hub_ws_label.position([float(hub_ws), HUB_HEIGHT_PLOT_M])
+                hub_ws_label.xy = (float(hub_ws), HUB_HEIGHT_PLOT_M)
                 hub_ws_label.set_text(f"α = {shear:.3f}")
                 hub_ws_label.set_visible(True)
                 hub_ws_dot.set_array(np.array([float(hub_ws)]))

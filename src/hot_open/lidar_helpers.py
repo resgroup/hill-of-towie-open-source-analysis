@@ -227,3 +227,87 @@ def load_zx_lidar_fl_data(
         return_df.to_parquet(cache_dir / "lidar_raw" / cache_fname)
         return pd.read_parquet(cache_dir / "lidar_raw" / cache_fname)
     return return_df
+
+def extract_data(df, prefix):
+    cols = [col for col in df if col.startswith(prefix)]
+    heights = np.array([float(col.split("at ")[1].split("m")[0]) for col in cols])
+    df = df[cols]
+    df.columns = heights
+    df = df.sort_index(axis = 1)
+    return df
+def add_shear_and_veer(df,):#shear, veer, TI?
+    #extract heights and ws and wd as numpy:
+    ws_prefix = "Horizontal Wind Speed (m/s)"
+    wd_prefix =  "Wind Direction (deg)"
+
+    ws = extract_data(df, ws_prefix)
+    wd = extract_data(df, wd_prefix)
+    df["Vertical Wind Shear Exponent"], df["Normalised Mean Shear Fit Residuals"] = calculate_shear(ws)
+    df["Vertical Wind Veer"], df["Vertical Wind Veer R Squared"] = calculate_veer(wd)
+    return df
+def calculate_shear(ws):
+    n_times, n_heights = ws.shape
+    alphas = np.full(n_times, np.nan, dtype=float)
+    residuals = np.full(n_times, np.nan, dtype=float)
+
+    values = ws.to_numpy()
+    heights = ws.columns.to_numpy()
+    order = np.argsort(heights)
+    heights = heights[order]
+    values = values[:, order]
+    for i in range(n_times):
+        row = values[i, :]
+        valid = np.isfinite(row) & (row > 0.0)
+        K = np.where(valid)[0]
+        if K.size < 2:
+            continue
+        valid_heights = heights[K]
+        valid_ws = row[K]
+
+        x = np.log(valid_heights)
+        y = np.log(valid_ws)
+
+        coeffs = np.polyfit(x, y, 1)
+        alpha_i, c_i = coeffs
+        yhat = alpha_i * x + c_i
+        resid_i = np.sqrt(np.mean((y - yhat) ** 2))
+
+        alphas[i] = alpha_i
+        residuals[i] = resid_i
+    return alphas, residuals
+
+def calculate_veer(wd):
+    n_times, n_heights = wd.shape
+    m = np.full(n_times, np.nan, dtype=float)
+    r2 = np.full(n_times, np.nan, dtype=float)
+
+    values = wd.to_numpy()
+    heights = wd.columns.to_numpy()
+    for i in range(n_times):
+        row = values[i, :]
+        valid = np.isfinite(row) & (row > 0.0)
+        K = np.where(valid)[0]
+        if len(K) < 2:
+            continue
+        valid_heights = heights[K]
+        valid_dir = row[K]
+
+        sine_mean = np.mean(np.sin(np.radians(valid_dir)))
+        cosine_mean = np.mean(np.cos(np.radians(valid_dir)))
+        dir_mean = np.degrees(np.arctan2(sine_mean, cosine_mean))
+        corrected_valid_directions = (((valid_dir - dir_mean) + 180.0) % 360.0) - 180.0
+
+        coeffs = np.polyfit(valid_heights, corrected_valid_directions, 1)
+        m_i, c_i = coeffs
+        p = np.poly1d(coeffs)
+        yhat = p(valid_heights)
+        ybar = np.sum(corrected_valid_directions) / len(corrected_valid_directions)
+        ssreg = np.sum((yhat - ybar) ** 2)
+        sstot = np.sum((corrected_valid_directions - ybar) ** 2)
+        if sstot != 0:
+            r2_i = ssreg / sstot
+        else:
+            r2_i = np.nan
+        m[i] = m_i
+        r2[i] = r2_i
+    return m, r2

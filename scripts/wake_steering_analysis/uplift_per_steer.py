@@ -439,6 +439,7 @@ def hot_dy_uplift_per_steer(rerun_windup: bool = True) -> tuple[float, float, fl
     bubble_plot(
         cfg=west_cfg,
         series=pd.concat([upwind_uplifts, downwind_uplifts]).set_index("test_wtg")["p50_uplift"].sort_index() * 100,
+        sizes = np.abs(series),
         title=title,
         cbarunits="%",
         save_path=plot_cfg.plots_dir / f"{title}.png",

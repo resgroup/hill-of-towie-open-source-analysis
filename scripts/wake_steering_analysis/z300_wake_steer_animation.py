@@ -27,7 +27,7 @@ from matplotlib.ticker import FuncFormatter
 from tqdm import tqdm
 
 from hot_open.fastlog_helpers import load_hot_fl_data
-from hot_open.lidar_helpers import load_zx_lidar_fl_data
+from hot_open.lidar_helpers import load_zx_lidar_fl_data, add_shear_and_veer
 from hot_open.settings import get_filestore_dir, get_out_dir
 from scripts.logger import setup_logger
 from scripts.wake_steering_analysis.inspect_data import (
@@ -51,8 +51,8 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Tunable constants
 # ---------------------------------------------------------------------------
-PLOT_START = pd.Timestamp("2026-04-04 03:30", tz="UTC")
-PLOT_END = pd.Timestamp("2026-04-04 08:30", tz="UTC")
+PLOT_START = pd.Timestamp("2026-03-15 03:30", tz="UTC")
+PLOT_END = pd.Timestamp("2026-03-15 08:30", tz="UTC")
 FRAME_INTERVAL_S = 30  # seconds of real data per animation frame
 ANIMATION_DURATION_S = 60  # target GIF duration in seconds
 SMOOTHING_WINDOW = 120  # rolling-mean window in seconds
@@ -86,6 +86,7 @@ ARROW_LEN_MAX_M = 100.0
 # ---------------------------------------------------------------------------
 HUB_WS_COL = ZX300_WS_COL  # "Horizontal Wind Speed (m/s) at 58m"
 HUB_WD_COL = ZX300_WD_COL  # "Wind Direction (deg) at 58m"
+SHEAR_COL = "Vertical Wind Shear Exponent"
 _HORIZ_WS_PAT = re.compile(r"^Horizontal Wind Speed \(m/s\) at (\d+)m$")
 _WD_PAT = re.compile(r"^Wind Direction \(deg\) at (\d+)m$")
 _VERT_WS_PAT = re.compile(r"^Vertical Wind Speed \(m/s\) at (\d+)m$")
@@ -210,6 +211,7 @@ def _load_zx300_data() -> tuple[pd.DataFrame, dict[int, str], dict[int, str], di
         end_dt_excl=PLOT_END + pd.Timedelta(seconds=1),
         remove_bad_values=True,
     )
+    zx300_fl_df = add_shear_and_veer(zx300_fl_df)
     horiz_ws, wd, vert_ws = _detect_heights(zx300_fl_df)
 
     smoothed_cols = sorted({*horiz_ws.values(), *wd.values(), *vert_ws.values()})
@@ -351,6 +353,17 @@ def _init_figure(
         linewidths=0.5,
         label="hub-height WS",
     )
+
+    hub_ws_label = ax_ws.annotate(
+        None,
+        xy=(ws_vmin, HUB_HEIGHT_PLOT_M),  # point to annotate
+        xytext=(5, 0),  # offset (points)
+        textcoords="offset points",
+        ha="left",  # align text to the left (so it appears right of point)
+        va="center",
+        fontsize = 10
+    )
+
     ax_ws.legend(loc="upper left", fontsize=8)
 
     # --- Bottom-centre: birds-eye ---------------------------------------------
@@ -508,6 +521,7 @@ def _init_figure(
         "horiz_heights": horiz_heights,
         "horiz_ws_cols": horiz_ws_cols,
         "hub_ws_dot": hub_ws_dot,
+        "hub_ws_label": hub_ws_label,
         "wd_profile_line": wd_profile_line,
         "wd_heights": wd_heights,
         "wd_cols": wd_cols,
@@ -561,6 +575,7 @@ def _run_animation(
     horiz_ws_line = handles["horiz_ws_line"]
     horiz_heights = handles["horiz_heights"]
     hub_ws_dot = handles["hub_ws_dot"]
+    hub_ws_label = handles["hub_ws_label"]
     wd_profile_line = handles["wd_profile_line"]
     wd_heights = handles["wd_heights"]
     vert_profile_line = handles["vert_profile_line"]
@@ -638,6 +653,7 @@ def _run_animation(
             zx_row = zx300_smoothed.iloc[zx_idx] if zx_idx >= 0 else None
             hub_ws = zx_row[HUB_WS_COL] if zx_row is not None else np.nan
             hub_wd = zx_row[HUB_WD_COL] if zx_row is not None else np.nan
+            shear = zx_row[SHEAR_COL] if zx_row is not None else np.nan
 
             if pd.isna(hub_ws):
                 zx300_scatter.set_array(np.array([ws_fill]))
@@ -669,8 +685,13 @@ def _run_animation(
             horiz_ws_line.set_xdata(horiz_vals)
             if pd.isna(hub_ws):
                 hub_ws_dot.set_offsets(np.empty((0, 2)))
+                hub_ws_label.set_visible(False)
+
             else:
                 hub_ws_dot.set_offsets([[float(hub_ws), HUB_HEIGHT_PLOT_M]])
+                hub_ws_label.position([float(hub_ws), HUB_HEIGHT_PLOT_M])
+                hub_ws_label.set_text(f"α = {shear:.3f}")
+                hub_ws_label.set_visible(True)
                 hub_ws_dot.set_array(np.array([float(hub_ws)]))
                 hub_ws_dot.set_sizes([80.0])
 

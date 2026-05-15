@@ -16,6 +16,7 @@ dependencies = [
     "openmeteo-requests>=1.4.0",
     "requests-cache>=1.2.1",
     "retry-requests>=2.0.0",
+    "openpyxl>=3.1.5",
 ]
 
 [dependency-groups]

@@ -28,9 +28,10 @@ from wind_up.reanalysis_data import ReanalysisDataset
 from wind_up.waking_state import add_waking_scen, get_distance_and_bearing
 from wind_up.windspeed_drift import check_windspeed_drift
 
-from hot_open import download_zenodo_data, setup_logger
 from hot_open.paths import ANALYSES_DIR
+from hot_open.sourcing_data import download_zenodo_data
 from hot_open.unpack import unpack_local_meta_data, unpack_local_scada_data_v1
+from scripts.logger import setup_logger
 
 load_dotenv()
 
@@ -41,7 +42,7 @@ ANALYSIS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 logger = logging.getLogger(__name__)
 
 
-def wind_up_features_for_kaggle(  # noqa:PLR0915
+def wind_up_features_for_kaggle(
     *,
     scada_df: pd.DataFrame,
     metadata_df: pd.DataFrame,

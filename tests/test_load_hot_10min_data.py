@@ -1,7 +1,8 @@
 from pathlib import Path
 
 import pandas as pd
-from hot_open.helpers import WPSBackupFileField, load_hot_10min_data
+
+from hot_open.scada_helpers import WPSBackupFileField, load_hot_10min_data
 
 
 def test_load_hot_10min_data() -> None:
@@ -24,6 +25,7 @@ def test_load_hot_10min_data() -> None:
         start_dt=start_dt,
         end_dt_excl=end_dt_excl,
         custom_fields=custom_fields,
+        rename_cols_using_aliases=True,
     )
     assert actual.index.min() == pd.Timestamp("2024-07-31 12:00:00", tz="UTC")
     assert actual.index.max() == pd.Timestamp("2024-08-31 23:50:00", tz="UTC")  # last row of data in source file

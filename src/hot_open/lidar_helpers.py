@@ -1,8 +1,11 @@
+"""Helpers for loading and processing 10-min and fastlog data from the ZX300 and ZXTM LiDARs."""
+
 import logging
 from pathlib import Path
 from typing import Any, overload
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 from pandas.api.types import is_datetime64_any_dtype
 from wind_up.reanalysis_data import MastOrLiDARDataset
@@ -13,7 +16,7 @@ from hot_open.settings import get_cache_dir
 logger = logging.getLogger(__name__)
 
 
-def load_zx_lidar_10min_data(
+def load_zx_lidar_10min_data(  # noqa: C901
     *,
     data_dir: Path,
     lidar_unit_id: str,
@@ -21,6 +24,7 @@ def load_zx_lidar_10min_data(
     end_dt_excl: pd.Timestamp,
     remove_bad_values: bool = False,
 ) -> pd.DataFrame:
+    """Load 10-min ZX300/ZXTM LiDAR parquet files for a single unit and date range."""
     dfs = []
     for fname in (data_dir / "timeseries" / lidar_unit_id).glob("*.parquet"):
         if not fname.stem.startswith("Wind10"):
@@ -40,13 +44,13 @@ def load_zx_lidar_10min_data(
             _df["timestamp"] = pd.to_datetime(_df["Time and Date"], format="%m/%d/%Y %I:%M:%S %p", utc=True)
             _df["Time and Date"] = _df["Time and Date"].astype(str)  # ensure this guys is a string to avoid mixed types
         if not is_datetime64_any_dtype(_df["timestamp"]):
-            msg = f"{_df["timestamp"].dtype=}"
+            ts_dtype = _df["timestamp"].dtype
+            msg = f"{ts_dtype=}"
             raise ValueError(msg)
         if not (_df["timestamp"] - expected_date).dt.total_seconds().abs().max() < (24 * 3600):
-            msg = (
-                "something is wrong:"
-                f"\n{fname.stem=}\n{expected_date=}\n{_df["timestamp"].min()=}\n{_df["timestamp"].max()=}"
-            )
+            ts_min = _df["timestamp"].min()
+            ts_max = _df["timestamp"].max()
+            msg = f"something is wrong:\n{fname.stem=}\n{expected_date=}\n{ts_min=}\n{ts_max=}"
             raise ValueError(msg)
         dfs.append(_df)
     return_df = pd.concat(dfs).set_index("timestamp", drop=True).sort_index() if dfs else pd.DataFrame()
@@ -63,7 +67,7 @@ def load_hot_lidar_10min_data(
     data_dir: Path,
     start_dt: pd.Timestamp,
     end_dt_excl: pd.Timestamp,
-) -> pd.DataFrame:
+) -> list[MastOrLiDARDataset]:
     """Load HoT ZX300 Lidar data."""
     lidar_datasets = []
 
@@ -85,7 +89,7 @@ def load_hot_lidar_10min_data(
     )
     df_5060["Met Compass Bearing (deg)"] = (
         df_5060["Met Compass Bearing (deg)"] - 131.5
-    ) % 360  # TODO fix in wind-up config instead
+    ) % 360  # TODO(@aclerc): fix in wind-up config instead  # noqa: FIX002, TD003
     lidar_datasets.append(
         MastOrLiDARDataset(
             id=f"{lidar_model}_{lidar_unit_id}",
@@ -140,7 +144,7 @@ MIN_AIR_DENSITY_KGPM3 = 0.9
 MAX_AIR_DENSITY_KGPM3 = 1.4
 
 
-def load_zx_lidar_fl_data(
+def load_zx_lidar_fl_data(  # noqa: C901, PLR0912, PLR0913
     *,
     data_dir: Path,
     lidar_unit_id: str,
@@ -216,7 +220,7 @@ def load_zx_lidar_fl_data(
                 return_df[LIDAR_AIR_DENSITY_COL] > MAX_AIR_DENSITY_KGPM3
             )
             return_df.loc[bad_air_density, LIDAR_AIR_DENSITY_COL] = np.nan
-    if return_df.index.tzinfo is None:
+    if return_df.index.tzinfo is None:  # type: ignore[attr-defined]
         # LiDAR data is in UTC
         return_df.index = pd.to_datetime(return_df.index, utc=True)
     return_df = (
@@ -228,25 +232,46 @@ def load_zx_lidar_fl_data(
         return pd.read_parquet(cache_dir / "lidar_raw" / cache_fname)
     return return_df
 
-def extract_data(df, prefix):
-    cols = [col for col in df if col.startswith(prefix)]
+
+_MIN_FIT_POINTS = 2
+
+
+def extract_data(df: pd.DataFrame, prefix: str) -> pd.DataFrame:
+    """Return a sub-DataFrame of the columns whose name starts with `prefix`.
+
+    Column names are replaced with the height in metres parsed from the original
+    name (e.g. "Horizontal Wind Speed (m/s) at 58m" -> 58.0), and the result is
+    sorted by ascending height.
+    """
+    cols = [str(col) for col in df.columns if str(col).startswith(prefix)]
     heights = np.array([float(col.split("at ")[1].split("m")[0]) for col in cols])
-    df = df[cols]
-    df.columns = heights
-    df = df.sort_index(axis = 1)
-    return df
-def add_shear_and_veer(df,):#shear, veer, TI?
-    #extract heights and ws and wd as numpy:
+    out = df[cols].copy()
+    out.columns = heights
+    return out.sort_index(axis=1)
+
+
+def add_shear_and_veer(df: pd.DataFrame) -> pd.DataFrame:
+    """Append shear and veer columns to a LiDAR DataFrame.
+
+    Adds: "Vertical Wind Shear Exponent", "Normalised Mean Shear Fit Residuals",
+    "Vertical Wind Veer", "Vertical Wind Veer R Squared".
+    """
     ws_prefix = "Horizontal Wind Speed (m/s)"
-    wd_prefix =  "Wind Direction (deg)"
+    wd_prefix = "Wind Direction (deg)"
 
     ws = extract_data(df, ws_prefix)
     wd = extract_data(df, wd_prefix)
     df["Vertical Wind Shear Exponent"], df["Normalised Mean Shear Fit Residuals"] = calculate_shear(ws)
     df["Vertical Wind Veer"], df["Vertical Wind Veer R Squared"] = calculate_veer(wd)
     return df
-def calculate_shear(ws):
-    n_times, n_heights = ws.shape
+
+
+def calculate_shear(ws: pd.DataFrame) -> tuple[npt.NDArray[np.floating], npt.NDArray[np.floating]]:
+    """Fit a power-law wind shear exponent (alpha) per row.
+
+    Returns the per-row alpha and the RMS of log-space fit residuals.
+    """
+    n_times, _ = ws.shape
     alphas = np.full(n_times, np.nan, dtype=float)
     residuals = np.full(n_times, np.nan, dtype=float)
 
@@ -258,11 +283,11 @@ def calculate_shear(ws):
     for i in range(n_times):
         row = values[i, :]
         valid = np.isfinite(row) & (row > 0.0)
-        K = np.where(valid)[0]
-        if K.size < 2:
+        valid_idx = np.where(valid)[0]
+        if valid_idx.size < _MIN_FIT_POINTS:
             continue
-        valid_heights = heights[K]
-        valid_ws = row[K]
+        valid_heights = heights[valid_idx]
+        valid_ws = row[valid_idx]
 
         x = np.log(valid_heights)
         y = np.log(valid_ws)
@@ -276,8 +301,13 @@ def calculate_shear(ws):
         residuals[i] = resid_i
     return alphas, residuals
 
-def calculate_veer(wd):
-    n_times, n_heights = wd.shape
+
+def calculate_veer(wd: pd.DataFrame) -> tuple[npt.NDArray[np.floating], npt.NDArray[np.floating]]:
+    """Fit a linear veer (deg/m) per row using a circular-mean correction.
+
+    Returns the per-row slope and the R^2 of the linear fit.
+    """
+    n_times, _ = wd.shape
     m = np.full(n_times, np.nan, dtype=float)
     r2 = np.full(n_times, np.nan, dtype=float)
 
@@ -286,11 +316,11 @@ def calculate_veer(wd):
     for i in range(n_times):
         row = values[i, :]
         valid = np.isfinite(row) & (row > 0.0)
-        K = np.where(valid)[0]
-        if len(K) < 2:
+        valid_idx = np.where(valid)[0]
+        if len(valid_idx) < _MIN_FIT_POINTS:
             continue
-        valid_heights = heights[K]
-        valid_dir = row[K]
+        valid_heights = heights[valid_idx]
+        valid_dir = row[valid_idx]
 
         sine_mean = np.mean(np.sin(np.radians(valid_dir)))
         cosine_mean = np.mean(np.cos(np.radians(valid_dir)))
@@ -298,16 +328,13 @@ def calculate_veer(wd):
         corrected_valid_directions = (((valid_dir - dir_mean) + 180.0) % 360.0) - 180.0
 
         coeffs = np.polyfit(valid_heights, corrected_valid_directions, 1)
-        m_i, c_i = coeffs
+        m_i, _c_i = coeffs
         p = np.poly1d(coeffs)
         yhat = p(valid_heights)
         ybar = np.sum(corrected_valid_directions) / len(corrected_valid_directions)
         ssreg = np.sum((yhat - ybar) ** 2)
         sstot = np.sum((corrected_valid_directions - ybar) ** 2)
-        if sstot != 0:
-            r2_i = ssreg / sstot
-        else:
-            r2_i = np.nan
+        r2_i = ssreg / sstot if sstot != 0 else np.nan
         m[i] = m_i
         r2[i] = r2_i
     return m, r2

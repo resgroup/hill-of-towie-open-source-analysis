@@ -58,13 +58,13 @@ def hot_dy_uplift_no_steering(rerun_windup: bool = True) -> tuple[float, float, 
     total_excluded = 0
     test_wtgs = [x.name for x in cfg.test_wtgs]
     refs = [x.name for x in cfg.ref_wtgs] + cfg.non_wtg_ref_names
-    for dir in list(uplift_per_steer_dir.glob("T[0-9]*_T[0-9]*_*")):
-        upwind_wtg_name = dir.stem.split("_")[0]
-        downwind_wtg_name = dir.stem.split("_")[1]
-        ref_name = "_".join(dir.stem.split("_")[2:])
+    for _dir in list(uplift_per_steer_dir.glob("T[0-9]*_T[0-9]*_*")):
+        upwind_wtg_name = _dir.stem.split("_")[0]
+        downwind_wtg_name = _dir.stem.split("_")[1]
+        ref_name = "_".join(_dir.stem.split("_")[2:])
         if (upwind_wtg_name not in test_wtgs) or (downwind_wtg_name not in test_wtgs) or (ref_name not in refs):
             continue
-        pp_df_dir = dir / "pp_df"
+        pp_df_dir = _dir / "pp_df"
         paths = [
             pp_df_dir / f"{upwind_wtg_name}_{ref_name}_pre_df.parquet",
             pp_df_dir / f"{downwind_wtg_name}_{ref_name}_pre_df.parquet",
@@ -81,7 +81,7 @@ def hot_dy_uplift_no_steering(rerun_windup: bool = True) -> tuple[float, float, 
         newly_excluded = int((filter_data & (scada_df["exclude_row"] == 0)).sum())
         scada_df.loc[filter_data, "exclude_row"] = 1
         total_excluded += newly_excluded
-        logger.info("%s: %d rows newly excluded, running total %d", dir.stem, newly_excluded, total_excluded)
+        logger.info("%s: %d rows newly excluded, running total %d", _dir.stem, newly_excluded, total_excluded)
 
     assessment_inputs = AssessmentInputs.from_cfg(
         cfg=cfg,

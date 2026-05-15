@@ -4,11 +4,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from scipy.stats import norm
-from wind_up.models import PlotConfig, WindUpConfig
 
-from hot_open.settings import get_out_dir, get_wind_up_output_dir
-from scripts.logger import setup_logger
-from scripts.wake_steering_analysis.hot_wake_steering_helpers import CONFIG_DIR, _calc_yaw_stats
+from scripts.wake_steering_analysis.hot_wake_steering_helpers import _calc_yaw_stats
 
 logger = logging.getLogger(__name__)
 
@@ -172,21 +169,3 @@ def combine_wakesteer_results_with_yaw(
     all_wakesteer_results.to_csv(wind_up_out_dir / "uplift_per_steer_results_with_yaw.csv", index=False)
     logger.info("saved uplift_per_steer_results_with_yaw.csv")
     return combine_wakesteer_results(all_wakesteer_results, exclude_refs=exclude_refs)
-
-
-if __name__ == "__main__":
-    out_dir = get_out_dir(dir_name=Path(__file__).stem)
-    log_path = out_dir / f"{Path(__file__).stem}.log"
-    setup_logger(log_path)
-    msg = f"log file is at {log_path}"
-    logger.info(msg)
-
-    config_file_name = "HOT_dynamic_yaw.yaml"
-    save_plots = True
-    cfg = WindUpConfig.from_yaml(CONFIG_DIR / config_file_name)
-    cfg.out_dir = get_wind_up_output_dir(cfg.assessment_name)
-    plot_cfg = PlotConfig(show_plots=False, save_plots=save_plots, plots_dir=cfg.out_dir / "plots")
-
-    all_wakesteer_results = pd.read_csv(cfg.out_dir / "uplift_per_steer_results.csv")
-    combined_results = combine_wakesteer_results_with_yaw(all_wakesteer_results, wind_up_out_dir=cfg.out_dir)
-    combined_results.to_csv(cfg.out_dir / "uplift_per_steer_combined_results_with_yaw.csv")

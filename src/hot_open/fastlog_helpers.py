@@ -230,7 +230,7 @@ def get_fl_resampled_one_device(  # noqa: PLR0913
     if len(day_dfs) > 0:
         result_df = pd.concat(day_dfs)
         # convert result_df index to DateTimeIndex if necessary
-        if result_df.index.tzinfo is None:
+        if result_df.index.tzinfo is None:  # type: ignore[attr-defined]
             # HOT FastLog is in UTC
             result_df.index = pd.to_datetime(result_df.index, utc=True)
         return (

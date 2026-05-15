@@ -16,7 +16,9 @@ dependencies = [
     "openmeteo-requests>=1.4.0",
     "requests-cache>=1.2.1",
     "retry-requests>=2.0.0",
-    "openpyxl>=3.1.5",
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "pyarrow>=15.0",
 ]
 
 [dependency-groups]
@@ -33,6 +35,7 @@ dev = [
     "types-requests>=2.32.0.20250328",
     "types-tqdm>=4.67.0.20250404",
     "responses>=0.25.7",
+    "polars>=1.27.1",
 ]
 wedowind = [
     "polars>=1.27.1",
@@ -76,8 +79,25 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["D"]
-"uplift_analysis/*.py" = ["N999"]
-"scripts/**/*.py" = ["D100", "INP001", "ERA001", "T201", "ARG002", "N803", "N806", "N802", "D101", "D102", "D103", "D107", "PD010"]
+"scripts/**/*.py" = [
+    "D100", "D101", "D102", "D103", "D107", "D205", "D400", "D401", "D404", "D415",  # docstring strictness off
+    "INP001", "ERA001", "T201", "PD010",  # script-friendly
+    "ARG001", "ARG002",  # unused arguments ok in scripts
+    "N802", "N803", "N806",  # naming conventions relaxed
+    "ANN001", "ANN201", "ANN202",  # type annotations not required
+    "PLR2004", "PLR0912", "PLR0913", "PLR0915", "C901",  # magic values & complexity ok
+    "FBT001", "FBT002", "FBT003",  # boolean traps ok
+    "G004",  # f-string in logging ok
+    "TD002", "TD003", "TD004", "FIX002",  # TODO format relaxed
+    "RET504",  # unnecessary assignment before return ok
+    "S101",  # allow assert
+    "E501",  # long lines ok (log messages, etc)
+    "RUF001", "RUF002",  # ambiguous unicode ok (greek letters in titles)
+    "RUF059",  # unused unpacked variable ok
+    "TC002",  # typing-only third-party imports ok
+    "B905",  # zip without strict ok in scripts
+    "C419", "PERF401", "PLR1714", "SIM109", "A001",  # style-only nits
+]
 "tests/**/*.py" = [
     "S101", # allow `assert`
     "PLR2004", # allow magic values
@@ -88,7 +108,7 @@ ignore = [
 
 [tool.mypy]
 python_version = "3.10"
-exclude = ".venv|__ignore__"
+exclude = ".venv|__ignore__|^scripts/"
 
 [[tool.mypy.overrides]]
 module = [
@@ -101,6 +121,7 @@ module = [
     "ephem",
     "kagglehub.*",
     "autogluon.*",
+    "pyarrow.*",
 ]
 ignore_missing_imports = true
 

@@ -11,9 +11,10 @@ from wind_up.interface import AssessmentInputs
 from wind_up.models import PlotConfig, WindUpConfig
 from wind_up.reanalysis_data import ReanalysisDataset
 
-from hot_open import download_zenodo_data, setup_logger
 from hot_open.paths import ANALYSES_DIR
+from hot_open.sourcing_data import download_zenodo_data
 from hot_open.unpack import unpack_local_meta_data, unpack_local_scada_data_v1
+from scripts.logger import setup_logger
 
 CONFIG_DIR = Path(__file__).parent / "wind_up_config"
 ANALYSIS_DIR = ANALYSES_DIR / Path(__file__).stem

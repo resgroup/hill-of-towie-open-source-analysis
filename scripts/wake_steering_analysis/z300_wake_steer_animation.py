@@ -27,7 +27,7 @@ from matplotlib.ticker import FuncFormatter
 from tqdm import tqdm
 
 from hot_open.fastlog_helpers import load_hot_fl_data
-from hot_open.lidar_helpers import load_zx_lidar_fl_data, add_shear_and_veer
+from hot_open.lidar_helpers import add_shear_and_veer, load_zx_lidar_fl_data
 from hot_open.settings import get_filestore_dir, get_out_dir
 from scripts.logger import setup_logger
 from scripts.wake_steering_analysis.inspect_data import (
@@ -361,7 +361,7 @@ def _init_figure(
         textcoords="offset points",
         ha="left",  # align text to the left (so it appears right of point)
         va="center",
-        fontsize = 10
+        fontsize=10,
     )
 
     ax_ws.legend(loc="upper left", fontsize=8)

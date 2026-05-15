@@ -367,12 +367,12 @@ def hot_dy_uplift_per_steer(rerun_windup: bool = True) -> tuple[float, float, fl
         )
         try:
             results_per_test_ref_df = run_wind_up_analysis(inputs=assessment_inputs)
-        except Exception as e:  # noqa BLE001
+        except Exception as e:  # noqa: BLE001
             print(f"skipping due to exception {e}")
             continue
         if "unc_one_sigma_frc" not in results_per_test_ref_df.columns:
             continue
-        if len(results_per_test_ref_df.dropna(subset=["unc_one_sigma_frc"])) < 2:  # noqa PLR2004
+        if len(results_per_test_ref_df.dropna(subset=["unc_one_sigma_frc"])) < 2:
             continue
         net_p50, net_p95, net_p5 = calc_net_uplift(results_per_test_ref_df, confidence=0.9)
         all_wakesteer_results.append(

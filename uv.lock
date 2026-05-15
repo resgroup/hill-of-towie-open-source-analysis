@@ -1588,15 +1588,6 @@ wheels = [
 ]
 
 [[package]]
-name = "et-xmlfile"
-version = "2.0.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/d3/38/af70d7ab1ae9d4da450eeec1fa3918940a5fafb9055e934af8d6eb0c2313/et_xmlfile-2.0.0.tar.gz", hash = "sha256:dab3f4764309081ce75662649be815c4c9081e88f0837825f90fd28317d4da54", size = 17234, upload-time = "2024-10-25T17:25:40.039Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c1/8b/5fe2cc11fee489817272089c4203e679c63b570a5aaeb18d852ae3cbba6a/et_xmlfile-2.0.0-py3-none-any.whl", hash = "sha256:7a91720bc756843502c3b7504c77b8fe44217c85c537d85037f0f536151b2caa", size = 18059, upload-time = "2024-10-25T17:25:39.051Z" },
-]
-
-[[package]]
 name = "eval-type-backport"
 version = "0.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2255,14 +2246,17 @@ wheels = [
 name = "hot-open"
 source = { editable = "." }
 dependencies = [
+    { name = "numpy" },
     { name = "openmeteo-requests" },
-    { name = "openpyxl" },
     { name = "pandas" },
+    { name = "pyarrow" },
     { name = "python-dotenv" },
     { name = "requests" },
     { name = "requests-cache" },
     { name = "res-wind-up" },
     { name = "retry-requests" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scipy", version = "1.16.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "tqdm" },
 ]
 
@@ -2273,6 +2267,7 @@ dev = [
     { name = "mypy" },
     { name = "pandas-stubs" },
     { name = "poethepoet" },
+    { name = "polars" },
     { name = "pytest" },
     { name = "responses" },
     { name = "ruff" },
@@ -2296,14 +2291,16 @@ wedowind = [
 
 [package.metadata]
 requires-dist = [
+    { name = "numpy", specifier = ">=1.26" },
     { name = "openmeteo-requests", specifier = ">=1.4.0" },
-    { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "pandas", specifier = ">=2.3.3" },
+    { name = "pyarrow", specifier = ">=15.0" },
     { name = "python-dotenv", specifier = ">=1.1.0" },
     { name = "requests", specifier = ">=2.32.3" },
     { name = "requests-cache", specifier = ">=1.2.1" },
     { name = "res-wind-up", specifier = ">=0.4.10" },
     { name = "retry-requests", specifier = ">=2.0.0" },
+    { name = "scipy", specifier = ">=1.11" },
     { name = "tqdm", specifier = ">=4.67.0" },
 ]
 
@@ -2314,6 +2311,7 @@ dev = [
     { name = "mypy", specifier = ">=1.10.1" },
     { name = "pandas-stubs", specifier = ">=2.2.2.240603" },
     { name = "poethepoet", specifier = ">=0.27.0" },
+    { name = "polars", specifier = ">=1.27.1" },
     { name = "pytest", specifier = ">=8.2.2" },
     { name = "responses", specifier = ">=0.25.7" },
     { name = "ruff", specifier = ">=0.5.0" },
@@ -4245,18 +4243,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/07/00/d96fcf6808fa2648e037fa45c764c58215ec797ab38e2b02bdf1d24c9333/openmim-0.3.9.tar.gz", hash = "sha256:b3977b92232b4b8c4d987cbc73e4515826d5543ccd3a66d49fcfc602cc5b3352", size = 48666, upload-time = "2023-06-28T07:45:45.332Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/00/b3/95531cee452028869d0e08974561f83e9c256c98f62c7a45a51893a61c54/openmim-0.3.9-py2.py3-none-any.whl", hash = "sha256:71581498b68767f8e1f340575b91c9994ccc93656901639f11300e46247da263", size = 52660, upload-time = "2023-06-28T07:45:42.832Z" },
-]
-
-[[package]]
-name = "openpyxl"
-version = "3.1.5"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "et-xmlfile" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/3d/f9/88d94a75de065ea32619465d2f77b29a0469500e99012523b91cc4141cd1/openpyxl-3.1.5.tar.gz", hash = "sha256:cf0e3cf56142039133628b5acffe8ef0c12bc902d2aadd3e0fe5878dc08d1050", size = 186464, upload-time = "2024-06-28T14:03:44.161Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c0/da/977ded879c29cbd04de313843e76868e6e13408a94ed6b987245dc7c8506/openpyxl-3.1.5-py2.py3-none-any.whl", hash = "sha256:5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2", size = 250910, upload-time = "2024-06-28T14:03:41.161Z" },
 ]
 
 [[package]]

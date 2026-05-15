@@ -197,20 +197,6 @@ def plot_wake_steering_period_with_zx300(
     _shade_toggle(ax, steer_df=plot_steer_df, toggle_col=toggle_col)
     ax.set_ylabel("power diff [kW]")
 
-    if False:
-        axid += 1
-        ax = axes[axid]
-        ax.plot(
-            plot_zxtm_df.index,
-            plot_zxtm_df[smoothed_right_ws_col] - plot_zxtm_df[smoothed_left_ws_col],  # TODO try normalizing
-            label="ZXTM smoothed right - left ws",
-        )
-        ax.plot(
-            plot_steer_df.index, steering_yawerr / 5, label=f"{steering_name} yaw error / 5", color="grey", alpha=0.5
-        )
-        _shade_toggle(ax, steer_df=plot_steer_df, toggle_col=toggle_col)
-        ax.set_ylabel("wind speed diff [m/s]")
-
     title = f"{steering_name} steering for {dependent_turbine_name} {plot_start.strftime('%Y-%m-%d %H:%M')} to {plot_end.strftime('%H:%M')} diffs"
     _finalize_and_save(axes, plot_start=plot_start, plot_end=plot_end, title=title, plot_dir=plot_dir)
 

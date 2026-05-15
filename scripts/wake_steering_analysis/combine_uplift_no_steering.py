@@ -5,12 +5,10 @@ import numpy as np
 import pandas as pd
 from scipy.stats import norm
 from wind_up.combine_results import _calc_sigma_ref
-from wind_up.models import PlotConfig, WindUpConfig
+from wind_up.models import PlotConfig
 from wind_up.plots.combine_results_plots import plot_testref_and_combined_results
 
-from hot_open.settings import get_out_dir, get_wind_up_output_dir
-from scripts.logger import setup_logger
-from scripts.wake_steering_analysis.hot_wake_steering_helpers import CONFIG_DIR, _calc_yaw_stats
+from scripts.wake_steering_analysis.hot_wake_steering_helpers import _calc_yaw_stats
 
 logger = logging.getLogger(__name__)
 
@@ -164,13 +162,13 @@ def combine_cc_only_results(
     min_refs = 3
     if auto_choose_refs:
         if len(ref_list) >= min_refs:
-            best_ref_list = _choose_best_refs(trdf, ref_list, min_refs=min_refs)
+            best_ref_list = _choose_best_refs(trdf, ref_list, min_refs=min_refs)  # noqa: F821
             refs_to_remove = [x for x in ref_list if x not in best_ref_list]
             trdf = trdf.loc[~trdf["test_wtg"].isin(refs_to_remove), :]
             trdf = trdf.loc[~trdf["ref"].isin(refs_to_remove), :]
             ref_list = sorted(trdf["ref"].unique())
         else:
-            result_manager.warning(f"len(ref_list) < {min_refs}, skipping auto_choose_refs")
+            result_manager.warning(f"len(ref_list) < {min_refs}, skipping auto_choose_refs")  # noqa: F821
 
     logger.info(f"ref_list = {ref_list}")
     tdf = _calc_cc_only_tdf(trdf, ref_list, weight_col)
@@ -207,30 +205,3 @@ def combine_cc_results_with_yaw(
     tdf = combine_cc_only_results(per_turbine_results, plot_config=plot_config, exclude_refs=exclude_refs)
     tdf["yaph_change"] = (tdf["yaph_post"] - tdf["yaph_pre"]) / tdf["yaph_pre"]
     return tdf
-
-
-if __name__ == "__main__":
-    override_wind_up_output_dir = Path(
-        r"C:\Users\aclerc\temp\hill-of-towie-open-source-analysis\server windup_output\HOT_dynamic_yaw_CC_only"
-    )
-
-    out_dir = get_out_dir(dir_name=Path(__file__).stem)
-    log_path = out_dir / f"{Path(__file__).stem}.log"
-    setup_logger(log_path)
-    msg = f"log file is at {log_path}"
-    logger.info(msg)
-
-    config_file_name = "HOT_dynamic_yaw.yaml"
-    save_plots = True
-    cfg = WindUpConfig.from_yaml(CONFIG_DIR / config_file_name)
-    cfg.assessment_name = "HOT_dynamic_yaw_CC_only"
-    cfg.out_dir = (
-        get_wind_up_output_dir(cfg.assessment_name)
-        if override_wind_up_output_dir is None
-        else override_wind_up_output_dir
-    )
-    plot_cfg = PlotConfig(show_plots=False, save_plots=save_plots, plots_dir=cfg.out_dir / "plots")
-
-    per_turbine_results = pd.read_csv(cfg.out_dir / "HOT_dynamic_yaw_CC_only_results_per_test_ref_20260511_122201.csv")
-    combined_results_df = combine_cc_results_with_yaw(per_turbine_results, wind_up_out_dir=cfg.out_dir)
-    combined_results_df.to_csv(cfg.out_dir / "HOT_dynamic_yaw_CC_combined_results_with_yaw.csv")

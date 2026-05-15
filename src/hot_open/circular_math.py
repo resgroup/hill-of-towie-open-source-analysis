@@ -145,7 +145,7 @@ def circmedian_degrees(angles: list[float] | npt.NDArray | pd.Series) -> float:
         elif sum_diff == min_sum_diff:
             candidates_which_are_tied.append(candidate)
 
-    return (
+    return float(
         (median_angle + 360) % 360
         if len(candidates_which_are_tied) == 1
         else circmean(candidates_which_are_tied, low=0, high=360)

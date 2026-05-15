@@ -4,11 +4,11 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from wake_steering_analysis.inspect_data import LOCAL_TEMPORARY_DIR
 
 from hot_open.lidar_helpers import load_zx_lidar_10min_data
 from hot_open.settings import get_cache_dir, get_out_dir
 from scripts.logger import setup_logger
+from scripts.wake_steering_analysis.inspect_data import LOCAL_TEMPORARY_DIR
 
 logger = logging.getLogger(__name__)
 

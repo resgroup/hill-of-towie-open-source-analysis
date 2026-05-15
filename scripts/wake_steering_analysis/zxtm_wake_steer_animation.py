@@ -249,7 +249,7 @@ def _local_to_world(tx: float, ty: float, yaw_rad: float, dx: float, dy: float) 
     return tx + dx * cos_y + dy * sin_y, ty - dx * sin_y + dy * cos_y
 
 
-_RANGE_COLORS = [plt.cm.Greens(v) for v in (0.40, 0.65, 0.90)]  # 85, 126, 208 m
+_RANGE_COLORS = [plt.cm.Greens(v) for v in (0.90, 0.7, 0.50)]  # 85, 126, 208 m
 
 
 def _shade_toggle(ax: plt.Axes, *, steer_df: pd.DataFrame, toggle_col: str) -> None:

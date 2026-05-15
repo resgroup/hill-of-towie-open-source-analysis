@@ -58,7 +58,7 @@ def _slice_period(df, *, start, end):
     return df[(df.index >= start) & (df.index < end)]
 
 
-def _plot_wake_steering_period(
+def plot_wake_steering_period_with_zx300(
     *,
     plot_ref_df,
     plot_steer_df,
@@ -303,7 +303,7 @@ if __name__ == "__main__":
             plot_start += plot_timedelta
             continue
 
-        _plot_wake_steering_period(
+        plot_wake_steering_period_with_zx300(
             plot_ref_df=plot_ref_df,
             plot_steer_df=plot_steer_df,
             plot_dep_df=plot_dep_df,

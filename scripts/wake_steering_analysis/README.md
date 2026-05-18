@@ -1,10 +1,10 @@
 # Hill of Towie open dataset (v2)
 
-Operational and remote-sensing data from Hill of Towie, a 21-turbine
-Siemens SWT-2.3-VS-82 wind farm in Scotland. Version 2 extends the v1
-release (2016 → 2024-08) to 2026-04 and adds three new data tiers:
-high-resolution turbine fastlog, two LiDARs, and telemetry from the
-Dynamic Yaw wind farm controller tested Jan–Apr 2026.
+Wind turbine and LiDAR data from Hill of Towie, a 21-turbine Siemens
+SWT-2.3-VS-82 wind farm in Scotland. Version 2 extends the v1 release
+(2016 → 2024-08) to 2026-04 and adds three new data tiers: high-resolution
+(~1Hz) turbine data, 10-min and high-resolution data from two LiDARs, and
+telemetry from the Dynamic Yaw wind farm controller tested Jan–Apr 2026.
 
 ## Contents
 

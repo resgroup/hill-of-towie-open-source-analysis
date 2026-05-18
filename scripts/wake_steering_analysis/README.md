@@ -142,6 +142,19 @@ beam axis. Line-of-sight wind speeds are in columns named
 needs a northing correction (see §Conventions). Bad values are written as
 sentinel values from `9987` to `9999`.
 
+**Pair-derived (PD) outputs** — `PD Wind Yaw Misalignment (deg) at Hub Height`
+and `PD Horizontal Wind Speed (m/s) at Hub Height` are computed by resolving
+the left and right line-of-sight values at hub height under an assumption of
+uniform flow. In uniform conditions this is the most accurate measure of the
+incoming wind at hub height.
+
+**Fit-derived (FD) outputs** — `FD Horizontal Wind Speed (m/s) at Hub Height`,
+`FD Wind Yaw Misalignment (deg)`, `FD Mean Fit Residual Normalised By Wind Speed`,
+and `FD Vertical Wind Shear Exponent` are produced by fitting a few seconds of
+line-of-sight data to a model assuming uniform flow with power-law shear and
+no veer. The fit residuals quantify inflow complexity and can be used to
+filter both the fit-derived and pair-derived outputs.
+
 **Coverage:**
 
 | Instrument | `Wind10_*` (10-min) | `Wind_*` (high-resolution) |
@@ -182,4 +195,5 @@ This dataset is released by RES on behalf of TRIG under a Creative Commons
 Attribution 4.0 (CC-BY-4.0) license and is provided as-is. If you use it,
 please cite the Zenodo record https://doi.org/10.5281/zenodo.20204946.
 
-Contact: Alex Clerc — `Alex.Clerc@res-group.com`.
+Contact: Alex Clerc — `Alex.Clerc@res-group.com`
+For ZX Lidars enquires use `support@zxlidars.com`

@@ -68,6 +68,9 @@ After extracting:
 Filestore/FL/HOT/{station_nr}/{YYYY-MM-DD}/FL{station_nr}_{TAG}_{YYYY_MM_DD}.prq
 ```
 
+The `.prq` files are Apache Parquet — the extension is just a legacy
+convention; readers should treat them exactly like `.parquet` files.
+
 One parquet file per signal, per turbine, per day. Coverage is
 2026-01-01 → 2026-04-30 for all 21 turbines. Each parquet has two columns:
 `timestamp` (microsecond UTC) and the named signal value. Native sampling is
@@ -115,8 +118,10 @@ lidar_data/timeseries/{unit_id}/Wind10_{prefix}@Y{YYYY}_M{MM}_D{DD}.parquet
 lidar_data/timeseries/{unit_id}/Wind_{prefix}@Y{YYYY}_M{MM}_D{DD}.parquet
 ```
 
-There are two file types per instrument per day: `Wind10_*` is 10-minute
-aggregated, `Wind_*` is high-resolution.
+All LiDAR data files are Apache Parquet (same format as the `.prq` files in
+the turbine fastlog — only the extension differs). There are two file types
+per instrument per day: `Wind10_*` is 10-minute aggregated, `Wind_*` is
+high-resolution.
 
 **ZX300 (unit 2428) — ground-based vertical profile LiDAR.** Located ~280 m
 north of T11. Columns include `Horizontal Wind Speed (m/s) at {h}m`,

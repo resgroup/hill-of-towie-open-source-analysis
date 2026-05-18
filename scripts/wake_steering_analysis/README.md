@@ -104,10 +104,11 @@ turbine per day:**
   `Wtc_TDI_ReactPwr_Value`.
 - Wind sensing: `Wtc_TDI_AcWindSp_AcWindSp`, `Wtc_TDI_AcWindDr_Value`,
   `Wtc_TDI_AcWindDr_Source`.
-- Pitch: `Wtc_TDI_PitcPosA_Value`, `Wtc_TDI_PitcPosB_Value`,
+- Rotor speed: `Wtc_TDI_MainSRpm_Value`.
+- Blade pitch: `Wtc_TDI_PitcPosA_Value`, `Wtc_TDI_PitcPosB_Value`,
   `Wtc_TDI_PitcPosC_Value`.
 - Yaw: `Wtc_TDI_YawPos_Value`, `Wtc_TDI_YawExec_YawExec`.
-- Drivetrain / state: `Wtc_TDI_MainSRpm_Value`, `Wtc_TDI_GenState_GenState`.
+- Generating state: `Wtc_TDI_GenState_GenState`.
 
 ## LiDAR (`lidar_data.zip`)
 
@@ -197,3 +198,8 @@ please cite the Zenodo record https://doi.org/10.5281/zenodo.20204946.
 
 Contact: Alex Clerc — `Alex.Clerc@res-group.com`
 For ZX Lidars enquires use `support@zxlidars.com`
+
+## Acknowledgement
+
+- Thank you to TRIG for allowing us to make this dataset publicly available.
+- Thank you to ZX LiDARs for assisting with LiDAR data and deployment reports.

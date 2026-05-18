@@ -129,7 +129,8 @@ north of T11. Columns include `Horizontal Wind Speed (m/s) at {h}m`,
 a series of fixed heights, plus met station and status columns
 (`Met Compass Bearing (deg)`, `Met Air Temp. (C)`, `Met Pressure (mbar)`,
 `Met Humidity (%)`, `Battery (V)`, `Info. Flags`, `Status Flags`). Hub
-height = 58 m. Bad values are written as sentinel values from `9988` to `9999`.
+height = 58 m. Bad values are written as sentinel values from `9987` to
+`9999`.
 
 **ZXTM (unit 5060) — nacelle-mounted cone-scanning LiDAR on T07.** Scans
 forward of the rotor with a 15° half-angle. Each row carries a `Range (m)`
@@ -138,7 +139,8 @@ beam axis. Line-of-sight wind speeds are in columns named
 `{Left|Right} LOS Speed (m/s) at Rotor Segment Height {h}m` with heights
 {26.2, 42.6, 59.0, 75.4, 91.8} m above the turbine's ground level.
 `Met Compass Bearing (deg)` is the instrument's raw compass reading and
-needs a northing correction (see §Conventions).
+needs a northing correction (see §Conventions). Bad values are written as
+sentinel values from `9989` to `9999`.
 
 **Coverage:**
 

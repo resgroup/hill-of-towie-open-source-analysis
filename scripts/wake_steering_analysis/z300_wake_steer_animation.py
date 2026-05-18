@@ -665,13 +665,13 @@ def _run_animation(
             if pd.isna(hub_ws) or pd.isna(hub_wd):
                 zx300_arrow.set_positions((zx_x, zx_y), (zx_x, zx_y))
             else:
-                # Met wind direction = direction wind comes FROM. Arrow points downwind
-                # (where wind is going), so wd=270° -> arrow east, wd=0° -> arrow south.
-                going_dx = -np.sin(np.deg2rad(hub_wd))
-                going_dy = -np.cos(np.deg2rad(hub_wd))
+                # Met wind direction = direction wind comes FROM. Arrow points upwind
+                # (where wind is coming from), so wd=270° -> arrow west, wd=0° -> arrow north.
+                from_dx = np.sin(np.deg2rad(hub_wd))
+                from_dy = np.cos(np.deg2rad(hub_wd))
                 t = float(np.clip((float(hub_ws) - ws_vmin) / ws_range, 0.0, 1.0))
                 length = ARROW_LEN_MIN_M + t * (ARROW_LEN_MAX_M - ARROW_LEN_MIN_M)
-                tip = (zx_x + going_dx * length, zx_y + going_dy * length)
+                tip = (zx_x + from_dx * length, zx_y + from_dy * length)
                 zx300_arrow.set_positions((zx_x, zx_y), tip)
                 zx300_arrow.set_color(ws_cmap(ws_norm(hub_ws)))
 

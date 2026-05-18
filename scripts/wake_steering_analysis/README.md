@@ -194,7 +194,7 @@ available at:
 
 This dataset is released by RES on behalf of TRIG under a Creative Commons
 Attribution 4.0 (CC-BY-4.0) license and is provided as-is. If you use it,
-please cite the Zenodo record https://doi.org/10.5281/zenodo.20204946.
+please cite the Zenodo record https://zenodo.org/records/20204946.
 
 Contact: Alex Clerc — `Alex.Clerc@res-group.com`
 For ZX Lidars enquires use `support@zxlidars.com`

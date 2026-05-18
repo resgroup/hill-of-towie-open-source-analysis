@@ -37,10 +37,11 @@ documented in this README and in the companion code.
 
 ## Turbines
 
-Hill of Towie consists of 21 Siemens SWT-2.3-VS-82 turbines (2.3 MW, 59 m hub,
-82 m rotor). Turbines are named `T01` through
-`T21`. The SCADA join key is `StationId` (a.k.a. `StationNr`), which equals
-`wtg_number + 2304509` (so T01 = 2304510, T21 = 2304530). Coordinates are in `Hill_of_Towie_turbine_metadata.csv`.
+Hill of Towie consists of 21 Siemens SWT-2.3-VS-82 turbines (2.3 MW, 59 m
+hub, 82 m rotor). Turbines are named `T01` through `T21`. The SCADA join
+key is `StationId` (a.k.a. `StationNr`), which equals `wtg_number + 2304509`
+(so T01 = 2304510, T21 = 2304530). Coordinates are in
+`Hill_of_Towie_turbine_metadata.csv`.
 
 ## 10-minute SCADA (`{YEAR}.zip`)
 
@@ -84,16 +85,20 @@ archive size. Two tiers are provided:
 day):**
 
 - `computed_core_post_processed_consensus_wind_direction_true_degrees` —
-  the Dynamic Yaw controller's per turbine wind-direction estimate, referenced to true north.
-- `computed_core_post_processed_core_wake_steering_offset_degrees` — the Dynamic Yaw
-  commanded wake steering yaw offset (signed, +ve means CCW viewed from above).
+  the Dynamic Yaw controller's per turbine wind-direction estimate,
+  referenced to true north.
+- `computed_core_post_processed_core_wake_steering_offset_degrees` — the
+  Dynamic Yaw commanded wake steering yaw offset (signed, +ve means CCW
+  viewed from above).
 - `computed_driver_post_processed_toggle_state` — 0 when the Dynamic Yaw
   controller is not active (off), 1 when active (on). Defines the on/off
   windows used for uplift analysis.
-- `computed_driver_post_processed_yaw_target_degrees` — the Dynamic Yaw commanded yaw
-  target in true-north reference. Includes contributions from collective yaw control and wake steering.
+- `computed_driver_post_processed_yaw_target_degrees` — the Dynamic Yaw
+  commanded yaw target in true-north reference. Includes contributions from
+  collective yaw control and wake steering.
 - `computed_driver_pre_processed_yaw_direction_true_degrees` — measured
-  yaw direction with the Dynamic Yaw controller's northing correction already applied.
+  yaw direction with the Dynamic Yaw controller's northing correction
+  already applied.
 
 **Extended Siemens tags — only on T01, T02, T03, T04, T05, T07, T11, T13, T14
 (the western turbines near wake-steering activity). 15 additional tags per
@@ -124,14 +129,15 @@ the turbine fastlog — only the extension differs). There are two file types
 per instrument per day: `Wind10_*` is 10-minute aggregated, `Wind_*` is
 high-resolution.
 
-**ZX300 (unit 2428) — ground-based vertical profile LiDAR.** Located ~280 m
-north of T11. Columns include `Horizontal Wind Speed (m/s) at {h}m`,
-`Wind Direction (deg) at {h}m`, and `Vertical Wind Speed (m/s) at {h}m` for
-a series of fixed heights, plus met station and status columns
-(`Met Compass Bearing (deg)`, `Met Air Temp. (C)`, `Met Pressure (mbar)`,
-`Met Humidity (%)`, `Battery (V)`, `Info. Flags`, `Status Flags`). Hub
-height = 58 m. Bad values are written as sentinel values from `9989` to
-`9999`.
+**ZX300 (unit 2428) — ground-based vertical profiling LiDAR.** Located ~280 m
+north of T11. Scans upward with a 30° half-angle. Columns include
+`Horizontal Wind Speed (m/s) at {h}m`, `Wind Direction (deg) at {h}m`, and
+`Vertical Wind Speed (m/s) at {h}m` for a series of fixed heights, plus met
+station and status columns (`Met Compass Bearing (deg)`, `Met Air Temp. (C)`,
+`Met Pressure (mbar)`, `Met Humidity (%)`, `Battery (V)`, `Info. Flags`,
+`Status Flags`). Hub height (59 m) corresponds to 58 m in the data because
+distances are measured from the optical head (~1 m above ground level). Bad
+values are written as sentinel values from `9989` to `9999`.
 
 **ZXTM (unit 5060) — nacelle-mounted cone-scanning LiDAR on T07.** Scans
 forward of the rotor with a 15° half-angle. Each row carries a `Range (m)`

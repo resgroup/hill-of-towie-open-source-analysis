@@ -7,6 +7,7 @@ import shutil
 import zipfile
 from collections.abc import Collection
 from pathlib import Path
+from typing import NamedTuple
 
 import requests
 from tqdm import tqdm
@@ -109,14 +110,35 @@ def ensure_hot_data_files(
     download_zenodo_data(record_id=_HOT_V2_RECORD_ID, output_dir=target_dir, filenames=missing)
 
 
-# Map of known Zenodo data zips to the top-level directory created on extraction.
-# This top-level directory also serves as the idempotency sentinel: if it exists,
-# extraction is skipped. Callers pass the parent directory where this top-level
-# directory should live as ``data_dir``.
-# When extending, also ensure the file is published in the v2 record.
-_ZIP_TOP_LEVEL_DIR: dict[str, str] = {
-    "turbine_fastlog.zip": "turbine_fastlog",
-    "lidar_data.zip": "lidar_data",
+class _ZipLayout(NamedTuple):
+    """Per-zip extraction layout.
+
+    ``top_level`` is the directory created by the zip's top-level entries; it is
+    returned to the caller as the "where the data lives" path.
+
+    ``sentinel`` is a deeper sub-path (relative to ``data_dir``) used for the
+    idempotency check. It must be a path that ONLY successful extraction
+    creates — never something a stray ``mkdir`` elsewhere in the codebase
+    can produce. In particular ``get_filestore_dir()`` eagerly creates
+    ``turbine_fastlog/Filestore/`` via ``mkdir(parents=True, exist_ok=True)``,
+    so the fastlog sentinel must be deeper than that.
+    """
+
+    top_level: str
+    sentinel: str
+
+
+# Map of known Zenodo data zips to their extraction layout. When extending,
+# also ensure the file is published in the v2 record.
+_ZIP_LAYOUT: dict[str, _ZipLayout] = {
+    "turbine_fastlog.zip": _ZipLayout(
+        top_level="turbine_fastlog",
+        sentinel="turbine_fastlog/Filestore/FL",
+    ),
+    "lidar_data.zip": _ZipLayout(
+        top_level="lidar_data",
+        sentinel="lidar_data/timeseries",
+    ),
 }
 
 
@@ -130,23 +152,25 @@ def ensure_extracted(zip_name: str, *, data_dir: Path | None = None) -> Path:
     extraction. On extraction failure, any partial top-level directory is removed
     before the exception is re-raised so a subsequent call re-attempts cleanly.
     """
-    if zip_name not in _ZIP_TOP_LEVEL_DIR:
-        msg = f"Unknown Hill of Towie zip: {zip_name!r}. Known: {sorted(_ZIP_TOP_LEVEL_DIR)}"
+    if zip_name not in _ZIP_LAYOUT:
+        msg = f"Unknown Hill of Towie zip: {zip_name!r}. Known: {sorted(_ZIP_LAYOUT)}"
         raise ValueError(msg)
     target_dir = data_dir if data_dir is not None else DATA_DIR
-    top_level = target_dir / _ZIP_TOP_LEVEL_DIR[zip_name]
-    if top_level.exists():
+    layout = _ZIP_LAYOUT[zip_name]
+    top_level = target_dir / layout.top_level
+    sentinel = target_dir / layout.sentinel
+    if sentinel.exists():
         logger.info(
-            "ensure_extracted: %s already exists at %s, skipping download and extraction",
+            "ensure_extracted: %s already extracted (sentinel %s present), skipping",
             zip_name,
-            top_level,
+            sentinel,
         )
         return top_level
 
     logger.info(
-        "ensure_extracted: %s not found at %s, will download and extract under %s",
+        "ensure_extracted: %s not extracted yet (sentinel %s missing), will download and extract under %s",
         zip_name,
-        top_level,
+        sentinel,
         target_dir,
     )
     ensure_hot_data_files([zip_name], data_dir=target_dir)

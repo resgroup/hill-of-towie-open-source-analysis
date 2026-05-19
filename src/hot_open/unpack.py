@@ -9,6 +9,7 @@ from wind_up.caching import with_parquet_cache
 from .paths import DATA_DIR
 from .scada_helpers import load_hot_10min_data, scada_df_to_wind_up_df
 from .settings import get_cache_dir
+from .sourcing_data import ensure_hot_data_files
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,7 @@ def unpack_local_scada_data_v1(
     data_dir: Path = DATA_DIR,
 ) -> pd.DataFrame:
     """Unpack Hill of Towie open source SCADA data."""
+    ensure_hot_data_files(["Hill_of_Towie_ShutdownDuration.zip"], data_dir=data_dir)
     scada_df = load_hot_10min_data(
         data_dir=data_dir,
         wtg_numbers=list(range(1, 22)),
@@ -55,6 +57,7 @@ def unpack_local_scada_data_v2(
 @with_parquet_cache(parquet_cache_dir / "metadata_df.parquet")
 def unpack_local_meta_data(data_dir: Path = DATA_DIR, scada_index_name: str = "TimeStamp_StartFormat") -> pd.DataFrame:
     """Unpack Hill of Towie open source turbine metadata."""
+    ensure_hot_data_files(["Hill_of_Towie_turbine_metadata.csv"], data_dir=data_dir)
     timestamp_format = (
         "Start"
         if scada_index_name == "TimeStamp_StartFormat"

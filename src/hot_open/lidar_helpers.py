@@ -11,7 +11,8 @@ from pandas.api.types import is_datetime64_any_dtype
 from wind_up.reanalysis_data import MastOrLiDARDataset
 
 from hot_open.fastlog_helpers import _generate_dates_in_range
-from hot_open.settings import get_cache_dir
+from hot_open.settings import get_cache_dir, get_data_dir
+from hot_open.sourcing_data import ensure_extracted
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ def load_zx_lidar_10min_data(  # noqa: C901
     remove_bad_values: bool = False,
 ) -> pd.DataFrame:
     """Load 10-min ZX300/ZXTM LiDAR parquet files for a single unit and date range."""
+    ensure_extracted("lidar_data.zip", data_dir=get_data_dir())
     dfs = []
     for fname in (data_dir / "timeseries" / lidar_unit_id).glob("*.parquet"):
         if not fname.stem.startswith("Wind10"):
@@ -158,6 +160,7 @@ def load_zx_lidar_fl_data(  # noqa: C901, PLR0912, PLR0913
     cache_dir = get_cache_dir()
     if cache_dir is not None and (cache_dir / "load_zx_lidar_fl_data" / cache_fname).exists():
         return pd.read_parquet(cache_dir / "load_zx_lidar_fl_data" / cache_fname)
+    ensure_extracted("lidar_data.zip", data_dir=get_data_dir())
     device_decr = "ZTM" if int(lidar_unit_id) >= ZX_ZTM_DEVICE_ID_MIN else ""
     file_paths = [
         data_dir

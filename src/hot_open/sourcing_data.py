@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 BYTES_IN_1MB = 1024 * 1024
 CHUNK_SIZE = 10 * BYTES_IN_1MB
+_HOT_V2_RECORD_ID = "20204946"
 
 
 def download_zenodo_data(
@@ -73,6 +74,23 @@ def download_zenodo_data(
             logger.info("[%d/%d] File %s already exists. Skipping download.", i_file, n_files_to_download, dst_fpath)
 
     logger.info("Download finished: %s new files cached at %s", downloaded_files, output_dir)
+
+
+def ensure_hot_data_files(
+    filenames: Collection[str],
+    *,
+    data_dir: Path | None = None,
+) -> None:
+    """Download missing Hill of Towie v2 data files from Zenodo.
+
+    Idempotent: files already present in ``data_dir`` are not re-downloaded
+    and no network call is made when every requested file exists locally.
+    """
+    target_dir = data_dir if data_dir is not None else DATA_DIR
+    missing = [f for f in filenames if not (target_dir / f).is_file()]
+    if not missing:
+        return
+    download_zenodo_data(record_id=_HOT_V2_RECORD_ID, output_dir=target_dir, filenames=missing)
 
 
 def _check_name_of_files_to_download(filenames: Collection[str], remote_files: Collection[dict]) -> Collection[dict]:

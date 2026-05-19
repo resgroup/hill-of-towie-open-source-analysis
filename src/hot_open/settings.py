@@ -13,7 +13,7 @@ REPO_NAME = REPO_ROOT.stem
 
 
 def get_data_dir(*, log_message: bool = False) -> Path:
-    """Get the HOT open data directory where input parquet files should be.
+    """Get the HOT open data directory where all input data files should be.
 
     Can be customized by setting the "HOT_OPEN_DATA_DIR" enviroment variable.
     """
@@ -61,7 +61,7 @@ def get_filestore_dir() -> Path:
     Can customized by setting the "HOT_OPEN_FILESTORE_DIR" enviroment variable.
     """
     load_dotenv()
-    location = Path(os.getenv("HOT_OPEN_FILESTORE_DIR", Path.home() / "Filestore"))
+    location = Path(os.getenv("HOT_OPEN_FILESTORE_DIR", get_data_dir() / "turbine_fastlog" / "Filestore"))
     location.mkdir(exist_ok=True, parents=True)
     return location
 

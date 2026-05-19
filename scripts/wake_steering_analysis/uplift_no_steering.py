@@ -41,6 +41,9 @@ def hot_dy_uplift_no_steering(rerun_windup: bool = True) -> tuple[float, float, 
     cfg = WindUpConfig.from_yaml(CONFIG_DIR / config_file_name)
     uplift_per_steer_dir = get_wind_up_output_dir(cfg.assessment_name)
     cfg.assessment_name = "HOT_dynamic_yaw_CC_only"
+    cfg.test_wtgs = [
+        x.model_copy() for x in cfg.asset.wtgs if x.name != "T07"
+    ]
     cfg.out_dir = get_wind_up_output_dir(cfg.assessment_name)
     plot_cfg = PlotConfig(show_plots=False, save_plots=save_plots, plots_dir=cfg.out_dir / "plots")
 

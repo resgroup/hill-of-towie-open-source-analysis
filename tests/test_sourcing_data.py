@@ -109,6 +109,35 @@ class TestEnsureExtracted:
 
     @staticmethod
     @responses.activate
+    def test_extracts_when_top_level_dir_exists_but_sentinel_missing(tmp_path: Path) -> None:
+        """Regression: empty top-level dir left by an unrelated mkdir must not fool the sentinel check.
+
+        For example ``get_filestore_dir()`` eagerly creates ``turbine_fastlog/Filestore/`` even
+        when the fastlog data has not been extracted yet. The sentinel must be deeper than that.
+        """
+        zip_name = "lidar_data.zip"
+        zip_bytes = _build_lidar_zip_bytes()
+
+        # Simulate a previous shallow mkdir creating the top-level dir without contents.
+        (tmp_path / "lidar_data").mkdir()
+
+        responses.add(
+            responses.Response(
+                method="GET",
+                url="https://zenodo.org/api/records/20204946",
+                json={"files": [{"key": zip_name, "links": {"self": "http://lidar.zip.url"}, "size": len(zip_bytes)}]},
+            )
+        )
+        responses.add(responses.Response(method="GET", url="http://lidar.zip.url", body=zip_bytes))
+
+        result = ensure_extracted(zip_name, data_dir=tmp_path)
+
+        assert result == tmp_path / "lidar_data"
+        assert (tmp_path / "lidar_data" / "timeseries" / "2428" / "Wind10_2428@Y2026_M01_D01.parquet").is_file()
+        assert not (tmp_path / zip_name).exists()
+
+    @staticmethod
+    @responses.activate
     def test_cleans_up_partial_extraction_on_failure(tmp_path: Path) -> None:
         zip_name = "lidar_data.zip"
         # Write garbage as the "zip" so ZipFile() will fail.

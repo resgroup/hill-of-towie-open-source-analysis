@@ -13,7 +13,6 @@ from hot_open.scada_helpers import load_hot_10min_data
 from hot_open.settings import get_data_dir, get_filestore_dir, get_out_dir
 from scripts.logger import setup_logger
 
-LOCAL_TEMPORARY_DIR = get_data_dir()
 logger = logging.getLogger(__name__)
 
 # WTG 10-minute SCADA columns
@@ -424,7 +423,7 @@ if __name__ == "__main__":
 
     # Load data for T3, T7 and both LiDARS from 2026-02-19 22:30 till 2026-02-19 08:00
     wtg_10min_df = load_hot_10min_data(
-        data_dir=LOCAL_TEMPORARY_DIR,
+        data_dir=get_data_dir(),
         wtg_numbers=wtg_numbers,
         start_dt=start_dt,
         end_dt_excl=end_dt_excl,
@@ -483,7 +482,7 @@ if __name__ == "__main__":
         )
 
     zx300_10min_df = load_zx_lidar_10min_data(
-        data_dir=LOCAL_TEMPORARY_DIR / "lidar_data",
+        data_dir=get_data_dir() / "lidar_data",
         lidar_unit_id="2428",
         start_dt=start_dt,
         end_dt_excl=end_dt_excl,
@@ -491,7 +490,7 @@ if __name__ == "__main__":
     )
 
     zxtm_10min_df = load_zx_lidar_10min_data(
-        data_dir=LOCAL_TEMPORARY_DIR / "lidar_data",
+        data_dir=get_data_dir() / "lidar_data",
         lidar_unit_id="5060",
         start_dt=start_dt,
         end_dt_excl=end_dt_excl,
@@ -522,14 +521,14 @@ if __name__ == "__main__":
     )
 
     zx300_fl_df = load_zx_lidar_fl_data(
-        data_dir=LOCAL_TEMPORARY_DIR / "lidar_data",
+        data_dir=get_data_dir() / "lidar_data",
         lidar_unit_id="2428",
         start_dt=start_dt,
         end_dt_excl=end_dt_excl,
         remove_bad_values=True,
     )
     zxtm_fl_df = load_zx_lidar_fl_data(
-        data_dir=LOCAL_TEMPORARY_DIR / "lidar_data",
+        data_dir=get_data_dir() / "lidar_data",
         lidar_unit_id="5060",
         start_dt=start_dt,
         end_dt_excl=end_dt_excl,

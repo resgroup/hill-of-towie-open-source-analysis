@@ -10,6 +10,8 @@ import pandas as pd
 from tqdm import tqdm
 from wind_up.constants import DataColumns
 
+from hot_open.sourcing_data import ensure_hot_data_files
+
 logger = logging.getLogger(__name__)
 
 
@@ -43,7 +45,7 @@ hill_of_towie_fields = [
 ]
 
 
-def load_hot_10min_data(  # noqa:PLR0913 C901
+def load_hot_10min_data(  # noqa:PLR0913 C901 PLR0915
     *,
     data_dir: Path,
     wtg_numbers: Sequence[int],
@@ -68,6 +70,7 @@ def load_hot_10min_data(  # noqa:PLR0913 C901
     first_year_to_load = start_dt.year
     last_year_to_load = (end_dt_excl - pd.Timedelta(seconds=timebase_s)).year
     years_to_load = list(range(first_year_to_load, last_year_to_load + 1))
+    ensure_hot_data_files([f"{y}.zip" for y in years_to_load], data_dir=data_dir)
     fields_to_load = hill_of_towie_fields if custom_fields is None else custom_fields
     tables_to_load = {x.table_name for x in fields_to_load}
     result_dfs = []

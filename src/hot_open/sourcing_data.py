@@ -89,9 +89,23 @@ def ensure_hot_data_files(
     and no network call is made when every requested file exists locally.
     """
     target_dir = data_dir if data_dir is not None else DATA_DIR
-    missing = [f for f in filenames if not (target_dir / f).is_file()]
+    requested = list(filenames)
+    missing = [f for f in requested if not (target_dir / f).is_file()]
     if not missing:
+        logger.info(
+            "ensure_hot_data_files: all %d requested files already present at %s, skipping download",
+            len(requested),
+            target_dir,
+        )
         return
+    logger.info(
+        "ensure_hot_data_files: %d of %d requested files missing at %s, downloading from Zenodo record %s: %s",
+        len(missing),
+        len(requested),
+        target_dir,
+        _HOT_V2_RECORD_ID,
+        missing,
+    )
     download_zenodo_data(record_id=_HOT_V2_RECORD_ID, output_dir=target_dir, filenames=missing)
 
 
@@ -122,10 +136,22 @@ def ensure_extracted(zip_name: str, *, data_dir: Path | None = None) -> Path:
     target_dir = data_dir if data_dir is not None else DATA_DIR
     top_level = target_dir / _ZIP_TOP_LEVEL_DIR[zip_name]
     if top_level.exists():
+        logger.info(
+            "ensure_extracted: %s already exists at %s, skipping download and extraction",
+            zip_name,
+            top_level,
+        )
         return top_level
 
+    logger.info(
+        "ensure_extracted: %s not found at %s, will download and extract under %s",
+        zip_name,
+        top_level,
+        target_dir,
+    )
     ensure_hot_data_files([zip_name], data_dir=target_dir)
     zip_path = target_dir / zip_name
+    logger.info("ensure_extracted: extracting %s into %s", zip_path, target_dir)
     try:
         with zipfile.ZipFile(zip_path) as zf:
             zf.extractall(target_dir)
@@ -134,6 +160,7 @@ def ensure_extracted(zip_name: str, *, data_dir: Path | None = None) -> Path:
             shutil.rmtree(top_level)
         raise
     zip_path.unlink()
+    logger.info("ensure_extracted: extraction complete, deleted source zip %s", zip_path)
     return top_level
 
 

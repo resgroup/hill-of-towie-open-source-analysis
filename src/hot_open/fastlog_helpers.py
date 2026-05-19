@@ -6,6 +6,7 @@ import hashlib
 import inspect
 import json
 import logging
+import os
 from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
@@ -15,7 +16,8 @@ import pandas as pd
 from pyarrow.lib import ArrowInvalid
 
 from hot_open.circular_math import circ_mean_resample_degrees
-from hot_open.settings import get_cache_dir, get_filestore_dir
+from hot_open.settings import get_cache_dir, get_data_dir, get_filestore_dir
+from hot_open.sourcing_data import ensure_extracted
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +57,8 @@ def load_hot_fl_data(  # noqa: PLR0913
 
     Returns a wide-format DataFrame with a MultiIndex column (turbine_name, tag).
     """
+    if os.getenv("HOT_OPEN_FILESTORE_DIR") is None:
+        ensure_extracted("turbine_fastlog.zip", data_dir=get_data_dir())
     park_id = "HOT"
     tags = [*_get_tag_list_from_park_id(park_id), *extra_tags] if extra_tags is not None else None
     fl_df = get_fl_resampled(

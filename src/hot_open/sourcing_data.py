@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 BYTES_IN_1MB = 1024 * 1024
 CHUNK_SIZE = 10 * BYTES_IN_1MB
+SMALL_FILE_THRESHOLD_BYTES = 2 * BYTES_IN_1MB
 _HOT_V2_RECORD_ID = "20204946"
 
 
@@ -48,35 +49,102 @@ def download_zenodo_data(
         logger.info(msg)
 
     remote_files: list[dict] = content["files"]
-    files_to_download = remote_files if not filenames else _check_name_of_files_to_download(filenames, remote_files)
+    if filenames is None:
+        files_to_download: list[dict] = list(remote_files)
+    else:
+        files_to_download = list(_check_name_of_files_to_download(filenames, remote_files))
+    required_keys = {f["key"] for f in files_to_download}
+    # Auto-include any small file in the record so users can explore READMEs,
+    # deployment reports, etc. without an extra fetch step.
+    for rf in remote_files:
+        if rf["size"] < SMALL_FILE_THRESHOLD_BYTES and rf["key"] not in required_keys:
+            files_to_download.append(rf)
 
     downloaded_files = 0
     n_files_to_download = len(files_to_download)
 
     for i_file, file_to_download in enumerate(files_to_download, start=1):
-        _file_name = file_to_download["key"]
-        _file_size = file_to_download["size"]
-        _file_url = file_to_download["links"]["self"]
-
-        dst_fpath = output_dir / _file_name
-        if cache_overwrite or not dst_fpath.is_file() or dst_fpath.stat().st_size < _file_size:
-            logger.info("[%d/%d] Beginning file download from Zenodo: %s...", i_file, n_files_to_download, _file_name)
-
-            result = requests.get(_file_url, stream=True, timeout=10)
-            with Path.open(dst_fpath, "wb") as f:
-                for chunk in tqdm(
-                    result.iter_content(chunk_size=CHUNK_SIZE),
-                    total=math.ceil(_file_size / CHUNK_SIZE),
-                    unit="MB",
-                    unit_scale=10,  # 10 MB per iteration
-                    desc=f"Downloading {_file_name} ({_file_size / BYTES_IN_1MB:.2f} MB)",
-                ):
-                    f.write(chunk)
-            downloaded_files += 1
-        else:
-            logger.info("[%d/%d] File %s already exists. Skipping download.", i_file, n_files_to_download, dst_fpath)
+        is_required = file_to_download["key"] in required_keys
+        downloaded_files += _download_one_file(
+            file_to_download,
+            output_dir,
+            cache_overwrite=cache_overwrite,
+            is_required=is_required,
+            progress_prefix=f"[{i_file}/{n_files_to_download}]",
+        )
 
     logger.info("Download finished: %s new files cached at %s", downloaded_files, output_dir)
+
+
+def _download_one_file(
+    file_entry: dict,
+    output_dir: Path,
+    *,
+    cache_overwrite: bool,
+    is_required: bool,
+    progress_prefix: str,
+) -> int:
+    """Download a single Zenodo file. Returns 1 if a new file was written, 0 otherwise.
+
+    Required files re-raise ``requests.RequestException`` on failure. Optional
+    files log a warning, remove any partial bytes, and return 0.
+    """
+    _file_name = file_entry["key"]
+    _file_size = file_entry["size"]
+    _file_url = file_entry["links"]["self"]
+    dst_fpath = output_dir / _file_name
+
+    already_complete = dst_fpath.is_file() and dst_fpath.stat().st_size >= _file_size
+    if already_complete and not cache_overwrite:
+        logger.info("%s File %s already exists. Skipping download.", progress_prefix, dst_fpath)
+        return 0
+
+    logger.info("%s Beginning file download from Zenodo: %s...", progress_prefix, _file_name)
+    try:
+        result = requests.get(_file_url, stream=True, timeout=10)
+        with Path.open(dst_fpath, "wb") as f:
+            for chunk in tqdm(
+                result.iter_content(chunk_size=CHUNK_SIZE),
+                total=math.ceil(_file_size / CHUNK_SIZE),
+                unit="MB",
+                unit_scale=10,  # 10 MB per iteration
+                desc=f"Downloading {_file_name} ({_file_size / BYTES_IN_1MB:.2f} MB)",
+            ):
+                f.write(chunk)
+    except requests.RequestException as e:
+        if dst_fpath.is_file():
+            dst_fpath.unlink()
+        if is_required:
+            raise
+        logger.warning(
+            "%s Failed to download optional small file %s: %s. Continuing.",
+            progress_prefix,
+            _file_name,
+            e,
+        )
+        return 0
+    return 1
+
+
+def _missing_small_files_from_cached_metadata(target_dir: Path) -> list[str]:
+    """Return small-file keys absent from ``target_dir`` based on cached Zenodo metadata.
+
+    Returns an empty list when the metadata cache is missing or unreadable; the
+    next successful Zenodo fetch rewrites the cache.
+    """
+    metadata_fpath = target_dir / "zenodo_dataset_metadata.json"
+    if not metadata_fpath.is_file():
+        return []
+    try:
+        with metadata_fpath.open() as f:
+            content = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return []
+    return [
+        rf["key"]
+        for rf in content.get("files", [])
+        if rf.get("size", math.inf) < SMALL_FILE_THRESHOLD_BYTES and not (target_dir / rf["key"]).is_file()
+    ]
 
 
 def ensure_hot_data_files(
@@ -87,27 +155,34 @@ def ensure_hot_data_files(
     """Download missing Hill of Towie v2 data files from Zenodo.
 
     Idempotent: files already present in ``data_dir`` are not re-downloaded
-    and no network call is made when every requested file exists locally.
+    and no network call is made when every requested file exists locally and
+    the cached metadata shows no missing small files.
+
+    Auto-includes every file in the record under 2 MB so users can browse
+    READMEs, deployment reports, etc. Failures on these auto-included
+    downloads warn-and-continue (handled inside ``download_zenodo_data``).
     """
     target_dir = data_dir if data_dir is not None else DATA_DIR
     requested = list(filenames)
-    missing = [f for f in requested if not (target_dir / f).is_file()]
-    if not missing:
+    missing_requested = [f for f in requested if not (target_dir / f).is_file()]
+    missing_small = _missing_small_files_from_cached_metadata(target_dir)
+    if not missing_requested and not missing_small:
         logger.info(
-            "ensure_hot_data_files: all %d requested files already present at %s, skipping download",
+            "ensure_hot_data_files: all %d requested files already present at %s "
+            "(and no missing small files in cached metadata), skipping download",
             len(requested),
             target_dir,
         )
         return
     logger.info(
-        "ensure_hot_data_files: %d of %d requested files missing at %s, downloading from Zenodo record %s: %s",
-        len(missing),
-        len(requested),
-        target_dir,
+        "ensure_hot_data_files: downloading from Zenodo record %s into %s "
+        "(missing requested: %s; missing small files via cached metadata: %s)",
         _HOT_V2_RECORD_ID,
-        missing,
+        target_dir,
+        missing_requested,
+        missing_small,
     )
-    download_zenodo_data(record_id=_HOT_V2_RECORD_ID, output_dir=target_dir, filenames=missing)
+    download_zenodo_data(record_id=_HOT_V2_RECORD_ID, output_dir=target_dir, filenames=missing_requested)
 
 
 class _ZipLayout(NamedTuple):

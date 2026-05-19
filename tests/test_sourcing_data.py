@@ -1,8 +1,10 @@
 import io
+import json
 import zipfile
 from pathlib import Path
 
 import pytest
+import requests
 import responses
 
 from hot_open.sourcing_data import download_zenodo_data, ensure_extracted, ensure_hot_data_files
@@ -31,6 +33,126 @@ class TestDownloadZenodoData:
         with expected_fpath.open("rb") as f:
             downloaded_content = f.read()
         assert downloaded_content == expected_content
+
+    @staticmethod
+    @responses.activate
+    def test_includes_small_files_alongside_requested_file(tmp_path: Path) -> None:
+        big_fname = "big.zip"
+        small_fname = "README.md"
+        big_size = 3 * 1024 * 1024  # 3 MB - over the 2 MB threshold
+        small_content = b"# README\n"
+
+        responses.add(
+            responses.Response(
+                method="GET",
+                url="https://zenodo.org/api/records/fake-id",
+                json={
+                    "files": [
+                        {"key": big_fname, "links": {"self": "http://big.url"}, "size": big_size},
+                        {"key": small_fname, "links": {"self": "http://small.url"}, "size": len(small_content)},
+                    ]
+                },
+            )
+        )
+        responses.add(responses.Response(method="GET", url="http://big.url", body=b"BIGFILE"))
+        responses.add(responses.Response(method="GET", url="http://small.url", body=small_content))
+
+        download_zenodo_data(record_id="fake-id", output_dir=tmp_path, filenames=[big_fname])
+
+        assert (tmp_path / big_fname).is_file()
+        assert (tmp_path / small_fname).read_bytes() == small_content
+
+    @staticmethod
+    @responses.activate
+    def test_threshold_is_strictly_under_2mb(tmp_path: Path) -> None:
+        # boundary.bin claims exactly 2 MB -> must NOT be auto-included
+        # just_under.bin claims 2 MB - 1 byte -> must be auto-included
+        boundary_size = 2 * 1024 * 1024
+        just_under_size = boundary_size - 1
+
+        responses.add(
+            responses.Response(
+                method="GET",
+                url="https://zenodo.org/api/records/fake-id",
+                json={
+                    "files": [
+                        {"key": "big.zip", "links": {"self": "http://big.url"}, "size": 3 * 1024 * 1024},
+                        {"key": "boundary.bin", "links": {"self": "http://boundary.url"}, "size": boundary_size},
+                        {"key": "just_under.bin", "links": {"self": "http://just-under.url"}, "size": just_under_size},
+                    ]
+                },
+            )
+        )
+        responses.add(responses.Response(method="GET", url="http://big.url", body=b"BIG"))
+        responses.add(responses.Response(method="GET", url="http://just-under.url", body=b"under"))
+        # No mock for http://boundary.url — if the code tries to fetch it, `responses` raises.
+
+        download_zenodo_data(record_id="fake-id", output_dir=tmp_path, filenames=["big.zip"])
+
+        assert (tmp_path / "big.zip").is_file()
+        assert (tmp_path / "just_under.bin").read_bytes() == b"under"
+        assert not (tmp_path / "boundary.bin").exists()
+
+    @staticmethod
+    @responses.activate
+    def test_optional_small_file_failure_warns_and_continues(
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        big_fname = "big.zip"
+        small_fname = "README.md"
+
+        responses.add(
+            responses.Response(
+                method="GET",
+                url="https://zenodo.org/api/records/fake-id",
+                json={
+                    "files": [
+                        {"key": big_fname, "links": {"self": "http://big.url"}, "size": 3 * 1024 * 1024},
+                        {"key": small_fname, "links": {"self": "http://small.url"}, "size": 9},
+                    ]
+                },
+            )
+        )
+        responses.add(responses.Response(method="GET", url="http://big.url", body=b"BIGFILE"))
+        responses.add(
+            responses.Response(
+                method="GET",
+                url="http://small.url",
+                body=requests.ConnectionError("offline"),
+            )
+        )
+
+        with caplog.at_level("WARNING", logger="hot_open.sourcing_data"):
+            download_zenodo_data(record_id="fake-id", output_dir=tmp_path, filenames=[big_fname])
+
+        assert (tmp_path / big_fname).is_file()
+        assert not (tmp_path / small_fname).exists()
+        assert any(small_fname in rec.message for rec in caplog.records if rec.levelname == "WARNING")
+
+    @staticmethod
+    @responses.activate
+    def test_required_file_failure_still_raises(tmp_path: Path) -> None:
+        fname = "README.md"
+        responses.add(
+            responses.Response(
+                method="GET",
+                url="https://zenodo.org/api/records/fake-id",
+                json={"files": [{"key": fname, "links": {"self": "http://readme.url"}, "size": 9}]},
+            )
+        )
+        responses.add(
+            responses.Response(
+                method="GET",
+                url="http://readme.url",
+                body=requests.ConnectionError("offline"),
+            )
+        )
+
+        with pytest.raises(requests.RequestException):
+            download_zenodo_data(record_id="fake-id", output_dir=tmp_path, filenames=[fname])
+
+        assert not (tmp_path / fname).exists()
 
 
 class TestEnsureHotDataFiles:
@@ -64,6 +186,38 @@ class TestEnsureHotDataFiles:
         ensure_hot_data_files([fname], data_dir=tmp_path)
 
         assert (tmp_path / fname).read_bytes() == b"already here"
+
+    @staticmethod
+    @responses.activate
+    def test_backfills_small_files_using_cached_metadata(tmp_path: Path) -> None:
+        big_fname = "big.zip"
+        small_fname = "README.md"
+        small_content = b"# README\n"
+
+        # big.zip already present locally
+        (tmp_path / big_fname).write_bytes(b"BIGFILE")
+
+        # Pre-seed the metadata cache as if a prior download had written it.
+        # No metadata URL is mocked here -- if download_zenodo_data tried to
+        # refetch metadata, `responses` would raise ConnectionError.
+        metadata_fpath = tmp_path / "zenodo_dataset_metadata.json"
+        metadata_fpath.write_text(
+            json.dumps(
+                {
+                    "files": [
+                        {"key": big_fname, "links": {"self": "http://big.url"}, "size": 3 * 1024 * 1024},
+                        {"key": small_fname, "links": {"self": "http://small.url"}, "size": len(small_content)},
+                    ]
+                }
+            )
+        )
+
+        responses.add(responses.Response(method="GET", url="http://small.url", body=small_content))
+
+        ensure_hot_data_files([big_fname], data_dir=tmp_path)
+
+        assert (tmp_path / big_fname).read_bytes() == b"BIGFILE"  # untouched
+        assert (tmp_path / small_fname).read_bytes() == small_content
 
 
 def _build_lidar_zip_bytes() -> bytes:

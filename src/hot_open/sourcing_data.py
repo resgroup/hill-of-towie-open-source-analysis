@@ -3,6 +3,8 @@
 import json
 import logging
 import math
+import shutil
+import zipfile
 from collections.abc import Collection
 from pathlib import Path
 
@@ -91,6 +93,48 @@ def ensure_hot_data_files(
     if not missing:
         return
     download_zenodo_data(record_id=_HOT_V2_RECORD_ID, output_dir=target_dir, filenames=missing)
+
+
+# Map of known Zenodo data zips to the top-level directory created on extraction.
+# This top-level directory also serves as the idempotency sentinel: if it exists,
+# extraction is skipped. Callers pass the parent directory where this top-level
+# directory should live as ``data_dir``.
+# When extending, also ensure the file is published in the v2 record.
+_ZIP_TOP_LEVEL_DIR: dict[str, str] = {
+    "turbine_fastlog.zip": "turbine_fastlog",
+    "lidar_data.zip": "lidar_data",
+}
+
+
+def ensure_extracted(zip_name: str, *, data_dir: Path | None = None) -> Path:
+    """Download (if needed) and extract a Hill of Towie data zip under ``data_dir``.
+
+    Returns the path to the extracted top-level directory.
+
+    Idempotent: if the extracted directory already exists, returns it immediately
+    with no download or extraction. The source zip is deleted after a successful
+    extraction. On extraction failure, any partial top-level directory is removed
+    before the exception is re-raised so a subsequent call re-attempts cleanly.
+    """
+    if zip_name not in _ZIP_TOP_LEVEL_DIR:
+        msg = f"Unknown Hill of Towie zip: {zip_name!r}. Known: {sorted(_ZIP_TOP_LEVEL_DIR)}"
+        raise ValueError(msg)
+    target_dir = data_dir if data_dir is not None else DATA_DIR
+    top_level = target_dir / _ZIP_TOP_LEVEL_DIR[zip_name]
+    if top_level.exists():
+        return top_level
+
+    ensure_hot_data_files([zip_name], data_dir=target_dir)
+    zip_path = target_dir / zip_name
+    try:
+        with zipfile.ZipFile(zip_path) as zf:
+            zf.extractall(target_dir)
+    except Exception:
+        if top_level.exists():
+            shutil.rmtree(top_level)
+        raise
+    zip_path.unlink()
+    return top_level
 
 
 def _check_name_of_files_to_download(filenames: Collection[str], remote_files: Collection[dict]) -> Collection[dict]:

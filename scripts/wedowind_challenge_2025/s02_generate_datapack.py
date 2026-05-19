@@ -29,7 +29,6 @@ from zipfile import ZipFile
 import polars as pl
 
 from hot_open.paths import ANALYSES_DIR, DATA_DIR
-from hot_open.sourcing_data import download_zenodo_data
 from scripts.logger import setup_logger
 
 FULL_10MIN_PERIOD = 600
@@ -190,17 +189,6 @@ if __name__ == "__main__":
 
     output_dir = ANALYSES_DIR / "wedowind_competition_input_data"
     output_dir.mkdir(exist_ok=True)
-
-    # Download and Cache Source Data
-
-    download_zenodo_data(
-        record_id="14870023",
-        filenames=[
-            *[f"{x}.zip" for x in range(2016, 2020 + 1)],
-            "Hill_of_Towie_ShutdownDuration.zip",
-            "Hill_of_Towie_turbine_metadata.csv",
-        ],
-    )
 
     shutdown_df = _extract_shutdown_data(
         zip_fpath=DATA_DIR / "Hill_of_Towie_ShutdownDuration.zip", turbine_ids=selected_turbines

@@ -29,7 +29,6 @@ from wind_up.waking_state import add_waking_scen, get_distance_and_bearing
 from wind_up.windspeed_drift import check_windspeed_drift
 
 from hot_open.paths import ANALYSES_DIR
-from hot_open.sourcing_data import download_zenodo_data
 from hot_open.unpack import unpack_local_meta_data, unpack_local_scada_data_v1
 from scripts.logger import setup_logger
 
@@ -308,14 +307,6 @@ def preprocess_x(X: pl.DataFrame) -> pl.DataFrame:
 
 if __name__ == "__main__":
     setup_logger(ANALYSIS_DIR / f"{Path(__file__).stem}.log")
-    download_zenodo_data(
-        record_id="14870023",
-        filenames=[
-            *[f"{x}.zip" for x in range(2016, 2020 + 1)],
-            "Hill_of_Towie_ShutdownDuration.zip",
-            "Hill_of_Towie_turbine_metadata.csv",
-        ],
-    )
     metadata_df = unpack_local_meta_data()
     scada_df = unpack_local_scada_data_v1(end_dt_excl=pd.Timestamp("2021-01-01", tz="UTC"))
     predicted_power_df = wind_up_features_for_kaggle(

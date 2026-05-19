@@ -12,7 +12,6 @@ from wind_up.models import PlotConfig, WindUpConfig
 from wind_up.reanalysis_data import ReanalysisDataset
 
 from hot_open.paths import ANALYSES_DIR
-from hot_open.sourcing_data import download_zenodo_data
 from hot_open.unpack import unpack_local_meta_data, unpack_local_scada_data_v1
 from scripts.logger import setup_logger
 
@@ -58,14 +57,6 @@ def _main_northing_analysis(
 if __name__ == "__main__":
     setup_logger(ANALYSIS_DIR / f"{Path(__file__).stem}.log")
 
-    download_zenodo_data(
-        record_id="14870023",
-        filenames=[
-            *[f"{x}.zip" for x in range(2016, 2025)],
-            "Hill_of_Towie_ShutdownDuration.zip",
-            "Hill_of_Towie_turbine_metadata.csv",
-        ],
-    )
     metadata_df = unpack_local_meta_data()
     scada_df = unpack_local_scada_data_v1()
 

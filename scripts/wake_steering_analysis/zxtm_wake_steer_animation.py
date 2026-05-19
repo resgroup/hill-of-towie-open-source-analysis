@@ -51,10 +51,9 @@ from tqdm import tqdm
 
 from hot_open.fastlog_helpers import load_hot_fl_data
 from hot_open.lidar_helpers import load_zx_lidar_fl_data
-from hot_open.settings import get_filestore_dir, get_out_dir
+from hot_open.settings import get_data_dir, get_filestore_dir, get_out_dir
 from scripts.logger import setup_logger
 from scripts.wake_steering_analysis.inspect_data import (
-    LOCAL_TEMPORARY_DIR,
     NORTH_CORRECTIONS,
     WTG_FL_ACT_POWER_COL,
     WTG_FL_YAW_POS_COL,
@@ -192,7 +191,7 @@ def _load_zxtm_data() -> dict[float, pd.DataFrame]:
     Returns {range_m: smoothed_df} where each df has WS_COLS smoothed with a rolling mean
     """
     zxtm_fl_df = load_zx_lidar_fl_data(
-        data_dir=LOCAL_TEMPORARY_DIR / "lidar_data",
+        data_dir=get_data_dir() / "lidar_data",
         lidar_unit_id="5060",
         start_dt=LOAD_START,
         # +1 s mirrors _load_wtg_data: keep ZXTM rows at/near PLOT_END so the final
@@ -702,7 +701,7 @@ def _save_static_pngs(out_dir: Path) -> None:
         dfs[name] = df[(df.index >= PLOT_START) & (df.index < PLOT_END)]
 
     zxtm_fl_df = load_zx_lidar_fl_data(
-        data_dir=LOCAL_TEMPORARY_DIR / "lidar_data",
+        data_dir=get_data_dir() / "lidar_data",
         lidar_unit_id="5060",
         start_dt=load_start,
         end_dt_excl=PLOT_END,

@@ -19,14 +19,13 @@ from wind_up.smart_data import add_smart_lat_long_to_cfg
 from hot_open.era5_helpers import get_hot_reanalysis_datasets
 from hot_open.fastlog_helpers import load_hot_fl_data
 from hot_open.lidar_helpers import load_zx_lidar_10min_data
-from hot_open.settings import get_cache_dir, get_filestore_dir, get_out_dir, get_wind_up_output_dir
+from hot_open.settings import get_cache_dir, get_data_dir, get_filestore_dir, get_out_dir, get_wind_up_output_dir
 from hot_open.unpack import unpack_local_meta_data, unpack_local_scada_data_v2
 from scripts.logger import setup_logger
 from scripts.wake_steering_analysis.combine_uplift_per_steer import (
     combine_wakesteer_results_with_yaw,
 )
 from scripts.wake_steering_analysis.hot_wake_steering_helpers import CONFIG_DIR
-from scripts.wake_steering_analysis.inspect_data import LOCAL_TEMPORARY_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -207,7 +206,7 @@ def hot_dy_scada_df() -> pd.DataFrame:
     fl_10min_df = pd.concat(per_turbine_10min)
     fl_10min_df.index.name = "TimeStamp_StartFormat"
     fl_stacked = fl_10min_df.set_index("TurbineName", append=True)
-    scada_df = unpack_local_scada_data_v2(data_dir=LOCAL_TEMPORARY_DIR)
+    scada_df = unpack_local_scada_data_v2(data_dir=get_data_dir())
     scada_df = (
         scada_df.set_index("TurbineName", append=True).join(fl_stacked, how="left").reset_index(level="TurbineName")
     )
@@ -355,12 +354,12 @@ def hot_dy_uplift_per_steer(rerun_windup: bool = True) -> tuple[float, float, fl
             cfg=wakesteer_cfg,
             plot_cfg=plot_cfg,
             scada_df=scada_df,
-            metadata_df=unpack_local_meta_data(data_dir=LOCAL_TEMPORARY_DIR, scada_index_name=scada_df.index.name),
+            metadata_df=unpack_local_meta_data(data_dir=get_data_dir(), scada_index_name=scada_df.index.name),
             toggle_df=hot_dy_toggle_df(scada_df),
             reanalysis_datasets=get_hot_reanalysis_datasets(),
             cache_dir=get_cache_dir() / "windup_cache" / cfg.assessment_name,
             mast_or_lidar_datasets=_hot_dy_lidar_datasets(
-                data_dir=LOCAL_TEMPORARY_DIR / "lidar_data",
+                data_dir=get_data_dir() / "lidar_data",
                 start_dt=scada_df.index.min(),
                 end_dt_excl=scada_df.index.max(),
             ),

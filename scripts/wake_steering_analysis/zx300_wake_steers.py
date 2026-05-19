@@ -11,10 +11,9 @@ from matplotlib import ticker
 from hot_open.circular_math import circdiff_degrees
 from hot_open.fastlog_helpers import load_hot_fl_data
 from hot_open.lidar_helpers import load_zx_lidar_fl_data
-from hot_open.settings import get_filestore_dir, get_out_dir
+from hot_open.settings import get_data_dir, get_filestore_dir, get_out_dir
 from scripts.logger import setup_logger
 from scripts.wake_steering_analysis.inspect_data import (
-    LOCAL_TEMPORARY_DIR,
     NORTH_CORRECTIONS,
     WTG_FL_ACT_POWER_COL,
     WTG_FL_YAW_POS_COL,
@@ -251,7 +250,7 @@ if __name__ == "__main__":
     dependent_df = wtg_fl_df[dependent_turbine_name].copy()
 
     zx300_fl_df = load_zx_lidar_fl_data(
-        data_dir=LOCAL_TEMPORARY_DIR / "lidar_data",
+        data_dir=get_data_dir() / "lidar_data",
         lidar_unit_id="2428",
         start_dt=start_dt,
         end_dt_excl=end_dt_excl,

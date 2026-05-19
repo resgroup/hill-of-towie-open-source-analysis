@@ -28,10 +28,9 @@ from tqdm import tqdm
 
 from hot_open.fastlog_helpers import load_hot_fl_data
 from hot_open.lidar_helpers import add_shear_and_veer, load_zx_lidar_fl_data
-from hot_open.settings import get_filestore_dir, get_out_dir
+from hot_open.settings import get_data_dir, get_filestore_dir, get_out_dir
 from scripts.logger import setup_logger
 from scripts.wake_steering_analysis.inspect_data import (
-    LOCAL_TEMPORARY_DIR,
     NORTH_CORRECTIONS,
     WTG_FL_ACT_POWER_COL,
     WTG_FL_YAW_POS_COL,
@@ -205,7 +204,7 @@ def _detect_heights(df: pd.DataFrame) -> tuple[dict[int, str], dict[int, str], d
 def _load_zx300_data() -> tuple[pd.DataFrame, dict[int, str], dict[int, str], dict[int, str]]:
     """Load ZX300 fastlog, detect profile heights, smooth across all profile + hub columns."""
     zx300_fl_df = load_zx_lidar_fl_data(
-        data_dir=LOCAL_TEMPORARY_DIR / "lidar_data",
+        data_dir=get_data_dir() / "lidar_data",
         lidar_unit_id="2428",
         start_dt=LOAD_START,
         end_dt_excl=PLOT_END + pd.Timedelta(seconds=1),
@@ -753,7 +752,7 @@ def _save_static_pngs(out_dir: Path) -> None:
         dfs[name] = df[(df.index >= PLOT_START) & (df.index < PLOT_END)]
 
     zx300_fl_df = load_zx_lidar_fl_data(
-        data_dir=LOCAL_TEMPORARY_DIR / "lidar_data",
+        data_dir=get_data_dir() / "lidar_data",
         lidar_unit_id="2428",
         start_dt=load_start,
         end_dt_excl=PLOT_END,

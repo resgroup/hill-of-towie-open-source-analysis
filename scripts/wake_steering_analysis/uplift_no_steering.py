@@ -11,12 +11,11 @@ from wind_up.plots.scada_funcs_plots import bubble_plot
 from wind_up.smart_data import add_smart_lat_long_to_cfg
 
 from hot_open.era5_helpers import get_hot_reanalysis_datasets
-from hot_open.settings import get_cache_dir, get_out_dir, get_wind_up_output_dir
+from hot_open.settings import get_cache_dir, get_data_dir, get_out_dir, get_wind_up_output_dir
 from hot_open.unpack import unpack_local_meta_data
 from scripts.logger import setup_logger
 from scripts.wake_steering_analysis.combine_uplift_no_steering import combine_cc_results_with_yaw
 from scripts.wake_steering_analysis.hot_wake_steering_helpers import CONFIG_DIR
-from scripts.wake_steering_analysis.inspect_data import LOCAL_TEMPORARY_DIR
 from scripts.wake_steering_analysis.uplift_per_steer import _hot_dy_lidar_datasets, hot_dy_scada_df, hot_dy_toggle_df
 
 logger = logging.getLogger(__name__)
@@ -92,12 +91,12 @@ def hot_dy_uplift_no_steering(rerun_windup: bool = True) -> tuple[float, float, 
         cfg=cfg,
         plot_cfg=plot_cfg,
         scada_df=scada_df,
-        metadata_df=unpack_local_meta_data(data_dir=LOCAL_TEMPORARY_DIR, scada_index_name=scada_df.index.name),
+        metadata_df=unpack_local_meta_data(data_dir=get_data_dir(), scada_index_name=scada_df.index.name),
         toggle_df=hot_dy_toggle_df(scada_df),
         reanalysis_datasets=get_hot_reanalysis_datasets(),
         cache_dir=get_cache_dir() / "windup_cache" / cfg.assessment_name,
         mast_or_lidar_datasets=_hot_dy_lidar_datasets(
-            data_dir=LOCAL_TEMPORARY_DIR / "lidar_data",
+            data_dir=get_data_dir() / "lidar_data",
             start_dt=scada_df.index.min(),
             end_dt_excl=scada_df.index.max(),
         ),

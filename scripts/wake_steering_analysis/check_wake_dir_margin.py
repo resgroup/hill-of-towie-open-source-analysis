@@ -6,9 +6,8 @@ import numpy as np
 import pandas as pd
 
 from hot_open.lidar_helpers import load_zx_lidar_10min_data
-from hot_open.settings import get_cache_dir, get_out_dir
+from hot_open.settings import get_cache_dir, get_data_dir, get_out_dir
 from scripts.logger import setup_logger
-from scripts.wake_steering_analysis.inspect_data import LOCAL_TEMPORARY_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +80,7 @@ if __name__ == "__main__":
             lidar_unit_id = "2428"
             lidar_model = "ZX300"
             lidar_df = load_zx_lidar_10min_data(
-                data_dir=LOCAL_TEMPORARY_DIR / "lidar_data",
+                data_dir=get_data_dir() / "lidar_data",
                 lidar_unit_id=lidar_unit_id,
                 start_dt=pd.Timestamp("2026-01-01 00:00:00", tz="UTC"),
                 end_dt_excl=pd.Timestamp("2026-05-01 00:00:00", tz="UTC"),

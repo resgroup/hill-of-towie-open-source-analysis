@@ -427,6 +427,8 @@ def hot_dy_uplift_per_steer(rerun_windup: bool = True) -> tuple[float, float, fl
         cbarunits="deg",
         save_path=plot_cfg.plots_dir / f"{title}.png",
         show_plot=plot_cfg.show_plots,
+        fontsize=16,
+        idfontsize=16,
     )
     upwind_uplifts = ws_combined_results_filt[["upwind_wtg", "upwind_uplift_p50"]].rename(
         columns={"upwind_wtg": "test_wtg", "upwind_uplift_p50": "p50_uplift"}
@@ -442,6 +444,8 @@ def hot_dy_uplift_per_steer(rerun_windup: bool = True) -> tuple[float, float, fl
         cbarunits="%",
         save_path=plot_cfg.plots_dir / f"{title}.png",
         show_plot=plot_cfg.show_plots,
+        fontsize=16,
+        idfontsize=16,
     )
     # make a scatter plot of yaw activity change vs wake steer command
     title = f"{cfg.asset.name} yaw activity change vs wakesteer command"

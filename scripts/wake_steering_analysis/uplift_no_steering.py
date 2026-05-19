@@ -21,6 +21,54 @@ from scripts.wake_steering_analysis.uplift_per_steer import _hot_dy_lidar_datase
 logger = logging.getLogger(__name__)
 
 
+def _make_cc_bubble_plots(*, cfg: WindUpConfig, combined_cc_results_df: pd.DataFrame, plot_cfg: PlotConfig) -> None:
+    cfg = add_smart_lat_long_to_cfg(md=unpack_local_meta_data(), cfg=cfg)
+    plot_cfg.plots_dir.mkdir(parents=True, exist_ok=True)
+
+    hot_elevations = pd.read_csv(Path(__file__).parent / "Hill of Towie_elevations.csv", index_col=0)
+    title = f"{cfg.asset.name} turbine elevation"
+    bubble_plot(
+        cfg=cfg,
+        series=hot_elevations["Elevation"],
+        sizes=1000 - hot_elevations["Elevation"],
+        title=title,
+        cbarunits="m",
+        save_path=plot_cfg.plots_dir / f"{title}.png",
+        show_plot=plot_cfg.show_plots,
+        fontsize=16,
+        idfontsize=16,
+    )
+    title = f"{cfg.asset.name} CC test turbine yaw activity change"
+    bubble_plot(
+        cfg=cfg,
+        series=combined_cc_results_df[~combined_cc_results_df["is_ref"]]
+        .set_index("test_wtg")["yaph_change"]
+        .sort_index()
+        * 100,
+        title=title,
+        cbarunits="%",
+        save_path=plot_cfg.plots_dir / f"{title}.png",
+        show_plot=plot_cfg.show_plots,
+        fontsize=16,
+        idfontsize=16,
+    )
+    title = f"{cfg.asset.name} CC test turbine uplift"
+    bubble_plot(
+        cfg=cfg,
+        series=combined_cc_results_df[~combined_cc_results_df["is_ref"]]
+        .set_index("test_wtg")["p50_uplift"]
+        .sort_index()
+        * 100,
+        title=title,
+        cbarunits="%",
+        save_path=plot_cfg.plots_dir / f"{title}.png",
+        show_plot=plot_cfg.show_plots,
+        fontsize=16,
+        idfontsize=16,
+        cmap="RdYlGn",
+    )
+
+
 def _post_process_cc_results(*, wf_cc_results: pd.DataFrame, combined_cc_results_df) -> tuple[float, float, float]:
     cc_uplift = wf_cc_results.loc["test", "p50_uplift"]
     cc_uplift_uncertainty = wf_cc_results.loc["test", "sigma"]
@@ -111,44 +159,8 @@ def hot_dy_uplift_no_steering(rerun_windup: bool = True) -> tuple[float, float, 
     wf_cc_results = calculate_total_uplift_of_test_and_ref_turbines(combined_cc_results_df, plot_cfg=plot_cfg)
     wf_cc_results.to_csv(cfg.out_dir / "wf_cc_results.csv")
 
-    cfg = add_smart_lat_long_to_cfg(md=unpack_local_meta_data(), cfg=cfg)
     plot_cfg = PlotConfig(show_plots=False, save_plots=save_plots, plots_dir=cfg.out_dir / "plots")
-    (cfg.out_dir / "plots").mkdir(parents=True, exist_ok=True)
-
-    hot_elevations = pd.read_csv(Path(__file__).parent / "Hill of Towie_elevations.csv", index_col=0)
-    title = f"{cfg.asset.name} turbine elevation"
-    bubble_plot(
-        cfg=cfg,
-        series=hot_elevations["Elevation"],
-        title=title,
-        cbarunits="m",
-        save_path=plot_cfg.plots_dir / f"{title}.png",
-        show_plot=plot_cfg.show_plots,
-    )
-    title = f"{cfg.asset.name} CC test turbine yaw activity change"
-    bubble_plot(
-        cfg=cfg,
-        series=combined_cc_results_df[~combined_cc_results_df["is_ref"]]
-        .set_index("test_wtg")["yaph_change"]
-        .sort_index()
-        * 100,
-        title=title,
-        cbarunits="%",
-        save_path=plot_cfg.plots_dir / f"{title}.png",
-        show_plot=plot_cfg.show_plots,
-    )
-    title = f"{cfg.asset.name} CC test turbine uplift"
-    bubble_plot(
-        cfg=cfg,
-        series=combined_cc_results_df[~combined_cc_results_df["is_ref"]]
-        .set_index("test_wtg")["p50_uplift"]
-        .sort_index()
-        * 100,
-        title=title,
-        cbarunits="%",
-        save_path=plot_cfg.plots_dir / f"{title}.png",
-        show_plot=plot_cfg.show_plots,
-    )
+    _make_cc_bubble_plots(cfg=cfg, combined_cc_results_df=combined_cc_results_df, plot_cfg=plot_cfg)
 
     cc_uplift, cc_uplift_uncertainty, cc_yaph_change = _post_process_cc_results(
         wf_cc_results=wf_cc_results, combined_cc_results_df=combined_cc_results_df

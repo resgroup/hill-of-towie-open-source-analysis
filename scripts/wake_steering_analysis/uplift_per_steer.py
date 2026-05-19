@@ -287,6 +287,53 @@ def _extract_hot_wake_steers_from_table(wakesteer_table: pd.DataFrame) -> list[H
     return wake_steers
 
 
+def _make_ws_bubble_plots(*, cfg: WindUpConfig, ws_combined_results_filt: pd.DataFrame, plot_cfg: PlotConfig) -> None:
+    cfg = add_smart_lat_long_to_cfg(md=unpack_local_meta_data(), cfg=cfg)
+    plot_cfg.plots_dir.mkdir(parents=True, exist_ok=True)
+    west_cfg = cfg.copy()
+    west_cfg.asset.wtgs = [x for x in cfg.asset.wtgs if x.name not in [f"T{i:02d}" for i in range(16, 21 + 1)]]
+    title = f"{cfg.asset.name} WS upwind turbine mean abs wakesteer"
+    bubble_plot(
+        cfg=west_cfg,
+        series=ws_combined_results_filt.set_index("upwind_wtg")["mean_abs_wakesteer_col_post"],
+        title=title,
+        cbarunits="deg",
+        save_path=plot_cfg.plots_dir / f"{title}.png",
+        show_plot=plot_cfg.show_plots,
+        fontsize=20,
+        idfontsize=20,
+    )
+    upwind_uplifts = ws_combined_results_filt[["upwind_wtg", "upwind_uplift_p50"]].rename(
+        columns={"upwind_wtg": "test_wtg", "upwind_uplift_p50": "p50_uplift"}
+    )
+    downwind_uplifts = ws_combined_results_filt[["downwind_wtg", "downwind_uplift_p50"]].rename(
+        columns={"downwind_wtg": "test_wtg", "downwind_uplift_p50": "p50_uplift"}
+    )
+    title = f"{cfg.asset.name} WS test turbine uplift"
+    bubble_plot(
+        cfg=west_cfg,
+        series=pd.concat([upwind_uplifts, downwind_uplifts]).set_index("test_wtg")["p50_uplift"].sort_index() * 100,
+        title=title,
+        cbarunits="%",
+        save_path=plot_cfg.plots_dir / f"{title}.png",
+        show_plot=plot_cfg.show_plots,
+        fontsize=20,
+        idfontsize=20,
+        cmap="RdYlGn",
+    )
+    title = f"{cfg.asset.name} yaw activity change vs wakesteer command"
+    plt.figure()
+    plt.scatter(ws_combined_results_filt["mean_abs_wakesteer_col_post"], 100 * ws_combined_results_filt["yaph_change"])
+    plt.xlabel("Mean abs wakesteer command [deg]")
+    plt.ylabel("Yaw activity change [%]")
+    plt.grid()
+    plt.title(title)
+    plt.ylim(0, 50)
+    plt.xlim(0, 5)
+    plt.savefig(plot_cfg.plots_dir / f"{title}.png")
+    plt.close()
+
+
 def _post_process_ws_results(ws_combined_results: pd.DataFrame) -> tuple[float, float, float]:
     min_ws_hours = 100
     ws_combined_results_filt = ws_combined_results[ws_combined_results["hours_on"] >= min_ws_hours]
@@ -415,50 +462,7 @@ def hot_dy_uplift_per_steer(rerun_windup: bool = True) -> tuple[float, float, fl
     cfg = WindUpConfig.from_yaml(CONFIG_DIR / config_file_name)
     cfg.out_dir = get_wind_up_output_dir(cfg.assessment_name)
     plot_cfg = PlotConfig(show_plots=False, save_plots=save_plots, plots_dir=cfg.out_dir / "plots")
-    (cfg.out_dir / "plots").mkdir(parents=True, exist_ok=True)
-    cfg = add_smart_lat_long_to_cfg(md=unpack_local_meta_data(), cfg=cfg)
-    west_cfg = cfg.copy()
-    west_cfg.asset.wtgs = [x for x in cfg.asset.wtgs if x.name not in [f"T{i:02d}" for i in range(16, 21 + 1)]]
-    title = f"{cfg.asset.name} WS upwind turbine mean abs wakesteer"
-    bubble_plot(
-        cfg=west_cfg,
-        series=ws_combined_results_filt.set_index("upwind_wtg")["mean_abs_wakesteer_col_post"],
-        title=title,
-        cbarunits="deg",
-        save_path=plot_cfg.plots_dir / f"{title}.png",
-        show_plot=plot_cfg.show_plots,
-        fontsize=16,
-        idfontsize=16,
-    )
-    upwind_uplifts = ws_combined_results_filt[["upwind_wtg", "upwind_uplift_p50"]].rename(
-        columns={"upwind_wtg": "test_wtg", "upwind_uplift_p50": "p50_uplift"}
-    )
-    downwind_uplifts = ws_combined_results_filt[["downwind_wtg", "downwind_uplift_p50"]].rename(
-        columns={"downwind_wtg": "test_wtg", "downwind_uplift_p50": "p50_uplift"}
-    )
-    title = f"{cfg.asset.name} WS test turbine uplift"
-    bubble_plot(
-        cfg=west_cfg,
-        series=pd.concat([upwind_uplifts, downwind_uplifts]).set_index("test_wtg")["p50_uplift"].sort_index() * 100,
-        title=title,
-        cbarunits="%",
-        save_path=plot_cfg.plots_dir / f"{title}.png",
-        show_plot=plot_cfg.show_plots,
-        fontsize=16,
-        idfontsize=16,
-    )
-    # make a scatter plot of yaw activity change vs wake steer command
-    title = f"{cfg.asset.name} yaw activity change vs wakesteer command"
-    plt.figure()
-    plt.scatter(ws_combined_results_filt["mean_abs_wakesteer_col_post"], 100 * ws_combined_results_filt["yaph_change"])
-    plt.xlabel("Mean abs wakesteer command [deg]")
-    plt.ylabel("Yaw activity change [%]")
-    plt.grid()
-    plt.title(title)
-    plt.ylim(0, 50)
-    plt.xlim(0, 5)
-    plt.savefig(plot_cfg.plots_dir / f"{title}.png")
-    plt.close()
+    _make_ws_bubble_plots(cfg=cfg, ws_combined_results_filt=ws_combined_results_filt, plot_cfg=plot_cfg)
 
     return ws_uplift, ws_uplift_uncertainty, ws_steering_turbine_yaph_change
 

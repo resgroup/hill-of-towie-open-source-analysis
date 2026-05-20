@@ -60,7 +60,7 @@ The plot below shows the per-turbine WS uplift across the west of the farm:
 
 `scripts/wfc_analysis_2026/uplift_cc.py` runs wind-up on the 10-min
 periods that the per-steer analysis did *not* consume, isolating the contribution of
-CC to uplift. T07 is excluded from the CC test set because it was not actively controller during the campaign.
+CC to uplift. T07 is excluded from the CC test set because it was not actively controlled during the campaign.
 
 Across the 13 CC test turbines the P50 uplift is **+0.56% (σ = 0.47%)** with an
 average yaw-activity reduction of **−6.0%**. The headline test-vs-reference bar
@@ -106,7 +106,7 @@ You can set an environment variable `WINDUP_ANALYSIS_DIR` to specify the locatio
 The script `scripts/uplift_analysis_2025/northing.py` calculates the northing corrections saved to
 `scripts/uplift_analysis_2025/wind_up_config/northing/optimized_northing_corrections.yaml` and used in subsequent analyses. The plot
 below shows the circular difference of ERA5 wind direction to each turbine's yaw direction before the northing
-correction. The turbine north calibrations are apparently wrong quite often which means the northing correction is quite
+correction. The turbine north calibrations are apparently often wrong, which means the northing correction is quite
 important.
 
 ![northing error vs reanalysis_wd before northing](https://github.com/user-attachments/assets/aaf1e4c6-dc10-4c59-9281-1051128464af)
@@ -120,7 +120,6 @@ along with the uplift results for the three selected reference turbines, which a
 
 ![combined uplift and 90% CI](https://github.com/user-attachments/assets/a36214d1-7308-4a16-9be3-9e2230170708)
 
-
 ### TuneUp
 
 The script `scripts/uplift_analysis_2025/tune_up.py` analyses the energy uplift thanks
@@ -129,7 +128,6 @@ to [TuneUp](https://www.res-group.com/digital-solutions/tuneup/) for nine test t
 the ten unchanged reference turbines, which is near 0% uplift as expected:
 
 ![combined uplift and 90% CI](https://github.com/user-attachments/assets/00b17f01-54ea-4532-ab1c-16921df0b70e)
-
 
 ## Python environment
 
@@ -145,6 +143,6 @@ To run formatting and linting:
 uv run poe all
 ```
 
-## contact
+## Contact
 
 Alex.Clerc@res-group.com

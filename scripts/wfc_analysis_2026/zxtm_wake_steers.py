@@ -175,9 +175,7 @@ def plot_wake_steering_period(
         label=f"{dependent_turbine_name} - {ref_name} smoothed power",
         color="C2",
     )
-    plot_ser = (
-        plot_steer_df[smoothed_pw_col] + plot_dep_df[smoothed_pw_col] - 2 * plot_ref_df[smoothed_pw_col]
-    )  # TODO try normalizing
+    plot_ser = plot_steer_df[smoothed_pw_col] + plot_dep_df[smoothed_pw_col] - 2 * plot_ref_df[smoothed_pw_col]
     ax.plot(
         plot_dep_df.index,
         plot_ser - plot_ser.mean(),
@@ -198,7 +196,7 @@ def plot_wake_steering_period(
     ax = axes[axid]
     ax.plot(
         plot_zxtm_df.index,
-        plot_zxtm_df[smoothed_right_ws_col] - plot_zxtm_df[smoothed_left_ws_col],  # TODO try normalizing
+        plot_zxtm_df[smoothed_right_ws_col] - plot_zxtm_df[smoothed_left_ws_col],
         label="ZXTM smoothed right - left ws",
     )
     ax.plot(

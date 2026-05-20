@@ -303,7 +303,7 @@ def _init_figure(
     ax_tl.set_xlim(PLOT_START, PLOT_END)
     ax_tl.set_ylabel("direction [degN]")
     ax_tl.legend(bbox_to_anchor=(1.01, 1), loc="upper left", fontsize=9, frameon=True)
-    ax_tl.grid(True, alpha=0.4)
+    ax_tl.grid(visible=True, alpha=0.4)
     plt.setp(ax_tl.xaxis.get_majorticklabels(), rotation=45, ha="right")
     vline = ax_tl.axvline(PLOT_START, color="black", linewidth=1.5, linestyle="--", zorder=5)
 
@@ -329,7 +329,7 @@ def _init_figure(
     ax_ws.set_xlabel("horizontal wind speed (m/s)", fontsize=10)
     ax_ws.set_ylabel("height above ground (m)", fontsize=10)
     ax_ws.set_title("ZX300 wind speed profile", fontsize=10)
-    ax_ws.grid(True, alpha=0.4)
+    ax_ws.grid(visible=True, alpha=0.4)
     ax_ws.axhspan(ROTOR_LOWER_M, ROTOR_UPPER_M, color="gray", alpha=0.15, label="rotor extent")
     (horiz_ws_line,) = ax_ws.plot(
         [np.nan] * len(horiz_plot_heights),
@@ -373,7 +373,7 @@ def _init_figure(
     ax_be.set_aspect("equal", adjustable="datalim")
     ax_be.set_xlabel("easting (m)", fontsize=10)
     ax_be.set_ylabel("northing (m)", fontsize=10)
-    ax_be.grid(True, alpha=0.3)
+    ax_be.grid(visible=True, alpha=0.3)
     title_artist = ax_be.set_title("", fontsize=10)
 
     for name, (tx, ty) in TURBINE_COORDS.items():
@@ -458,7 +458,7 @@ def _init_figure(
     ax_wd.tick_params(axis="x", labelcolor="C0")
     ax_wd.set_ylabel("height above ground (m)", fontsize=10)
     ax_wd.set_title("ZX300 wind direction & vertical WS", fontsize=10)
-    ax_wd.grid(True, alpha=0.4)
+    ax_wd.grid(visible=True, alpha=0.4)
     ax_wd.axhspan(ROTOR_LOWER_M, ROTOR_UPPER_M, color="gray", alpha=0.15)
     ax_wd_top.set_xlim(vert_x_lo, vert_x_hi)
     ax_wd_top.set_xlabel("vertical wind speed (m/s)", fontsize=10, color="C3")

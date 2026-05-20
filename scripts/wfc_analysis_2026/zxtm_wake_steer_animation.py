@@ -329,7 +329,7 @@ def _init_figure(
     ax_tl.set_xlim(PLOT_START, PLOT_END)
     ax_tl.set_ylabel("direction [degN]")
     ax_tl.legend(bbox_to_anchor=(1.01, 1), loc="upper left", fontsize=10, frameon=True)
-    ax_tl.grid(True, alpha=0.4)
+    ax_tl.grid(visible=True, alpha=0.4)
     plt.setp(ax_tl.xaxis.get_majorticklabels(), rotation=45, ha="right")
     vline = ax_tl.axvline(PLOT_START, color="black", linewidth=1.5, linestyle="--", zorder=5)
 
@@ -344,7 +344,7 @@ def _init_figure(
     ax_be.set_aspect("equal", adjustable="datalim")
     ax_be.set_xlabel("easting (m)", fontsize=10)
     ax_be.set_ylabel("northing (m)", fontsize=10)
-    ax_be.grid(True, alpha=0.3)
+    ax_be.grid(visible=True, alpha=0.3)
     title_artist = ax_be.set_title("", fontsize=10)
 
     # Tower circles + name labels — static (never move).
@@ -421,7 +421,7 @@ def _init_figure(
         ax.set_xlabel("wind speed (m/s)", fontsize=10)
         ax.set_ylabel("height above T07 ground level (m)", fontsize=10)
         ax.set_title(ttl, fontsize=10)
-        ax.grid(True, alpha=0.4)
+        ax.grid(visible=True, alpha=0.4)
         for range_val, color in zip(PROFILE_RANGES_M, _RANGE_COLORS):
             (line,) = ax.plot(
                 [np.nan] * len(PROFILE_HEIGHTS_M),

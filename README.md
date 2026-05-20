@@ -101,8 +101,6 @@ after turbine upgrades.
 
 Note any analysis can be run without running the others, e.g. you do not need to run `northing.py` before `aero_up.py`.
 
-You can set an environment variable `WINDUP_ANALYSIS_DIR` to specify the location of the analysis directory.
-
 The script `scripts/uplift_analysis_2025/northing.py` calculates the northing corrections saved to
 `scripts/uplift_analysis_2025/wind_up_config/northing/optimized_northing_corrections.yaml` and used in subsequent analyses. The plot
 below shows the circular difference of ERA5 wind direction to each turbine's yaw direction before the northing
@@ -141,6 +139,30 @@ To run formatting and linting:
 
 ```commandline
 uv run poe all
+```
+
+## Configuration
+
+All filesystem paths used by the scripts and helpers are controlled by environment
+variables. Each variable is optional — if unset, the default location under your
+home directory is used and created on first access. Values can either be exported
+in your shell or written to a `.env` file at the repo root (auto-loaded via
+`python-dotenv`).
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `HOT_OPEN_DATA_DIR` | `~/temp/hill-of-towie-open-source-analysis/data` | Input data: Zenodo downloads land here (SCADA zips, LiDAR data, fastlog data, metadata CSV). |
+| `HOT_OPEN_OUTPUT_DIR` | `~/temp/hill-of-towie-open-source-analysis/output` | Per-script output directory (one subfolder per script, named after the script's filename). |
+| `HOT_OPEN_CACHE_DIR` | `~/temp/hill-of-towie-open-source-analysis/cache` | Parquet caches for unpacked SCADA, fastlog-by-day, ERA5, and wind-up intermediates. Safe to delete to force a rebuild. |
+| `HOT_OPEN_FILESTORE_DIR` | `<HOT_OPEN_DATA_DIR>/turbine_fastlog/Filestore` | Fastlog tree (`FL/<park>/<device>/<date>/`). When set explicitly, `load_hot_fl_data()` skips the Zenodo download of `turbine_fastlog.zip`. |
+| `WINDUP_OUTPUT_DIR` | `~/temp/hill-of-towie-open-source-analysis/windup_output` | Root directory wind-up analyses write their per-assessment output into. |
+
+Example `.env`:
+
+```dotenv
+HOT_OPEN_DATA_DIR=D:/hot_open/data
+HOT_OPEN_CACHE_DIR=D:/hot_open/cache
+WINDUP_OUTPUT_DIR=D:/hot_open/windup_output
 ```
 
 ## Contact

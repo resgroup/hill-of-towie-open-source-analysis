@@ -179,9 +179,7 @@ def plot_wake_steering_period_with_zx300(
         label=f"{dependent_turbine_name} - {ref_name} smoothed power",
         color="C2",
     )
-    plot_ser = (
-        plot_steer_df[smoothed_pw_col] + plot_dep_df[smoothed_pw_col] - 2 * plot_ref_df[smoothed_pw_col]
-    )  # TODO try normalizing
+    plot_ser = plot_steer_df[smoothed_pw_col] + plot_dep_df[smoothed_pw_col] - 2 * plot_ref_df[smoothed_pw_col]
     ax.plot(
         plot_dep_df.index,
         plot_ser - plot_ser.mean(),

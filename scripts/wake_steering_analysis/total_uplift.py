@@ -1,3 +1,4 @@
+import datetime as dt
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -60,7 +61,7 @@ def compute_lt_uplift(
 
 if __name__ == "__main__":
     out_dir = get_out_dir(dir_name=Path(__file__).stem)
-    log_path = out_dir / f"{Path(__file__).stem}.log"
+    log_path = out_dir / f"{Path(__file__).stem}_{dt.datetime.now(tz=dt.UTC).strftime('%Y%m%d_%H%M%S')}.log"
     setup_logger(log_path)
     msg = f"log file is at {log_path}"
     logger.info(msg)

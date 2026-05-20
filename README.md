@@ -129,7 +129,9 @@ the ten unchanged reference turbines, which is near 0% uplift as expected:
 
 ## Code for WeDoWind challenge
 
-`scripts/wedowind_challenge_2025` contains code used for the [WeDoWind 2025 power prediction kaggle competition](https://www.kaggle.com/competitions/hill-of-towie-wind-turbine-power-prediction), which used the Hill of Towie open dataset.
+`scripts/wedowind_challenge_2025` contains code used for the
+[WeDoWind 2025 power prediction kaggle competition](https://www.kaggle.com/competitions/hill-of-towie-wind-turbine-power-prediction),
+which used the Hill of Towie open dataset.
 
 ## Python environment
 

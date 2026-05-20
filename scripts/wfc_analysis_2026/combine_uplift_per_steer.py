@@ -25,9 +25,7 @@ def _load_yaw_stats_for_steer(row, wind_up_out_dir: Path) -> dict | None:
     return calc_hot_yaw_stats(pre_df, post_df)
 
 
-def _calc_wakesteer_tdf(
-    trdf: pd.DataFrame, weight_col: str = "unc_weight", sigma_ref: float = 0
-) -> pd.DataFrame:
+def _calc_wakesteer_tdf(trdf: pd.DataFrame, weight_col: str = "unc_weight", sigma_ref: float = 0) -> pd.DataFrame:
     tdf = trdf.groupby(["upwind_wtg", "downwind_wtg"]).agg(
         p50_net_uplift=pd.NamedAgg(
             column="net_p50_uplift",

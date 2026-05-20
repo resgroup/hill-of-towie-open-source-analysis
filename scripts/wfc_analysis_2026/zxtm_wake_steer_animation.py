@@ -2,38 +2,74 @@ r"""Goal of this script is to make an animation of similar data plotted by zxtm_
 
 The output animation should be easy to use in powerpoint (.pptx format) and markdown (.md format)
 
-The animation should show data for turbines T1, T3 and T7 and as much data from the ZXTM LiDAR (mounted on T7) as possible.
+The animation should show data for turbines T1, T3 and T7 and as much data from the
+ZXTM LiDAR (mounted on T7) as possible.
 
-The animations should show a birds eye view of the three turbines and data from the LiDAR where it is measured (various ranges in front of T7).
+The animations should show a birds eye view of the three turbines and data from the LiDAR
+where it is measured (various ranges in front of T7).
 
 The ZXTM scans in a cone in front of the turbine with a 15 degree half angle (30 degree full angle).
 
-The turbine cartesian coordinates are available in scripts/wfc_analysis_2026/floris_config/hot_emgauss.yaml (coordinate arrays are for the 21 turbines T1 to T21).
+The turbine cartesian coordinates are available in
+scripts/wfc_analysis_2026/floris_config/hot_emgauss.yaml
+(coordinate arrays are for the 21 turbines T1 to T21).
 
-The turbines should be visualized with a small circle (3m diameter) exactly at their coordinate which never moves (represents the tower). A rectangle represents the nacelle; the rectagle is 10m long and 4m wide and is attached to the tower slightly off centre; if the turbine is pointing west then there is 6m of rectangle to the left of the centre of the tower and 4m to the right. The rotos is a line 82m long attached to the long end of the nacelle; if the turbine is facing west the rotor line is vertical and centre is 6m left of the tower centre.
+The turbines should be visualized with a small circle (3m diameter) exactly at their
+coordinate which never moves (represents the tower). A rectangle represents the nacelle;
+the rectagle is 10m long and 4m wide and is attached to the tower slightly off centre;
+if the turbine is pointing west then there is 6m of rectangle to the left of the centre
+of the tower and 4m to the right. The rotos is a line 82m long attached to the long end
+of the nacelle; if the turbine is facing west the rotor line is vertical and centre is
+6m left of the tower centre.
 
-The turbines yawpos_col (see zxtm_wake_steers.py) gives the orientation of the nacelle relative to true north. For example if this is 270 then the turbine is pointing west; the rectangle's longer side is horizontal and the rotor is on the left side of the rectangle. If the yawpos_col is 0 then the turbine is pointing north; the rectangle's longer side is vertical and the rotor is on the top side of the rectangle.
+The turbines yawpos_col (see zxtm_wake_steers.py) gives the orientation of the nacelle
+relative to true north. For example if this is 270 then the turbine is pointing west;
+the rectangle's longer side is horizontal and the rotor is on the left side of the
+rectangle. If the yawpos_col is 0 then the turbine is pointing north; the rectangle's
+longer side is vertical and the rotor is on the top side of the rectangle.
 The turbines name should be shown above it.
-The turbines smoothed power (see zxtm_wake_steers.py) should be shown as a colour of the rectangle (for example from blue for 0% power to red for 100% power) and a small text annotation to 0dep.
+The turbines smoothed power (see zxtm_wake_steers.py) should be shown as a colour of
+the rectangle (for example from blue for 0% power to red for 100% power) and a small
+text annotation to 0dep.
 
-For the ZXTM the columns 'Left LOS Speed (m/s) at Rotor Segment Height 59.0m' and 'Right LOS Speed (m/s) at Rotor Segment Height 59.0m' are used. The 'Range (m)' column gives the distance of the wind speed measurement in front of T7 in metres (10, 48, 64, 85, 126 and 208). A series should be computed which is the smoothed wind speed for each of left and right and for each range. This results in 2 * 6 = 12 wind speed measurements in front of T7. These 12 measurements should be visualised as colours (blue for low wind speed, red for high wind speed) located in the correct positions in front of T7. Note these points will move as T7 yaws.
+For the ZXTM the columns 'Left LOS Speed (m/s) at Rotor Segment Height 59.0m' and
+'Right LOS Speed (m/s) at Rotor Segment Height 59.0m' are used. The 'Range (m)' column
+gives the distance of the wind speed measurement in front of T7 in metres
+(10, 48, 64, 85, 126 and 208). A series should be computed which is the smoothed wind
+speed for each of left and right and for each range. This results in 2 * 6 = 12 wind
+speed measurements in front of T7. These 12 measurements should be visualised as colours
+(blue for low wind speed, red for high wind speed) located in the correct positions in
+front of T7. Note these points will move as T7 yaws.
 
-The ZXTM also has columns 'Left LOS Speed (m/s) at Rotor Segment Height 26.2m', 'Left LOS Speed (m/s) at Rotor Segment Height 42.6m', 'Left LOS Speed (m/s) at Rotor Segment Height 75.4m', 'Left LOS Speed (m/s) at Rotor Segment Height 91.8m' and the same columns for Right. Along with the 59.0m measurement this gives wind speed at 5 heights above ground level. These should be visualised for each range starting from 85m. This is the "vertical profile" plot
+The ZXTM also has columns 'Left LOS Speed (m/s) at Rotor Segment Height 26.2m',
+'Left LOS Speed (m/s) at Rotor Segment Height 42.6m',
+'Left LOS Speed (m/s) at Rotor Segment Height 75.4m',
+'Left LOS Speed (m/s) at Rotor Segment Height 91.8m' and the same columns for Right.
+Along with the 59.0m measurement this gives wind speed at 5 heights above ground level.
+These should be visualised for each range starting from 85m. This is the "vertical
+profile" plot
 
 The data to be plotted is 2026-02-20 00:00 to 07:00
 
-The same yaw position, wind direction and steering on/off timeline plotted in zxtm_wake_steers.py lines 84 to 110 should be plotted to with a vertical line showing what timestamp the animation is at. The vertical line advances from left to right as the animation runs.
-An example image already generated by zxtm_wake_steers.py is at C:\Users\aclerc\temp\hill-of-towie-open-source-analysis\output\zxtm_wake_steers\T03-T07-T01\T03 steering for T07 2026-02-20 0120 to 0500.png
+The same yaw position, wind direction and steering on/off timeline plotted in
+zxtm_wake_steers.py lines 84 to 110 should be plotted to with a vertical line showing
+what timestamp the animation is at. The vertical line advances from left to right as
+the animation runs.
+An example image already generated by zxtm_wake_steers.py is at
+C:\Users\aclerc\temp\hill-of-towie-open-source-analysis\output\zxtm_wake_steers\T03-T07-T01\T03 steering for T07 2026-02-20 0120 to 0500.png
 
 The output is an animation file showing:
 - a descriptive title at the top
 - the timeline plot as the first 'row' spanning all columns
 - below the timeline plot three axes:
--- The "Right" vertical profile plot. This is shown on the left of the figure because the wind is coming from SSW in this time period, so the "Right" measurements appear on the left from a birds eye view perspective.
+-- The "Right" vertical profile plot. This is shown on the left of the figure because
+   the wind is coming from SSW in this time period, so the "Right" measurements appear
+   on the left from a birds eye view perspective.
 -- The main animation with turbines and wind speeds in their cartesian cooredinates
 -- The "Left" vertical profile plot
 
-The speed of the animation should be adjustable but as a starting point aim for the animation to last 60s.
+The speed of the animation should be adjustable but as a starting point aim for the
+animation to last 60s.
 """
 
 import logging
@@ -226,9 +262,7 @@ def _compute_color_bounds(
 
     ws_series: list[pd.Series] = []
     for df in zxtm_smoothed.values():
-        for col in WS_COLS:
-            if col in df.columns:
-                ws_series.append(df[col].dropna())
+        ws_series.extend(df[col].dropna() for col in WS_COLS if col in df.columns)
     all_ws = pd.concat(ws_series)
     ws_vmin = float(all_ws.min())
     ws_vmax = float(all_ws.max())
@@ -422,7 +456,7 @@ def _init_figure(
         ax.set_ylabel("height above T07 ground level (m)", fontsize=10)
         ax.set_title(ttl, fontsize=10)
         ax.grid(visible=True, alpha=0.4)
-        for range_val, color in zip(PROFILE_RANGES_M, _RANGE_COLORS):
+        for range_val, color in zip(PROFILE_RANGES_M, _RANGE_COLORS, strict=True):
             (line,) = ax.plot(
                 [np.nan] * len(PROFILE_HEIGHTS_M),
                 PROFILE_HEIGHTS_M,

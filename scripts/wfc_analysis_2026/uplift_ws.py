@@ -164,9 +164,7 @@ def hot_dy_scada_df() -> pd.DataFrame:
     fl_10min_df.index.name = "TimeStamp_StartFormat"
     fl_stacked = fl_10min_df.set_index("TurbineName", append=True)
     scada_df = unpack_local_scada_data_v2(data_dir=get_data_dir())
-    return (
-        scada_df.set_index("TurbineName", append=True).join(fl_stacked, how="left").reset_index(level="TurbineName")
-    )
+    return scada_df.set_index("TurbineName", append=True).join(fl_stacked, how="left").reset_index(level="TurbineName")
 
 
 @dataclass

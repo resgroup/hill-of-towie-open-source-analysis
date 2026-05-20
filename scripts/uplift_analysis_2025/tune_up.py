@@ -33,7 +33,7 @@ def _main_tuneup_analysis(
 ) -> None:
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
-    setup_logger(analysis_output_dir / f"{config_fname.split('.')[0]}_analysis.log")
+    setup_logger(analysis_output_dir / f"{config_fname.split('.', maxsplit=1)[0]}_analysis.log")
     logger = logging.getLogger(__name__)
 
     logger.info("Loading reference reanalysis data")

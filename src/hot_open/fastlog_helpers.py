@@ -579,7 +579,7 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
             count_df = tag_upsampled.resample(f"{timebase_s}s").count()
         else:
             count_df = busy_upsampled.resample(f"{timebase_s}s").count()
-        low_count_times = count_df.index[count_df.lt(min_data_count).all(axis=1)]
+        low_count_times = count_df.index[count_df.lt(min_data_count).all(axis=1)]  # type:ignore[call-overload,arg-type]
         resampled_df.loc[low_count_times, numeric_cols] = np.nan
         resampled_df.loc[low_count_times, circ_cols] = np.nan
         resampled_df.loc[low_count_times, nonnumeric_cols] = pd.NA

@@ -7,7 +7,19 @@ import pytest
 import requests
 import responses
 
+from hot_open import sourcing_data
 from hot_open.sourcing_data import download_zenodo_data, ensure_extracted, ensure_hot_data_files
+
+
+@pytest.fixture(autouse=True)
+def _no_sleep_between_retries(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Skip the exponential backoff sleeps so the suite stays fast.
+
+    `_download_one_file` retries up to 5 times with up-to-16s sleeps between
+    attempts; without this, tests that exercise the failure paths would add
+    30s of real wall-clock waits each.
+    """
+    monkeypatch.setattr(sourcing_data.time, "sleep", lambda _seconds: None)
 
 
 class TestDownloadZenodoData:
@@ -152,7 +164,102 @@ class TestDownloadZenodoData:
         with pytest.raises(requests.RequestException):
             download_zenodo_data(record_id="fake-id", output_dir=tmp_path, filenames=[fname])
 
+        # Required-file partial bytes are intentionally NOT deleted on failure so
+        # a subsequent run can resume via Range. Here no bytes were ever written
+        # (ConnectionError raised before the first chunk), so the file does not
+        # exist.
         assert not (tmp_path / fname).exists()
+
+    @staticmethod
+    @responses.activate
+    def test_retries_on_transient_connection_error(tmp_path: Path) -> None:
+        fname = "somefile.zip"
+        expected_content = b"recovered after retry"
+
+        responses.add(
+            responses.Response(
+                method="GET",
+                url="https://zenodo.org/api/records/fake-id",
+                json={"files": [{"key": fname, "links": {"self": "http://myfile.url"}, "size": len(expected_content)}]},
+            )
+        )
+        # First call to the file URL raises ConnectionError; second call returns
+        # the real bytes. `responses` consumes registered responses in FIFO order.
+        responses.add(
+            responses.Response(method="GET", url="http://myfile.url", body=requests.ConnectionError("flaky")),
+        )
+        responses.add(responses.Response(method="GET", url="http://myfile.url", body=expected_content))
+
+        download_zenodo_data(record_id="fake-id", output_dir=tmp_path, filenames=[fname])
+
+        assert (tmp_path / fname).read_bytes() == expected_content
+
+    @staticmethod
+    @responses.activate
+    def test_required_file_fails_after_max_attempts(tmp_path: Path) -> None:
+        fname = "somefile.zip"
+        responses.add(
+            responses.Response(
+                method="GET",
+                url="https://zenodo.org/api/records/fake-id",
+                json={"files": [{"key": fname, "links": {"self": "http://myfile.url"}, "size": 100}]},
+            )
+        )
+        # Queue _MAX_DOWNLOAD_ATTEMPTS consecutive ConnectionErrors so every
+        # retry attempt observes a transient failure.
+        for _ in range(sourcing_data._MAX_DOWNLOAD_ATTEMPTS):  # noqa: SLF001
+            responses.add(
+                responses.Response(
+                    method="GET",
+                    url="http://myfile.url",
+                    body=requests.ConnectionError("offline"),
+                )
+            )
+
+        with pytest.raises(requests.RequestException):
+            download_zenodo_data(record_id="fake-id", output_dir=tmp_path, filenames=[fname])
+
+        # All MAX attempts were exercised.
+        file_calls = [c for c in responses.calls if (c.request.url or "").startswith("http://myfile.url")]
+        assert len(file_calls) == sourcing_data._MAX_DOWNLOAD_ATTEMPTS  # noqa: SLF001
+
+    @staticmethod
+    @responses.activate
+    def test_resume_with_range_header(tmp_path: Path) -> None:
+        fname = "somefile.zip"
+        prefix = b"abcd"  # pretend a prior attempt got this far
+        suffix = b"efghij"
+        full_content = prefix + suffix
+
+        # Seed a partial file so the next download attempt resumes from byte 4.
+        (tmp_path / fname).write_bytes(prefix)
+
+        responses.add(
+            responses.Response(
+                method="GET",
+                url="https://zenodo.org/api/records/fake-id",
+                json={"files": [{"key": fname, "links": {"self": "http://myfile.url"}, "size": len(full_content)}]},
+            )
+        )
+        # Server honors Range: returns only the missing suffix with 206.
+        responses.add(
+            responses.Response(
+                method="GET",
+                url="http://myfile.url",
+                body=suffix,
+                status=206,
+                headers={"Content-Range": f"bytes {len(prefix)}-{len(full_content) - 1}/{len(full_content)}"},
+            )
+        )
+
+        download_zenodo_data(record_id="fake-id", output_dir=tmp_path, filenames=[fname])
+
+        # File on disk is the concatenation of seeded prefix + downloaded suffix.
+        assert (tmp_path / fname).read_bytes() == full_content
+        # The Range header was actually sent.
+        file_calls = [c for c in responses.calls if (c.request.url or "").startswith("http://myfile.url")]
+        assert len(file_calls) == 1
+        assert file_calls[0].request.headers.get("Range") == f"bytes={len(prefix)}-"
 
 
 class TestEnsureHotDataFiles:

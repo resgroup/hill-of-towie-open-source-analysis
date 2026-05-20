@@ -4,6 +4,7 @@ import json
 import logging
 import math
 import shutil
+import time
 import zipfile
 from collections.abc import Collection
 from pathlib import Path
@@ -20,6 +21,26 @@ BYTES_IN_1MB = 1024 * 1024
 CHUNK_SIZE = 10 * BYTES_IN_1MB
 SMALL_FILE_THRESHOLD_BYTES = 2 * BYTES_IN_1MB
 _HOT_V2_RECORD_ID = "20204946"
+
+# Network resilience knobs for streamed Zenodo downloads.
+# ``timeout`` is passed to ``requests.get`` as a ``(connect, read)`` tuple.
+# With ``stream=True`` the read value is the budget *between* bytes received
+# from the server; 60 s tolerates short Zenodo stalls without hanging an
+# overnight run on a truly dead connection.
+_CONNECT_TIMEOUT_S = 10
+_READ_TIMEOUT_S = 60
+_MAX_DOWNLOAD_ATTEMPTS = 5
+_BACKOFF_BASE_S = 2.0
+# Exceptions worth retrying. These are transient network errors that may
+# resolve on a new TCP connection. Non-retryable cases (4xx/5xx HTTP errors
+# from ``raise_for_status``) fall through to the required-vs-optional
+# branching below.
+_RETRYABLE_EXCEPTIONS: tuple[type[requests.RequestException], ...] = (
+    requests.ConnectionError,
+    requests.Timeout,
+    requests.exceptions.ChunkedEncodingError,
+)
+_HTTP_PARTIAL_CONTENT = 206
 
 
 def download_zenodo_data(
@@ -40,7 +61,10 @@ def download_zenodo_data(
             content = json.load(f)
     else:
         logger.info("Fetching metadata from zenodo...")
-        r = requests.get(f"https://zenodo.org/api/records/{record_id}", timeout=10)
+        r = requests.get(
+            f"https://zenodo.org/api/records/{record_id}",
+            timeout=(_CONNECT_TIMEOUT_S, _READ_TIMEOUT_S),
+        )
         r.raise_for_status()
         content = r.json()
         with metadata_fpath.open("w") as f:
@@ -86,44 +110,127 @@ def _download_one_file(
 ) -> int:
     """Download a single Zenodo file. Returns 1 if a new file was written, 0 otherwise.
 
-    Required files re-raise ``requests.RequestException`` on failure. Optional
-    files log a warning, remove any partial bytes, and return 0.
+    Retries up to ``_MAX_DOWNLOAD_ATTEMPTS`` times on transient network errors
+    (connection drops, read timeouts, chunked-encoding errors), with exponential
+    backoff between attempts. Each retry sends ``Range: bytes=<existing>-`` so a
+    partially downloaded file resumes from where the previous attempt left off
+    rather than restarting from byte 0.
+
+    After exhausting attempts: required files re-raise the last
+    ``requests.RequestException`` (with any partial bytes left on disk so a
+    subsequent run can resume); optional files log a warning, remove partial
+    bytes, and return 0.
     """
     _file_name = file_entry["key"]
     _file_size = file_entry["size"]
     _file_url = file_entry["links"]["self"]
     dst_fpath = output_dir / _file_name
 
+    if cache_overwrite and dst_fpath.is_file():
+        dst_fpath.unlink()
+
     already_complete = dst_fpath.is_file() and dst_fpath.stat().st_size >= _file_size
-    if already_complete and not cache_overwrite:
+    if already_complete:
         logger.info("%s File %s already exists. Skipping download.", progress_prefix, dst_fpath)
         return 0
 
     logger.info("%s Beginning file download from Zenodo: %s...", progress_prefix, _file_name)
-    try:
-        result = requests.get(_file_url, stream=True, timeout=10)
-        with Path.open(dst_fpath, "wb") as f:
-            for chunk in tqdm(
-                result.iter_content(chunk_size=CHUNK_SIZE),
-                total=math.ceil(_file_size / CHUNK_SIZE),
-                unit="MB",
-                unit_scale=10,  # 10 MB per iteration
-                desc=f"Downloading {_file_name} ({_file_size / BYTES_IN_1MB:.2f} MB)",
-            ):
-                f.write(chunk)
-    except requests.RequestException as e:
-        if dst_fpath.is_file():
-            dst_fpath.unlink()
-        if is_required:
-            raise
-        logger.warning(
-            "%s Failed to download optional small file %s: %s. Continuing.",
-            progress_prefix,
-            _file_name,
-            e,
-        )
-        return 0
-    return 1
+    for attempt in range(1, _MAX_DOWNLOAD_ATTEMPTS + 1):
+        is_last_attempt = attempt == _MAX_DOWNLOAD_ATTEMPTS
+        existing_size = dst_fpath.stat().st_size if dst_fpath.is_file() else 0
+        headers = {"Range": f"bytes={existing_size}-"} if existing_size > 0 else {}
+        try:
+            result = requests.get(
+                _file_url,
+                stream=True,
+                timeout=(_CONNECT_TIMEOUT_S, _READ_TIMEOUT_S),
+                headers=headers,
+            )
+            result.raise_for_status()
+            # If we requested a Range but the server returned 200 instead of 206,
+            # it ignored the Range header — restart from byte 0.
+            resume = existing_size > 0 and result.status_code == _HTTP_PARTIAL_CONTENT
+            if existing_size > 0 and not resume:
+                logger.info(
+                    "%s Server did not honor Range request (status %s); restarting from byte 0.",
+                    progress_prefix,
+                    result.status_code,
+                )
+                existing_size = 0
+            file_mode = "ab" if resume else "wb"
+            remaining_chunks = max(1, math.ceil((_file_size - existing_size) / CHUNK_SIZE))
+            with Path.open(dst_fpath, file_mode) as f:
+                for chunk in tqdm(
+                    result.iter_content(chunk_size=CHUNK_SIZE),
+                    total=remaining_chunks,
+                    unit="MB",
+                    unit_scale=10,  # 10 MB per iteration
+                    desc=f"Downloading {_file_name} ({_file_size / BYTES_IN_1MB:.2f} MB)",
+                ):
+                    f.write(chunk)
+        except _RETRYABLE_EXCEPTIONS as e:
+            if not is_last_attempt:
+                partial_size = dst_fpath.stat().st_size if dst_fpath.is_file() else 0
+                sleep_s = _BACKOFF_BASE_S * (2 ** (attempt - 1))
+                logger.warning(
+                    "%s Download attempt %d/%d for %s failed (%s). Have %d/%d bytes. Sleeping %.1fs before retrying.",
+                    progress_prefix,
+                    attempt,
+                    _MAX_DOWNLOAD_ATTEMPTS,
+                    _file_name,
+                    e,
+                    partial_size,
+                    _file_size,
+                    sleep_s,
+                )
+                time.sleep(sleep_s)
+                continue
+            # Exhausted retries on a transient error — fall through to the
+            # required-vs-optional resolution below.
+            return _resolve_download_failure(
+                exc=e,
+                dst_fpath=dst_fpath,
+                file_name=_file_name,
+                is_required=is_required,
+                progress_prefix=progress_prefix,
+            )
+        except requests.RequestException as e:
+            # Non-retryable (e.g. 4xx HTTPError). Resolve immediately.
+            return _resolve_download_failure(
+                exc=e,
+                dst_fpath=dst_fpath,
+                file_name=_file_name,
+                is_required=is_required,
+                progress_prefix=progress_prefix,
+            )
+        else:
+            return 1
+
+    msg = "unreachable: retry loop should have returned or raised"
+    raise RuntimeError(msg)
+
+
+def _resolve_download_failure(
+    *,
+    exc: requests.RequestException,
+    dst_fpath: Path,
+    file_name: str,
+    is_required: bool,
+    progress_prefix: str,
+) -> int:
+    """Resolve a download failure: re-raise for required files, warn-and-clean for optional ones."""
+    if is_required:
+        # Leave partial bytes on disk so a subsequent run can resume via Range.
+        raise exc
+    logger.warning(
+        "%s Failed to download optional small file %s: %s. Continuing.",
+        progress_prefix,
+        file_name,
+        exc,
+    )
+    if dst_fpath.is_file():
+        dst_fpath.unlink()
+    return 0
 
 
 def _missing_small_files_from_cached_metadata(target_dir: Path) -> list[str]:

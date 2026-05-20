@@ -82,7 +82,15 @@ if __name__ == "__main__":
         cc_yaph_change=cc_yaph_change,
     )
 
-    msg = f"AEP uplift P50 {100 * lt.lt_uplift_p50:.1f}%, uncertainty {100 * lt.lt_uplift_uncertainty:.1f}%, P95 {100 * lt.lt_uplift_p95:.1f}%"
+    msg = (
+        f"AEP uplift P50 {100 * lt.lt_uplift_p50:.1f}%, "
+        f"uncertainty {100 * lt.lt_uplift_uncertainty:.1f}%, "
+        f"P95 {100 * lt.lt_uplift_p95:.1f}%"
+    )
     logger.info(msg)
-    msg = f"Long term yaw activity change {100 * lt.lt_yaph_change:.1f}% (wind farm average), individual turbine maximum +{100 * lt.lt_yaph_change_per_turbine_max:.1f}% ({lt_most_steering_turbine})"
+    msg = (
+        f"Long term yaw activity change {100 * lt.lt_yaph_change:.1f}% (wind farm average), "
+        f"individual turbine maximum +{100 * lt.lt_yaph_change_per_turbine_max:.1f}% "
+        f"({lt_most_steering_turbine})"
+    )
     logger.info(msg)

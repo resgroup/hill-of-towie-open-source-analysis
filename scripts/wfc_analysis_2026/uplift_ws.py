@@ -164,10 +164,9 @@ def hot_dy_scada_df() -> pd.DataFrame:
     fl_10min_df.index.name = "TimeStamp_StartFormat"
     fl_stacked = fl_10min_df.set_index("TurbineName", append=True)
     scada_df = unpack_local_scada_data_v2(data_dir=get_data_dir())
-    scada_df = (
+    return (
         scada_df.set_index("TurbineName", append=True).join(fl_stacked, how="left").reset_index(level="TurbineName")
     )
-    return scada_df
 
 
 @dataclass
@@ -309,7 +308,7 @@ def _post_process_ws_results(ws_combined_results: pd.DataFrame) -> tuple[float, 
     return ws_uplift, ws_uplift_uncertainty, ws_steering_turbine_yaph_change
 
 
-def hot_dy_uplift_per_steer(rerun_windup: bool = True) -> tuple[float, float, float]:
+def hot_dy_uplift_per_steer(*, rerun_windup: bool = True) -> tuple[float, float, float]:
     config_file_name = "HOT_dynamic_yaw.yaml"
     save_plots = True
     cfg = WindUpConfig.from_yaml(CONFIG_DIR / config_file_name)

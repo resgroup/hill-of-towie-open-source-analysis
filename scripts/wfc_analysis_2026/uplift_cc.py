@@ -85,7 +85,7 @@ def _post_process_cc_results(*, wf_cc_results: pd.DataFrame, combined_cc_results
     return cc_uplift, cc_uplift_uncertainty, cc_yaph_change
 
 
-def hot_dy_uplift_no_steering(rerun_windup: bool = True) -> tuple[float, float, float]:
+def hot_dy_uplift_no_steering(*, rerun_windup: bool = True) -> tuple[float, float, float]:
     config_file_name = "HOT_dynamic_yaw.yaml"
     save_plots = True
     cfg = WindUpConfig.from_yaml(CONFIG_DIR / config_file_name)

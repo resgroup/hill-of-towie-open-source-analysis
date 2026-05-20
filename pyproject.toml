@@ -8,11 +8,17 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "pandas>=2.2.3",
-    "res-wind-up>=0.3.0",
     "requests>=2.32.3",
     "tqdm>=4.67.0",
     "python-dotenv>=1.1.0",
+    "res-wind-up>=0.4.10",
+    "pandas>=2.3.3",
+    "openmeteo-requests>=1.4.0",
+    "requests-cache>=1.2.1",
+    "retry-requests>=2.0.0",
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "pyarrow>=15.0",
 ]
 
 [dependency-groups]
@@ -32,22 +38,23 @@ dev = [
     "polars>=1.27.1",
 ]
 wedowind = [
+    "polars>=1.27.1",
     "autogluon>=1.4.0",
     "ephem>=4.2",
     "jupyterlab>=4.4.1",
     "jupytext>=1.17.0",
     "kagglehub>=0.3.13",
-    "openmeteo-requests>=1.4.0",
     "plotly>=6.0.1",
     "polars>=1.27.1",
-    "requests-cache>=1.2.1",
-    "retry-requests>=2.0.0",
     "xarray>=2025.4.0",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hot_open", "scripts"]
 
 [tool.hatch.version]
 path = "src/hot_open/__init__.py"
@@ -69,8 +76,18 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["D"]
-"uplift_analysis/*.py" = ["N999"]
-"scripts/**/*.py" = ["D100", "INP001", "ERA001", "T201", "ARG002", "N803", "N806", "N802", "D101", "D102", "D103", "D107", "PD010"]
+"scripts/**/*.py" = [
+    "D100", "D101", "D102", "D103", "D107", "D205", "D400", "D401", "D404", "D415",  # docstring strictness off
+    "INP001", "ERA001", "T201", "PD010",  # script-friendly
+    "N802", "N803", "N806",  # naming conventions relaxed
+    "ANN001", "ANN201", "ANN202",  # type annotations not required
+    "PLR2004", "PLR0912", "PLR0913", "PLR0915", "C901",  # magic values & complexity ok
+    "G004",  # f-string in logging ok
+    "S101",  # allow assert
+    "RUF001", "RUF002",  # ambiguous unicode ok (greek letters in titles)
+    "RUF059",  # unused unpacked variable ok
+    "TC002",  # typing-only third-party imports ok
+]
 "tests/**/*.py" = [
     "S101", # allow `assert`
     "PLR2004", # allow magic values
@@ -81,7 +98,7 @@ ignore = [
 
 [tool.mypy]
 python_version = "3.10"
-exclude = ".venv|__ignore__"
+exclude = ".venv|__ignore__|^scripts/"
 
 [[tool.mypy.overrides]]
 module = [
@@ -94,18 +111,16 @@ module = [
     "ephem",
     "kagglehub.*",
     "autogluon.*",
+    "pyarrow.*",
 ]
 ignore_missing_imports = true
 
 [tool.deptry]
 extend_exclude = ["scripts"]
-
-[tool.deptry.per_rule_ignores]
-DEP003 = ["hot_open"]
+known_first_party = ["hot_open"]
 
 [tool.coverage.report]
 exclude_lines = ["if __name__ == .__main__.:"]
-
 
 [tool.poe.tasks]
 [tool.poe.tasks.lint]

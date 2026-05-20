@@ -1,0 +1,5 @@
+name: ZX300_2428
+latitude: 57.514311 # from ZX commisioning report ZXMS-RES029-REP01-01
+longitude: -3.079795 # from ZX commisioning report ZXMS-RES029-REP01-01
+wind_speed_column: Horizontal Wind Speed (m/s) at 58m
+wind_direction_column: Wind Direction (deg) at 58m

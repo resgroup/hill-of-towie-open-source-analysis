@@ -1,0 +1,68 @@
+assessment_name: HOT_dynamic_yaw
+write_pp_df_parquets: true
+require_ref_wake_free: true
+test_wtgs:
+#    - T01
+    - T02
+    - T03
+    - T04
+    - T05
+#    - T06
+    - T07 # not actually controller but should show some T3 steer benefit
+    - T08
+#    - T09
+    - T10
+    - T11
+    - T12
+#    - T13
+    - T14
+    - T15
+    - T16
+#    - T17
+#    - T18
+    - T19
+#    - T20
+    - T21
+ref_wtgs:
+    - T01
+#    - T02
+#    - T03
+#    - T04
+#    - T05
+#    - T06 # poor quality reference
+#    - T07 # not actually controlled but not a good ref due to T3 steering
+#    - T08
+#    - T09 # drift compared to other references
+#    - T10
+#    - T11
+#    - T12
+    - T13
+#    - T14
+#    - T15
+#    - T16
+#    - T17 # drift compared to other references
+    - T18
+#    - T19
+#    - T20 # drift compared to other references
+#    - T21
+non_wtg_ref_names:
+    - ZX300_2428 # LiDAR near T11
+#    - ZTM_5060 # LiDAR on T07
+upgrade_first_dt_utc_start: 2026-01-07 13:00:00 # last change to west turbines
+analysis_last_dt_utc_start: 2026-04-30 23:50:00 # end of dataset
+toggle:
+    name: dynamic yaw
+    toggle_file_per_turbine: False
+    toggle_filename: dummy_file_name
+    detrend_data_selection: use_toggle_off_data
+    pairing_filter_method: any_within_timedelta
+    pairing_filter_timedelta_seconds: 3000 # 50 minute toggle
+    toggle_change_settling_filter_seconds: 300
+years_for_lt_distribution: 5
+years_for_detrend: 3
+ws_bin_width: 1
+reanalysis_method: node_with_best_ws_corr
+asset: !include asset/HOT.yaml
+optimize_northing_corrections: false
+northing_corrections_utc: !include northing_corrections/HOT_DY_Design_northing.yaml
+exclusion_periods_utc: !include exclusion_periods/HOT_DY.yaml

@@ -1,0 +1,143 @@
+
+name: Hill of Towie Emperical Gaussian
+description: Hill of Towie using v4.1.1 example emperical Gaussian model
+floris_version: v4
+
+logging:
+  console:
+    enable: true
+    level: WARNING
+  file:
+    enable: false
+    level: WARNING
+
+solver:
+  type: turbine_grid
+  turbine_grid_points: 3
+
+farm:
+  layout_x:
+  - 134.13279591965556
+  - 369.42918729211647
+  - 0.0
+  - 413.32415340078865
+  - 650.8065384718587
+  - 1058.5695013717534
+  - 187.6121004544043
+  - 685.6674702187703
+  - 384.1143150376515
+  - 1098.4899590075004
+  - 498.8579110533185
+  - 916.92184993463
+  - 649.4328573605469
+  - 841.688479019941
+  - 1567.1582980455682
+  - 2136.432736874989
+  - 2469.0256135997515
+  - 2865.1791093637025
+  - 2836.8266901603192
+  - 2910.0095087872205
+  - 3254.0252220261045
+  layout_y:
+  - 328.3320493103838
+  - 0.0
+  - 646.2875002234972
+  - 634.9915171771462
+  - 294.6569209452749
+  - 443.21226534601146
+  - 987.4954214143298
+  - 934.4996110876175
+  - 1337.8333746159085
+  - 1020.099326685523
+  - 1734.8593213645222
+  - 1620.4905414923765
+  - 2271.5147688163343
+  - 1948.440198202186
+  - 351.1508769711353
+  - 988.2132138874704
+  - 1153.342103766941
+  - 894.1793860342741
+  - 1372.9666989599486
+  - 1755.2268231068124
+  - 1505.2145434558488
+  turbine_type:
+  - !include turbine_inputs/SGRE-2.3-82.yaml
+
+flow_field:
+  air_density: 1.225
+  reference_wind_height: -1 # -1 is code for use the hub height
+  turbulence_intensities:
+  - 0.06
+  wind_directions:
+  - 270.0
+  wind_shear: 0.12
+  wind_speeds:
+  - 8.0
+  wind_veer: 0.0
+
+wake:
+  model_strings:
+    combination_model: sosfs
+    deflection_model: empirical_gauss
+    turbulence_model: wake_induced_mixing
+    velocity_model: empirical_gauss
+
+  enable_secondary_steering: false
+  enable_yaw_added_recovery: true
+  enable_active_wake_mixing: false
+  enable_transverse_velocities: false
+
+  wake_deflection_parameters:
+    gauss:
+      ad: 0.0
+      alpha: 0.58
+      bd: 0.0
+      beta: 0.077
+      dm: 1.0
+      ka: 0.38
+      kb: 0.004
+    jimenez:
+      ad: 0.0
+      bd: 0.0
+      kd: 0.05
+    empirical_gauss:
+      horizontal_deflection_gain_D: 2.7 # Used 2.7 for stable/neutral and 1.0 for unstable
+      vertical_deflection_gain_D: -1
+      deflection_rate: 22
+      mixing_gain_deflection: 0.0
+      yaw_added_mixing_gain: 0.0
+
+  wake_velocity_parameters:
+    cc:
+      a_s: 0.179367259
+      b_s: 0.0118889215
+      c_s1: 0.0563691592
+      c_s2: 0.13290157
+      a_f: 3.11
+      b_f: -0.68
+      c_f: 2.41
+      alpha_mod: 1.0
+    gauss:
+      alpha: 0.58
+      beta: 0.077
+      ka: 0.38
+      kb: 0.004
+    jensen:
+      we: 0.05
+    empirical_gauss:
+      wake_expansion_rates:
+      - 0.033 # Used 0.33 for stable/neutral and 0.017 for unstable
+      - 0.008
+      breakpoints_D:
+      - 10
+      sigma_0_D: 0.28
+      smoothing_length_D: 2.0
+      mixing_gain_velocity: 0.0 # advice from PF: We now set this to 0 in a lot of the cases I’ve been running, can discuss more what it does but recommend you do the same
+  wake_turbulence_parameters:
+    crespo_hernandez:
+      initial: 0.1
+      constant: 0.5
+      ai: 0.8
+      downstream: -0.32
+    wake_induced_mixing:
+      atmospheric_ti_gain: 0.0

@@ -28,13 +28,13 @@ from wind_up.reanalysis_data import ReanalysisDataset
 from wind_up.waking_state import add_waking_scen, get_distance_and_bearing
 from wind_up.windspeed_drift import check_windspeed_drift
 
-from hot_open.paths import ANALYSES_DIR
+from hot_open.settings import get_wind_up_output_dir
 from hot_open.unpack import unpack_local_meta_data, unpack_local_scada_data_v1
 from scripts.logger import setup_logger
 
 load_dotenv()
 
-ANALYSIS_DIR = ANALYSES_DIR / Path(__file__).stem
+ANALYSIS_DIR = get_wind_up_output_dir() / Path(__file__).stem
 ANALYSIS_CACHE_DIR = ANALYSIS_DIR / "cache"
 ANALYSIS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 

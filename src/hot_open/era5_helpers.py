@@ -1,12 +1,14 @@
 """ERA5 reanalysis data fetching via Open-Meteo API."""
 
+import hashlib
+import json
 import logging
+from pathlib import Path
 
 import openmeteo_requests
 import pandas as pd
 import requests_cache
 from retry_requests import retry
-from wind_up.caching import with_parquet_cache
 from wind_up.reanalysis_data import ReanalysisDataset
 
 from .settings import get_cache_dir
@@ -59,7 +61,16 @@ def _build_era5_df(response: object, fields: list[str]) -> pd.DataFrame:
     ).set_index("timestamp")
 
 
-@with_parquet_cache(_era5_cache_dir / f"ERA5_{HOT_LAT:.2f}_{HOT_LON:.2f}.parquet")
+def _era5_cache_path(lat: float, lon: float, start_date: str, end_date: str, fields: list[str]) -> Path:
+    """Build a deterministic parquet cache path from the request args."""
+    args_blob = json.dumps(
+        {"lat": lat, "lon": lon, "start_date": start_date, "end_date": end_date, "fields": list(fields)},
+        sort_keys=True,
+    )
+    args_hash = hashlib.sha256(args_blob.encode("utf-8")).hexdigest()[:16]
+    return _era5_cache_dir / f"ERA5_{lat:.2f}_{lon:.2f}_{start_date}_{end_date}_{args_hash}.parquet"
+
+
 def get_hot_era5_hourly_df(
     lat: float = HOT_LAT,
     lon: float = HOT_LON,
@@ -69,10 +80,14 @@ def get_hot_era5_hourly_df(
 ) -> pd.DataFrame:
     """Fetch hourly ERA5 data from Open-Meteo and return as a DataFrame.
 
-    Warning: the cache path is fixed regardless of parameters. Calling with
-    non-default arguments returns the cached default result if the cache file
-    already exists. Delete the cache file to force a fresh fetch with new params.
+    Each unique combination of arguments is cached to its own parquet file
+    keyed by a hash of the arguments. Delete the cache file to force a refetch.
     """
+    cache_path = _era5_cache_path(lat, lon, start_date, end_date, fields)
+    if cache_path.exists():
+        logger.info("Reading: %s", cache_path)
+        return pd.read_parquet(cache_path)
+
     openmeteo = openmeteo_requests.Client(
         session=retry(
             requests_cache.CachedSession(
@@ -95,7 +110,10 @@ def get_hot_era5_hourly_df(
             "wind_speed_unit": "ms",
         },
     )
-    return _build_era5_df(responses[0], fields)
+    df = _build_era5_df(responses[0], fields)
+    logger.info("Writing: %s", cache_path)
+    df.to_parquet(cache_path)
+    return df
 
 
 def get_hot_reanalysis_datasets() -> list[ReanalysisDataset]:

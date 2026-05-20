@@ -11,12 +11,12 @@ from wind_up.interface import AssessmentInputs
 from wind_up.models import PlotConfig, WindUpConfig
 from wind_up.reanalysis_data import ReanalysisDataset
 
-from hot_open.paths import ANALYSES_DIR
+from hot_open.settings import get_wind_up_output_dir
 from hot_open.unpack import unpack_local_meta_data, unpack_local_scada_data_v1
 from scripts.logger import setup_logger
 
 CONFIG_DIR = Path(__file__).parent / "wind_up_config"
-ANALYSIS_DIR = ANALYSES_DIR / Path(__file__).stem
+ANALYSIS_DIR = get_wind_up_output_dir() / Path(__file__).stem
 ANALYSIS_CACHE_DIR = ANALYSIS_DIR / "cache"
 ANALYSIS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 

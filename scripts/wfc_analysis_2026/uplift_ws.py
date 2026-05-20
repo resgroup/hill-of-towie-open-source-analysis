@@ -13,12 +13,11 @@ from wind_up.interface import AssessmentInputs
 from wind_up.main_analysis import run_wind_up_analysis
 from wind_up.models import PlotConfig, WindUpConfig
 from wind_up.plots.scada_funcs_plots import bubble_plot
-from wind_up.reanalysis_data import MastOrLiDARDataset
 from wind_up.smart_data import add_smart_lat_long_to_cfg
 
 from hot_open.era5_helpers import get_hot_reanalysis_datasets
 from hot_open.fastlog_helpers import load_hot_fl_data
-from hot_open.lidar_helpers import load_zx_lidar_10min_data
+from hot_open.lidar_helpers import load_hot_lidar_10min_data
 from hot_open.settings import get_cache_dir, get_data_dir, get_filestore_dir, get_out_dir, get_wind_up_output_dir
 from hot_open.unpack import unpack_local_meta_data, unpack_local_scada_data_v2
 from scripts.logger import setup_logger
@@ -84,50 +83,6 @@ def hot_dy_toggle_df(scada_df: pd.DataFrame) -> pd.DataFrame:
         },
         index=toggle_series.index,
     )
-
-
-def _hot_dy_lidar_datasets(data_dir: Path, start_dt, end_dt_excl) -> list[MastOrLiDARDataset]:
-    """Load HoT DY Lidar datasets.
-
-    :return: list of MastOrLiDARDataset containing the HoT Lidar data.
-    """
-    lidar_datasets = []
-
-    lidar_unit_id = "2428"
-    lidar_model = "ZX300"
-    lidar_datasets.append(
-        MastOrLiDARDataset(
-            id=f"{lidar_model}_{lidar_unit_id}",
-            data=load_zx_lidar_10min_data(
-                data_dir=data_dir,
-                lidar_unit_id=lidar_unit_id,
-                start_dt=start_dt,
-                end_dt_excl=end_dt_excl,
-                remove_bad_values=True,
-            ),
-        )
-    )
-
-    lidar_unit_id = "5060"
-    lidar_model = "ZTM"
-    df_5060 = load_zx_lidar_10min_data(
-        data_dir=data_dir,
-        lidar_unit_id=lidar_unit_id,
-        start_dt=start_dt,
-        end_dt_excl=end_dt_excl,
-        remove_bad_values=True,
-    )
-    df_5060["Met Compass Bearing (deg)"] = (
-        df_5060["Met Compass Bearing (deg)"] - 131.5
-    ) % 360  # TODO fix in wind-up instead
-    lidar_datasets.append(
-        MastOrLiDARDataset(
-            id=f"{lidar_model}_{lidar_unit_id}",
-            data=df_5060,
-        )
-    )
-
-    return lidar_datasets
 
 
 def _check_fl_scada_power(scada_df: pd.DataFrame, out_dir: Path | None) -> None:
@@ -415,7 +370,7 @@ def hot_dy_uplift_per_steer(rerun_windup: bool = True) -> tuple[float, float, fl
             toggle_df=hot_dy_toggle_df(scada_df),
             reanalysis_datasets=get_hot_reanalysis_datasets(),
             cache_dir=get_cache_dir() / "windup_cache" / cfg.assessment_name,
-            mast_or_lidar_datasets=_hot_dy_lidar_datasets(
+            mast_or_lidar_datasets=load_hot_lidar_10min_data(
                 data_dir=get_data_dir() / "lidar_data",
                 start_dt=scada_df.index.min(),
                 end_dt_excl=scada_df.index.max(),
@@ -423,8 +378,8 @@ def hot_dy_uplift_per_steer(rerun_windup: bool = True) -> tuple[float, float, fl
         )
         try:
             results_per_test_ref_df = run_wind_up_analysis(inputs=assessment_inputs)
-        except Exception as e:  # noqa: BLE001
-            print(f"skipping due to exception {e}")
+        except Exception:
+            logger.exception("skipping due to exception")
             continue
         if "unc_one_sigma_frc" not in results_per_test_ref_df.columns:
             continue

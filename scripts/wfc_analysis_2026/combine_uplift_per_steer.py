@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import norm
 
-from scripts.wfc_analysis_2026.hot_wake_steering_helpers import _calc_yaw_stats
+from scripts.wfc_analysis_2026.hot_wake_steering_helpers import calc_hot_yaw_stats
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ def _load_yaw_stats_for_steer(row, wind_up_out_dir: Path) -> dict | None:
     pre_df = pd.read_parquet(pre_path)
     logger.info("Reading: %s", post_path)
     post_df = pd.read_parquet(post_path)
-    return _calc_yaw_stats(pre_df, post_df)
+    return calc_hot_yaw_stats(pre_df, post_df)
 
 
 def _calc_wakesteer_tdf(

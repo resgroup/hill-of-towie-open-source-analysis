@@ -57,8 +57,20 @@ def load_hot_fl_data(  # noqa: PLR0913
 
     Returns a wide-format DataFrame with a MultiIndex column (turbine_name, tag).
     """
-    if os.getenv("HOT_OPEN_FILESTORE_DIR") is None:
-        ensure_extracted("turbine_fastlog.zip", data_dir=get_data_dir())
+    # Check the actual filesystem rather than env-var presence: a user can set
+    # HOT_OPEN_FILESTORE_DIR to point at a populated local copy, or leave it
+    # unset and let the Zenodo zip extract into the default location.
+    filestore_dir = get_filestore_dir()
+    if not (filestore_dir / "FL").exists():
+        if os.getenv("HOT_OPEN_FILESTORE_DIR") is None:
+            ensure_extracted("turbine_fastlog.zip", data_dir=get_data_dir())
+        else:
+            msg = (
+                f"HOT_OPEN_FILESTORE_DIR={filestore_dir} but it does not contain an 'FL' subdirectory. "
+                "Populate it with the Hill of Towie fastlog tree (FL/HOT/<device_id>/<date>/...), "
+                "or unset HOT_OPEN_FILESTORE_DIR to auto-download from Zenodo."
+            )
+            raise FileNotFoundError(msg)
     park_id = "HOT"
     tags = [*_get_tag_list_from_park_id(park_id), *extra_tags] if extra_tags is not None else None
     fl_df = get_fl_resampled(
@@ -477,14 +489,8 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
 ) -> pd.DataFrame:
     """Resample all tags to the target timebase."""
     if busy_tags is None:
-        vestas_typical_busy_tags = {"Ambient_WindSpeed_Actual", "Grid_Production_Power_Actual", "Generator_RPM_Actual"}
         siemens_typical_busy_tags = {"ActPower_Value", "AcWindSp_AcWindSp", "GenRpm_Value"}
-        senvion_typical_busy_tags = {"WTUR1_W_mag_f", "WNAC1_WdSpd_mag_f", "WROT1_RotSpd_mag_f"}
-        busy_tags = tuple(
-            x
-            for x in raw_df_dict
-            if x in (vestas_typical_busy_tags | siemens_typical_busy_tags | senvion_typical_busy_tags)
-        )
+        busy_tags = tuple(x for x in raw_df_dict if x in siemens_typical_busy_tags)
     if ffill_tags is None:
         ffill_tags = tuple(x for x in raw_df_dict if x not in busy_tags)
     if circular_tags is None:

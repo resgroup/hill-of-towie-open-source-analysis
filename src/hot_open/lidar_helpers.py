@@ -71,7 +71,10 @@ def load_hot_lidar_10min_data(
     start_dt: pd.Timestamp,
     end_dt_excl: pd.Timestamp,
 ) -> list[MastOrLiDARDataset]:
-    """Load HoT ZX300 Lidar data."""
+    """Load HoT DY Lidar datasets.
+
+    :return: list of MastOrLiDARDataset containing the HoT Lidar data.
+    """
     lidar_datasets = []
 
     lidar_unit_id = "2428"
@@ -80,7 +83,11 @@ def load_hot_lidar_10min_data(
         MastOrLiDARDataset(
             id=f"{lidar_model}_{lidar_unit_id}",
             data=load_zx_lidar_10min_data(
-                data_dir=data_dir, lidar_unit_id=lidar_unit_id, start_dt=start_dt, end_dt_excl=end_dt_excl
+                data_dir=data_dir,
+                lidar_unit_id=lidar_unit_id,
+                start_dt=start_dt,
+                end_dt_excl=end_dt_excl,
+                remove_bad_values=True,
             ),
         )
     )
@@ -88,7 +95,11 @@ def load_hot_lidar_10min_data(
     lidar_unit_id = "5060"
     lidar_model = "ZTM"
     df_5060 = load_zx_lidar_10min_data(
-        data_dir=data_dir, lidar_unit_id=lidar_unit_id, start_dt=start_dt, end_dt_excl=end_dt_excl
+        data_dir=data_dir,
+        lidar_unit_id=lidar_unit_id,
+        start_dt=start_dt,
+        end_dt_excl=end_dt_excl,
+        remove_bad_values=True,
     )
     df_5060["Met Compass Bearing (deg)"] = (
         df_5060["Met Compass Bearing (deg)"] - 131.5

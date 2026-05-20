@@ -13,7 +13,7 @@ from typing import NamedTuple
 import requests
 from tqdm import tqdm
 
-from hot_open.paths import DATA_DIR
+from hot_open.settings import get_data_dir
 
 logger = logging.getLogger(__name__)
 
@@ -45,12 +45,13 @@ _HTTP_PARTIAL_CONTENT = 206
 
 def download_zenodo_data(
     record_id: str,
-    output_dir: Path = DATA_DIR,
+    output_dir: Path | None = None,
     filenames: Collection[str] | None = None,
     *,
     cache_overwrite: bool = False,
 ) -> None:
     """Download and caches files from zenodo.org."""
+    output_dir = output_dir if output_dir is not None else get_data_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
     metadata_fpath = output_dir / "zenodo_dataset_metadata.json"
 
@@ -269,7 +270,7 @@ def ensure_hot_data_files(
     READMEs, deployment reports, etc. Failures on these auto-included
     downloads warn-and-continue (handled inside ``download_zenodo_data``).
     """
-    target_dir = data_dir if data_dir is not None else DATA_DIR
+    target_dir = data_dir if data_dir is not None else get_data_dir()
     requested = list(filenames)
     missing_requested = [f for f in requested if not (target_dir / f).is_file()]
     missing_small = _missing_small_files_from_cached_metadata(target_dir)
@@ -337,7 +338,7 @@ def ensure_extracted(zip_name: str, *, data_dir: Path | None = None) -> Path:
     if zip_name not in _ZIP_LAYOUT:
         msg = f"Unknown Hill of Towie zip: {zip_name!r}. Known: {sorted(_ZIP_LAYOUT)}"
         raise ValueError(msg)
-    target_dir = data_dir if data_dir is not None else DATA_DIR
+    target_dir = data_dir if data_dir is not None else get_data_dir()
     layout = _ZIP_LAYOUT[zip_name]
     top_level = target_dir / layout.top_level
     sentinel = target_dir / layout.sentinel

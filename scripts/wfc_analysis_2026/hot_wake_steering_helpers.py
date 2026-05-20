@@ -17,7 +17,7 @@ _ABS_WAKESTEER_COL = "test_mean_abs_wake_steer_command"
 _TIMEBASE_S = 600
 
 
-def _calc_yaw_stats(pre_df: pd.DataFrame, post_df: pd.DataFrame) -> dict:
+def calc_hot_yaw_stats(pre_df: pd.DataFrame, post_df: pd.DataFrame) -> dict:
     pre_df = pre_df.dropna(subset=[_PW_COL, _YA_COL, _TOGGLE_COL, _CONTROL_ACTIVE_COL])
     post_df = post_df.dropna(subset=[_PW_COL, _YA_COL, _TOGGLE_COL, _CONTROL_ACTIVE_COL])
     hours_pre = len(pre_df) * _TIMEBASE_S / 3600

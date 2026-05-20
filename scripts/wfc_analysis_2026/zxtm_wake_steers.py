@@ -6,17 +6,17 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
-from matplotlib import ticker
 
 from hot_open.circular_math import circdiff_degrees
 from hot_open.fastlog_helpers import load_hot_fl_data
 from hot_open.lidar_helpers import load_zx_lidar_fl_data
 from hot_open.settings import get_data_dir, get_filestore_dir, get_out_dir
 from scripts.logger import setup_logger
-from scripts.wake_steering_analysis.inspect_data import (
+from scripts.wfc_analysis_2026.inspect_data import (
     NORTH_CORRECTIONS,
     WTG_FL_ACT_POWER_COL,
     WTG_FL_YAW_POS_COL,
+    ZXTM_WD_COL,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,12 +59,12 @@ def _slice_period(df, *, start, end):
     return df[(df.index >= start) & (df.index < end)]
 
 
-def plot_wake_steering_period_with_zx300(
+def plot_wake_steering_period(
     *,
     plot_ref_df,
     plot_steer_df,
     plot_dep_df,
-    plot_zx300_df,
+    plot_zxtm_df,
     ref_name,
     steering_name,
     dependent_turbine_name,
@@ -72,6 +72,8 @@ def plot_wake_steering_period_with_zx300(
     yawpos_col,
     toggle_col,
     smoothed_pw_col,
+    smoothed_left_ws_col,
+    smoothed_right_ws_col,
     plot_start,
     plot_end,
     out_dir,
@@ -118,19 +120,13 @@ def plot_wake_steering_period_with_zx300(
 
     axid += 1
     ax = axes[axid]
-    zx300_hh_ws_col = "Horizontal Wind Speed (m/s) at 58m"
-    zx300_hh_wd_col = "Wind Direction (deg) at 58m"
-    ax_twin = ax.twinx()
-    ax.plot(plot_zx300_df.index, plot_zx300_df[zx300_hh_ws_col], label=zx300_hh_ws_col)
-    ax_twin.plot(plot_zx300_df.index, plot_zx300_df[zx300_hh_wd_col], label=zx300_hh_wd_col, color="C1")
+    ax.plot(plot_zxtm_df.index, plot_zxtm_df[smoothed_left_ws_col], label="ZXTM smoothed left ws")
+    ax.plot(plot_zxtm_df.index, plot_zxtm_df[smoothed_right_ws_col], label="ZXTM smoothed right ws")
     _shade_toggle(ax, steer_df=plot_steer_df, toggle_col=toggle_col)
-    ax.set_ylabel("LiDAR wind speed [m/s]")
-    ax_twin.set_ylabel("LiDAR wind direction [degN]")
-    for _ax in (ax, ax_twin):
-        _ax.yaxis.set_major_locator(ticker.LinearLocator(6))
+    ax.set_ylabel("T07 wind speed [m/s]")
 
     title = f"{steering_name} steering for {dependent_turbine_name} {plot_start.strftime('%Y-%m-%d %H:%M')} to {plot_end.strftime('%H:%M')}"
-    _finalize_and_save([*axes, ax_twin], plot_start=plot_start, plot_end=plot_end, title=title, plot_dir=plot_dir)
+    _finalize_and_save(axes, plot_start=plot_start, plot_end=plot_end, title=title, plot_dir=plot_dir)
 
     # plot diffs
     fig, axes = plt.subplots(3, 1, figsize=(12, 12), sharex=True)
@@ -198,6 +194,26 @@ def plot_wake_steering_period_with_zx300(
     _shade_toggle(ax, steer_df=plot_steer_df, toggle_col=toggle_col)
     ax.set_ylabel("power diff [kW]")
 
+    axid += 1
+    ax = axes[axid]
+    ax.plot(
+        plot_zxtm_df.index,
+        plot_zxtm_df[smoothed_right_ws_col] - plot_zxtm_df[smoothed_left_ws_col],  # TODO try normalizing
+        label="ZXTM smoothed right - left ws",
+    )
+    ax.plot(
+        plot_steer_df.index, steering_yawerr / 5, label=f"{steering_name} yaw error / 5", color="C1", alpha=0.5
+    )  # during wake steering we expect yaw error and (right-left) wind speed to look similar
+    ax.plot(
+        plot_steer_df.index,
+        (plot_steer_df[yawpos_col] - 207) / 5,
+        label=f"{steering_name} (yaw pos - 207) / 5",
+        color="grey",
+        alpha=0.5,
+    )  # with no wake steering we expect yaw error and (yawpos-bearing) to look similar
+    _shade_toggle(ax, steer_df=plot_steer_df, toggle_col=toggle_col)
+    ax.set_ylabel("wind speed diff [m/s]")
+
     title = f"{steering_name} steering for {dependent_turbine_name} {plot_start.strftime('%Y-%m-%d %H:%M')} to {plot_end.strftime('%H:%M')} diffs"
     _finalize_and_save(axes, plot_start=plot_start, plot_end=plot_end, title=title, plot_dir=plot_dir)
 
@@ -221,10 +237,9 @@ if __name__ == "__main__":
         }
     )
 
-    wtg_numbers = [11, 13, 14]
-    # Jan 14, Feb 23, Mar 20, Apr 4
-    start_dt = pd.Timestamp("2026-01-14 00:00", tz="UTC")  # pd.Timestamp("2026-01-07 13:00", tz="UTC")
-    end_dt_excl = pd.Timestamp("2026-01-15 00:00", tz="UTC")  # pd.Timestamp("2026-05-01 08:00", tz="UTC")
+    wtg_numbers = [1, 3, 7]
+    start_dt = pd.Timestamp("2026-02-20 00:00", tz="UTC")  # pd.Timestamp("2026-01-07 13:00", tz="UTC")
+    end_dt_excl = pd.Timestamp("2026-02-22 00:00", tz="UTC")  # pd.Timestamp("2026-05-01 08:00", tz="UTC")
 
     toggle_col = "computed_driver_post_processed_toggle_state"
     yawpos_col = "computed_driver_pre_processed_yaw_direction_true_degrees"
@@ -242,9 +257,9 @@ if __name__ == "__main__":
         if wtg in wtg_fl_df.columns.get_level_values(0):
             wtg_fl_df[(wtg, WTG_FL_YAW_POS_COL)] = (wtg_fl_df[(wtg, WTG_FL_YAW_POS_COL)] + correction) % 360
 
-    ref_name = "T13"
-    steering_name = "T11"
-    dependent_turbine_name = "T14"
+    ref_name = "T01"
+    steering_name = "T03"
+    dependent_turbine_name = "T07"
     steer_config = campaign_default_steering_table[
         (campaign_default_steering_table["TurbineName"] == steering_name)
         & (campaign_default_steering_table["DependentTurbineNames"] == dependent_turbine_name)
@@ -253,18 +268,29 @@ if __name__ == "__main__":
     steering_df = wtg_fl_df[steering_name].copy()
     dependent_df = wtg_fl_df[dependent_turbine_name].copy()
 
-    zx300_fl_df = load_zx_lidar_fl_data(
+    zxtm_fl_df = load_zx_lidar_fl_data(
         data_dir=get_data_dir() / "lidar_data",
-        lidar_unit_id="2428",
+        lidar_unit_id="5060",
         start_dt=start_dt,
         end_dt_excl=end_dt_excl,
         remove_bad_values=True,
     )
+    range_min = 100  # 10, 48, 64, 85, 126 or 208
+    range_max = 300  # 10, 48, 64, 85, 126 or 208
+    zxtm_fl_df = zxtm_fl_df[(zxtm_fl_df["Range (m)"] >= range_min) & (zxtm_fl_df["Range (m)"] <= range_max)]
+    zxtm_fl_df[ZXTM_WD_COL] = (zxtm_fl_df[ZXTM_WD_COL] + NORTH_CORRECTIONS["ZXTM"]) % 360
+    left_ws_col = "Left LOS Speed (m/s) at Rotor Segment Height 59.0m"
+    right_ws_col = "Right LOS Speed (m/s) at Rotor Segment Height 59.0m"
 
     pw_col = WTG_FL_ACT_POWER_COL
     smoothed_pw_col = "smoothed_pw"
     for df in (ref_df, steering_df, dependent_df):
         _add_smoothed(df, col=pw_col, new_col=smoothed_pw_col)
+
+    smoothed_left_ws_col = "smoothed_left_ws_col"
+    smoothed_right_ws_col = "smoothed_right_ws_col"
+    _add_smoothed(zxtm_fl_df, col=left_ws_col, new_col=smoothed_left_ws_col, min_periods=SMOOTHING_WINDOW // 5)
+    _add_smoothed(zxtm_fl_df, col=right_ws_col, new_col=smoothed_right_ws_col, min_periods=SMOOTHING_WINDOW // 5)
 
     toggle_switch = steering_df[toggle_col].diff().fillna(0) != 0
     first_toggle_off = steering_df.index[toggle_switch & (steering_df[toggle_col] == 0)][0]
@@ -285,18 +311,18 @@ if __name__ == "__main__":
         plot_ref_df = _slice_period(ref_df, start=plot_start, end=plot_end)
         plot_steer_df = _slice_period(steering_df, start=plot_start, end=plot_end)
         plot_dep_df = _slice_period(dependent_df, start=plot_start, end=plot_end)
-        plot_zx300_df = _slice_period(zx300_fl_df, start=plot_start, end=plot_end)
+        plot_zxtm_df = _slice_period(zxtm_fl_df, start=plot_start, end=plot_end)
 
         # if there is no interesting steering, skip
         if ((plot_steer_df[wake_steer_col].abs() > 10) & (plot_steer_df[toggle_col] == 1)).sum() < (1800 / 3):
             plot_start += plot_timedelta
             continue
 
-        plot_wake_steering_period_with_zx300(
+        plot_wake_steering_period(
             plot_ref_df=plot_ref_df,
             plot_steer_df=plot_steer_df,
             plot_dep_df=plot_dep_df,
-            plot_zx300_df=plot_zx300_df,
+            plot_zxtm_df=plot_zxtm_df,
             ref_name=ref_name,
             steering_name=steering_name,
             dependent_turbine_name=dependent_turbine_name,
@@ -304,6 +330,8 @@ if __name__ == "__main__":
             yawpos_col=yawpos_col,
             toggle_col=toggle_col,
             smoothed_pw_col=smoothed_pw_col,
+            smoothed_left_ws_col=smoothed_left_ws_col,
+            smoothed_right_ws_col=smoothed_right_ws_col,
             plot_start=plot_start,
             plot_end=plot_end,
             out_dir=out_dir,

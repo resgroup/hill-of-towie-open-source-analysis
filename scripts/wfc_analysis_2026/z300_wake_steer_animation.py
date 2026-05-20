@@ -30,20 +30,20 @@ from hot_open.fastlog_helpers import load_hot_fl_data
 from hot_open.lidar_helpers import add_shear_and_veer, load_zx_lidar_fl_data
 from hot_open.settings import get_data_dir, get_filestore_dir, get_out_dir
 from scripts.logger import setup_logger
-from scripts.wake_steering_analysis.inspect_data import (
+from scripts.wfc_analysis_2026.inspect_data import (
     NORTH_CORRECTIONS,
     WTG_FL_ACT_POWER_COL,
     WTG_FL_YAW_POS_COL,
     ZX300_WD_COL,
     ZX300_WS_COL,
 )
-from scripts.wake_steering_analysis.zx300_wake_steers import (
+from scripts.wfc_analysis_2026.zx300_wake_steers import (
     SMOOTHING_WINDOW as STATIC_PLOT_SMOOTHING_WINDOW,
 )
-from scripts.wake_steering_analysis.zx300_wake_steers import (
+from scripts.wfc_analysis_2026.zx300_wake_steers import (
     plot_wake_steering_period_with_zx300,
 )
-from scripts.wake_steering_analysis.zxtm_wake_steer_animation import FixedPaletteWriter
+from scripts.wfc_analysis_2026.zxtm_wake_steer_animation import FixedPaletteWriter
 
 logger = logging.getLogger(__name__)
 

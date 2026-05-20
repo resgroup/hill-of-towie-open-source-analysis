@@ -22,10 +22,10 @@ from hot_open.lidar_helpers import load_zx_lidar_10min_data
 from hot_open.settings import get_cache_dir, get_data_dir, get_filestore_dir, get_out_dir, get_wind_up_output_dir
 from hot_open.unpack import unpack_local_meta_data, unpack_local_scada_data_v2
 from scripts.logger import setup_logger
-from scripts.wake_steering_analysis.combine_uplift_per_steer import (
+from scripts.wfc_analysis_2026.combine_uplift_per_steer import (
     combine_wakesteer_results_with_yaw,
 )
-from scripts.wake_steering_analysis.hot_wake_steering_helpers import CONFIG_DIR
+from scripts.wfc_analysis_2026.hot_wake_steering_helpers import CONFIG_DIR
 
 logger = logging.getLogger(__name__)
 

@@ -8,7 +8,7 @@ from wind_up.combine_results import _calc_sigma_ref
 from wind_up.models import PlotConfig
 from wind_up.plots.combine_results_plots import plot_testref_and_combined_results
 
-from scripts.wake_steering_analysis.hot_wake_steering_helpers import _calc_yaw_stats
+from scripts.wfc_analysis_2026.hot_wake_steering_helpers import _calc_yaw_stats
 
 logger = logging.getLogger(__name__)
 

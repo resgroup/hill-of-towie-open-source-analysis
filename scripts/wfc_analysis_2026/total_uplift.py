@@ -5,8 +5,8 @@ from pathlib import Path
 
 from hot_open.settings import get_out_dir
 from scripts.logger import setup_logger
-from scripts.wake_steering_analysis.uplift_no_steering import hot_dy_uplift_no_steering
-from scripts.wake_steering_analysis.uplift_per_steer import hot_dy_uplift_per_steer
+from scripts.wfc_analysis_2026.uplift_cc import hot_dy_uplift_no_steering
+from scripts.wfc_analysis_2026.uplift_ws import hot_dy_uplift_per_steer
 
 logger = logging.getLogger(__name__)
 

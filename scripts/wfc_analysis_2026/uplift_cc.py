@@ -14,9 +14,9 @@ from hot_open.era5_helpers import get_hot_reanalysis_datasets
 from hot_open.settings import get_cache_dir, get_data_dir, get_out_dir, get_wind_up_output_dir
 from hot_open.unpack import unpack_local_meta_data
 from scripts.logger import setup_logger
-from scripts.wake_steering_analysis.combine_uplift_no_steering import combine_cc_results_with_yaw
-from scripts.wake_steering_analysis.hot_wake_steering_helpers import CONFIG_DIR
-from scripts.wake_steering_analysis.uplift_per_steer import _hot_dy_lidar_datasets, hot_dy_scada_df, hot_dy_toggle_df
+from scripts.wfc_analysis_2026.combine_uplift_no_steering import combine_cc_results_with_yaw
+from scripts.wfc_analysis_2026.hot_wake_steering_helpers import CONFIG_DIR
+from scripts.wfc_analysis_2026.uplift_per_steer import _hot_dy_lidar_datasets, hot_dy_scada_df, hot_dy_toggle_df
 
 logger = logging.getLogger(__name__)
 

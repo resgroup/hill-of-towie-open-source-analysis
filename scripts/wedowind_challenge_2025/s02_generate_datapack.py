@@ -93,7 +93,7 @@ def _extract_data_from_year_zipfile(
 ) -> pl.LazyFrame:
     zf = ZipFile(year_data_zip_fpath)
 
-    table_fields_dtype_map: dict[str, dict[str, pl.DataType]] = defaultdict(lambda: index_fields.copy())
+    table_fields_dtype_map: dict[str, dict[str, pl.DataType]] = defaultdict(lambda: index_fields.copy())  # noqa:PLW0108
     for row in field_definitions:
         table_fields_dtype_map[row["table_name"]][row["field_name"]] = row["dtype"]
 

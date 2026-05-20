@@ -44,8 +44,7 @@ The bubble plot
 below shows the layout and ground elevation of each turbine — the west cluster sits
 on the higher, exposed hilltop while the east cluster drops down across a saddle:
 
-<!-- TODO: upload `Hill of Towie turbine elevation.png` (from windup_output/HOT_dynamic_yaw_CC_only/plots) to GitHub and replace the URL below -->
-![Hill of Towie turbine elevation](TODO_URL_turbine_elevation)
+<img width="1440" height="922" alt="Hill of Towie turbine elevation" src="https://github.com/user-attachments/assets/21a8424a-3022-4c66-aa94-60d0933418ab" />
 
 ### Wake Steering result
 
@@ -56,8 +55,7 @@ qualifying steering events is **+1.32% (σ = 0.54%)**.
 
 The plot below shows the per-turbine WS uplift across the west of the farm:
 
-<!-- TODO: upload `Hill of Towie WS test turbine uplift.png` (from windup_output/HOT_dynamic_yaw/plots) -->
-![Hill of Towie WS test turbine uplift](TODO_URL_ws_uplift)
+<img width="1440" height="1529" alt="Hill of Towie WS test turbine uplift" src="https://github.com/user-attachments/assets/a8e45437-53b2-478f-9d05-f11deb7e3363" />
 
 ### Collective Control result
 
@@ -70,18 +68,15 @@ average yaw-activity reduction of **−6.0%**. The headline test-vs-reference ba
 chart shows ~0% uplift on the four references (three referrence turbines and the ZX300 LiDAR) as expected, while the test
 group is positive:
 
-<!-- TODO: upload `Hill of Towie CC test turbine uplift.png` -->
-![CC test turbine uplift](TODO_URL_cc_uplift)
+<img width="1440" height="922" alt="Hill of Towie CC test turbine uplift" src="https://github.com/user-attachments/assets/dd28ddc9-f577-43ad-b7d3-a6c13dcb31f4" />
 
-<!-- TODO: upload `combined uplift and 90pct CI.png` -->
-![Combined CC uplift and 90% CI](TODO_URL_cc_combined)
+<img width="640" height="480" alt="combined uplift and 90pct CI" src="https://github.com/user-attachments/assets/2a43daad-0b95-45a3-b7d4-c1db871b96dd" />
 
 CC also changes how much each turbine yaws. The bubble plot below shows the
 per-turbine yaw-activity change: blue means the turbine yawed less under CC (T10
 shows the largest reduction at −14.6%):
 
-<!-- TODO: upload `Hill of Towie CC test turbine yaw activity change.png` -->
-![CC test turbine yaw activity change](TODO_URL_cc_yaw_change)
+<img width="1440" height="922" alt="Hill of Towie CC test turbine yaw activity change" src="https://github.com/user-attachments/assets/86a32515-5de6-4ffa-81ee-642d9760a787" />
 
 ### Combined long-term AEP
 

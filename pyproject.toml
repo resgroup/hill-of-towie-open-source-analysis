@@ -38,14 +38,12 @@ dev = [
     "polars>=1.27.1",
 ]
 wedowind = [
-    "polars>=1.27.1",
     "autogluon>=1.4.0",
     "ephem>=4.2",
     "jupyterlab>=4.4.1",
     "jupytext>=1.17.0",
     "kagglehub>=0.3.13",
     "plotly>=6.0.1",
-    "polars>=1.27.1",
     "xarray>=2025.4.0",
 ]
 

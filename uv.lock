@@ -2618,7 +2618,6 @@ wedowind = [
     { name = "jupytext" },
     { name = "kagglehub" },
     { name = "plotly" },
-    { name = "polars" },
     { name = "xarray", version = "2025.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "xarray", version = "2026.4.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
@@ -2661,7 +2660,6 @@ wedowind = [
     { name = "jupytext", specifier = ">=1.17.0" },
     { name = "kagglehub", specifier = ">=0.3.13" },
     { name = "plotly", specifier = ">=6.0.1" },
-    { name = "polars", specifier = ">=1.27.1" },
     { name = "xarray", specifier = ">=2025.4.0" },
 ]
 

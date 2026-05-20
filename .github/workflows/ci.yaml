@@ -23,7 +23,7 @@ jobs:
 
       - name: Install project
         run: |
-          uv sync --frozen --group wedowind
+          uv sync --frozen
 
       - name: Lint
         run: |

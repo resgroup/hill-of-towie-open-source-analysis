@@ -158,6 +158,7 @@ def _get_fl_resampled_one_device_one_day(  # noqa: PLR0913
             cache_dir / "fl_resampled" / park_id / device_id / f"{start_dt.strftime('%Y%m%d')}_{cache_key}.parquet"
         )
         if cache_path.exists():
+            logger.info("Reading: %s", cache_path)
             return pd.read_parquet(cache_path)
     result_df = make_fl_resampled_one_device(
         park_id=park_id,
@@ -174,11 +175,13 @@ def _get_fl_resampled_one_device_one_day(  # noqa: PLR0913
     if cache_dir is not None and not result_df.empty:
         cache_path.parent.mkdir(exist_ok=True, parents=True)
         try:
+            logger.info("Writing: %s", cache_path)
             result_df.to_parquet(cache_path)
         except ArrowInvalid as e:
             msg = f"Error saving resampled data to cache at {cache_path}: {e}"
             logger.exception(msg)
             csv_path = cache_path.with_stem(f"{cache_path.stem}_error").with_suffix(".csv")
+            logger.info("Writing: %s", csv_path)
             result_df.to_csv(csv_path)
             msg = f"Saved resampled data to CSV at {csv_path} for troubleshooting."
             logger.info(msg)
@@ -261,6 +264,7 @@ def _load_siemens_fastlog_files(  # noqa: C901, PLR0912
         msg = f"{filestore_dir} is not a valid path"
         raise FileNotFoundError(msg)
     fl_data_dir = filestore_dir / "FL" / park_id / wtgid / day_str
+    logger.info("Reading fastlog files for %s %s from: %s", wtgid, day_str, fl_data_dir)
     tags_df = pd.DataFrame()
     for tag in tags_to_load:
         prefix = "" if tag.startswith("computed_") else "Wtc_TDI_"
@@ -268,12 +272,14 @@ def _load_siemens_fastlog_files(  # noqa: C901, PLR0912
         found_file = False
         for file in fl_data_dir.glob("*.prq"):
             if str_for_file_search in file.name and not file.name.startswith(".azDownload"):
+                logger.debug("Reading: %s", file)
                 tag_df = pd.read_parquet(file)
                 found_file = True
                 break
         if not found_file:
             for file in fl_data_dir.glob("*.h5"):
                 if str_for_file_search in file.name and not file.name.startswith(".azDownload"):
+                    logger.debug("Reading: %s", file)
                     tag_df = cast("pd.DataFrame", pd.read_hdf(file))
                     found_file = True
                     break
@@ -281,6 +287,7 @@ def _load_siemens_fastlog_files(  # noqa: C901, PLR0912
             str_for_file_search = f"{wtgid}_{tag}_{day_str.replace('-', '_')}"
             for file in fl_data_dir.glob("*.h5"):
                 if str_for_file_search in file.name and not file.name.startswith(".azDownload"):
+                    logger.debug("Reading: %s", file)
                     tag_df = cast("pd.DataFrame", pd.read_hdf(file))
                     found_file = True
                     break

@@ -546,6 +546,7 @@ def _run_animation(
     )
     half_r = ROTOR_DIAMETER_M / 2
 
+    logger.info("Writing: %s", output_path)
     with writer.saving(fig, str(output_path), dpi=100):
         for i, ts in enumerate(tqdm(timestamps, desc="frames")):
             title_artist.set_text(ts.strftime("%H:%M:%S UTC"))
@@ -651,6 +652,7 @@ def _run_animation(
             # plenty of presentation-ready frames to choose from.
             if ts.minute % 5 == 0 and ts.second == 0:
                 png_path = frames_dir / f"frame_{ts:%Y%m%d_%H%M}.png"
+                logger.debug("Writing: %s", png_path)
                 fig.savefig(png_path, dpi=100)
                 pngs_saved += 1
 

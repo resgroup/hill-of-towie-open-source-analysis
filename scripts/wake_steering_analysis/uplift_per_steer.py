@@ -148,7 +148,9 @@ def _check_fl_scada_power(scada_df: pd.DataFrame, out_dir: Path | None) -> None:
     ax.set_title(f"FL vs SCADA power\ncorr={corr:.5f}, FL/SCADA ratio={ratio:.4f}")
     ax.legend()
     if out_dir is not None:
-        fig.savefig(out_dir / "fl_vs_scada_power_check.png", dpi=150, bbox_inches="tight")
+        fl_vs_scada_path = out_dir / "fl_vs_scada_power_check.png"
+        logger.info("Writing: %s", fl_vs_scada_path)
+        fig.savefig(fl_vs_scada_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     if corr < 0.999 or not (0.98 <= ratio <= 1.02):
         msg = f"FL vs SCADA power mismatch: {corr=:.5f}, {ratio=:.4f}"
@@ -330,7 +332,9 @@ def _make_ws_bubble_plots(*, cfg: WindUpConfig, ws_combined_results_filt: pd.Dat
     plt.title(title)
     plt.ylim(0, 50)
     plt.xlim(0, 5)
-    plt.savefig(plot_cfg.plots_dir / f"{title}.png")
+    plot_path = plot_cfg.plots_dir / f"{title}.png"
+    logger.info("Writing: %s", plot_path)
+    plt.savefig(plot_path)
     plt.close()
 
 
@@ -358,7 +362,9 @@ def hot_dy_uplift_per_steer(rerun_windup: bool = True) -> tuple[float, float, fl
     plot_cfg = PlotConfig(show_plots=False, save_plots=save_plots, plots_dir=cfg.out_dir / "plots")
 
     if not rerun_windup:
-        ws_combined_results = pd.read_csv(cfg.out_dir / "uplift_per_steer_combined_results_with_yaw.csv")
+        ws_combined_path = cfg.out_dir / "uplift_per_steer_combined_results_with_yaw.csv"
+        logger.info("Reading: %s", ws_combined_path)
+        ws_combined_results = pd.read_csv(ws_combined_path)
         ws_uplift, ws_uplift_uncertainty, ws_steering_turbine_yaph_change = _post_process_ws_results(
             ws_combined_results
         )
@@ -366,10 +372,14 @@ def hot_dy_uplift_per_steer(rerun_windup: bool = True) -> tuple[float, float, fl
 
     scada_df = hot_dy_scada_df()
 
-    wakesteer_table = pd.read_csv(Path(__file__).parent / "controller_config" / "wake-steering-lookup.csv")
+    wakesteer_lookup_path = Path(__file__).parent / "controller_config" / "wake-steering-lookup.csv"
+    logger.info("Reading: %s", wakesteer_lookup_path)
+    wakesteer_table = pd.read_csv(wakesteer_lookup_path)
     wake_steers = _extract_hot_wake_steers_from_table(wakesteer_table)
     all_wakesteer_results = []
-    pd.DataFrame([asdict(x) for x in wake_steers]).to_csv(cfg.out_dir / "wake_steer_meta.csv", index=False)
+    wake_steer_meta_path = cfg.out_dir / "wake_steer_meta.csv"
+    logger.info("Writing: %s", wake_steer_meta_path)
+    pd.DataFrame([asdict(x) for x in wake_steers]).to_csv(wake_steer_meta_path, index=False)
     lidar_refs = ["ZX300_2428"]
     refs = [x.name for x in cfg.ref_wtgs] + cfg.non_wtg_ref_names
     for wakesteer, ref_name in itertools.product(wake_steers, refs):
@@ -447,12 +457,18 @@ def hot_dy_uplift_per_steer(rerun_windup: bool = True) -> tuple[float, float, fl
                 "last_wdir": wakesteer.last_wdir,
             }
         )
-        pd.DataFrame(all_wakesteer_results).to_csv(cfg.out_dir / "uplift_per_steer_results_interim.csv", index=False)
-    pd.DataFrame(all_wakesteer_results).to_csv(cfg.out_dir / "uplift_per_steer_results.csv", index=False)
+        interim_path = cfg.out_dir / "uplift_per_steer_results_interim.csv"
+        logger.info("Writing: %s", interim_path)
+        pd.DataFrame(all_wakesteer_results).to_csv(interim_path, index=False)
+    results_path = cfg.out_dir / "uplift_per_steer_results.csv"
+    logger.info("Writing: %s", results_path)
+    pd.DataFrame(all_wakesteer_results).to_csv(results_path, index=False)
     ws_combined_results = combine_wakesteer_results_with_yaw(
         pd.DataFrame(all_wakesteer_results), wind_up_out_dir=cfg.out_dir
     )
-    ws_combined_results.to_csv(cfg.out_dir / "uplift_per_steer_combined_results_with_yaw.csv")
+    ws_combined_out_path = cfg.out_dir / "uplift_per_steer_combined_results_with_yaw.csv"
+    logger.info("Writing: %s", ws_combined_out_path)
+    ws_combined_results.to_csv(ws_combined_out_path)
     ws_uplift, ws_uplift_uncertainty, ws_steering_turbine_yaph_change = _post_process_ws_results(ws_combined_results)
 
     min_ws_hours = 100

@@ -34,6 +34,7 @@ def load_zx_lidar_10min_data(  # noqa: C901
         expected_date = pd.to_datetime(str(fname.stem).split("@")[-1].split(".")[0], format="Y%Y_M%m_D%d", utc=True)
         if expected_date < (start_dt - pd.Timedelta(days=2)) or expected_date > (end_dt_excl + pd.Timedelta(days=1)):
             continue
+        logger.info("Reading: %s", fname)
         _df = pd.read_parquet(fname)
         _df = _df.drop(columns=[x for x in _df.columns if x.startswith("Checksum")])
         # find a good timestamp column
@@ -146,7 +147,7 @@ MIN_AIR_DENSITY_KGPM3 = 0.9
 MAX_AIR_DENSITY_KGPM3 = 1.4
 
 
-def load_zx_lidar_fl_data(  # noqa: C901, PLR0912, PLR0913
+def load_zx_lidar_fl_data(  # noqa: C901, PLR0912, PLR0913, PLR0915
     *,
     data_dir: Path,
     lidar_unit_id: str,
@@ -159,7 +160,9 @@ def load_zx_lidar_fl_data(  # noqa: C901, PLR0912, PLR0913
     cache_fname = f"{lidar_unit_id}_{start_dt.strftime('%Y%m%d%H%M%S')}_{end_dt_excl.strftime('%Y%m%d%H%M%S')}.parquet"
     cache_dir = get_cache_dir()
     if cache_dir is not None and (cache_dir / "load_zx_lidar_fl_data" / cache_fname).exists():
-        return pd.read_parquet(cache_dir / "load_zx_lidar_fl_data" / cache_fname)
+        cache_path = cache_dir / "load_zx_lidar_fl_data" / cache_fname
+        logger.info("Reading: %s", cache_path)
+        return pd.read_parquet(cache_path)
     ensure_extracted("lidar_data.zip", data_dir=get_data_dir())
     device_decr = "ZTM" if int(lidar_unit_id) >= ZX_ZTM_DEVICE_ID_MIN else ""
     file_paths = [
@@ -172,6 +175,7 @@ def load_zx_lidar_fl_data(  # noqa: C901, PLR0912, PLR0913
     dfs = []
     for file_path in file_paths:
         try:
+            logger.info("Reading: %s", file_path)
             _df = pd.read_parquet(file_path)
         except FileNotFoundError:
             msg = f"File {file_path} not found."
@@ -231,8 +235,11 @@ def load_zx_lidar_fl_data(  # noqa: C901, PLR0912, PLR0913
     ).sort_index()
     if cache_dir is not None:
         (cache_dir / "lidar_raw").mkdir(exist_ok=True, parents=True)
-        return_df.to_parquet(cache_dir / "lidar_raw" / cache_fname)
-        return pd.read_parquet(cache_dir / "lidar_raw" / cache_fname)
+        raw_cache_path = cache_dir / "lidar_raw" / cache_fname
+        logger.info("Writing: %s", raw_cache_path)
+        return_df.to_parquet(raw_cache_path)
+        logger.info("Reading: %s", raw_cache_path)
+        return pd.read_parquet(raw_cache_path)
     return return_df
 
 

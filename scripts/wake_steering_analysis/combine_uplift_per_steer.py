@@ -18,7 +18,9 @@ def _load_yaw_stats_for_steer(row, wind_up_out_dir: Path) -> dict | None:
     if not pre_path.exists() or not post_path.exists():
         logger.warning("pp_df files not found for %s -> %s (ref %s)", row.upwind_wtg, row.downwind_wtg, row.reference)
         return None
+    logger.info("Reading: %s", pre_path)
     pre_df = pd.read_parquet(pre_path)
+    logger.info("Reading: %s", post_path)
     post_df = pd.read_parquet(post_path)
     return _calc_yaw_stats(pre_df, post_df)
 
@@ -166,6 +168,7 @@ def combine_wakesteer_results_with_yaw(
         yaw_stats_rows[row.Index] = stats if stats is not None else {}
     yaw_stats_df = pd.DataFrame.from_dict(yaw_stats_rows, orient="index")
     all_wakesteer_results = all_wakesteer_results.join(yaw_stats_df)
-    all_wakesteer_results.to_csv(wind_up_out_dir / "uplift_per_steer_results_with_yaw.csv", index=False)
-    logger.info("saved uplift_per_steer_results_with_yaw.csv")
+    results_with_yaw_path = wind_up_out_dir / "uplift_per_steer_results_with_yaw.csv"
+    logger.info("Writing: %s", results_with_yaw_path)
+    all_wakesteer_results.to_csv(results_with_yaw_path, index=False)
     return combine_wakesteer_results(all_wakesteer_results, exclude_refs=exclude_refs)

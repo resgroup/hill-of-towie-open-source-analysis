@@ -25,7 +25,9 @@ def _make_cc_bubble_plots(*, cfg: WindUpConfig, combined_cc_results_df: pd.DataF
     cfg = add_smart_lat_long_to_cfg(md=unpack_local_meta_data(), cfg=cfg)
     plot_cfg.plots_dir.mkdir(parents=True, exist_ok=True)
 
-    hot_elevations = pd.read_csv(Path(__file__).parent / "Hill of Towie_elevations.csv", index_col=0)
+    elevations_path = Path(__file__).parent / "Hill of Towie_elevations.csv"
+    logger.info("Reading: %s", elevations_path)
+    hot_elevations = pd.read_csv(elevations_path, index_col=0)
     title = f"{cfg.asset.name} turbine elevation"
     bubble_plot(
         cfg=cfg,
@@ -97,8 +99,12 @@ def hot_dy_uplift_no_steering(rerun_windup: bool = True) -> tuple[float, float, 
     plot_cfg = PlotConfig(show_plots=False, save_plots=save_plots, plots_dir=cfg.out_dir / "plots")
 
     if not rerun_windup:
-        wf_cc_results = pd.read_csv(cfg.out_dir / "wf_cc_results.csv", index_col=0)
-        combined_cc_results_df = pd.read_csv(cfg.out_dir / f"{cfg.assessment_name}_combined_cc_results.csv")
+        wf_cc_path = cfg.out_dir / "wf_cc_results.csv"
+        logger.info("Reading: %s", wf_cc_path)
+        wf_cc_results = pd.read_csv(wf_cc_path, index_col=0)
+        combined_cc_path = cfg.out_dir / f"{cfg.assessment_name}_combined_cc_results.csv"
+        logger.info("Reading: %s", combined_cc_path)
+        combined_cc_results_df = pd.read_csv(combined_cc_path)
         cc_uplift, cc_uplift_uncertainty, cc_yaph_change = _post_process_cc_results(
             wf_cc_results=wf_cc_results, combined_cc_results_df=combined_cc_results_df
         )
@@ -123,7 +129,11 @@ def hot_dy_uplift_no_steering(rerun_windup: bool = True) -> tuple[float, float, 
             pp_df_dir / f"{upwind_wtg_name}_{ref_name}_post_df.parquet",
             pp_df_dir / f"{downwind_wtg_name}_{ref_name}_post_df.parquet",
         ]
-        dfs = [pd.read_parquet(p) for p in paths if p.exists()]
+        dfs = []
+        for p in paths:
+            if p.exists():
+                logger.info("Reading: %s", p)
+                dfs.append(pd.read_parquet(p))
         if len(dfs) == 0:
             continue
         combined_index = reduce(lambda a, b: a.union(b), (df.index for df in dfs))
@@ -153,11 +163,13 @@ def hot_dy_uplift_no_steering(rerun_windup: bool = True) -> tuple[float, float, 
     combined_cc_results_df = combine_cc_results_with_yaw(
         results_per_test_ref_df, wind_up_out_dir=cfg.out_dir, plot_config=plot_cfg
     )
-    combined_cc_results_df.to_csv(
-        cfg.out_dir / f"{cfg.assessment_name}_combined_cc_results.csv",
-    )
+    combined_cc_out_path = cfg.out_dir / f"{cfg.assessment_name}_combined_cc_results.csv"
+    logger.info("Writing: %s", combined_cc_out_path)
+    combined_cc_results_df.to_csv(combined_cc_out_path)
     wf_cc_results = calculate_total_uplift_of_test_and_ref_turbines(combined_cc_results_df, plot_cfg=plot_cfg)
-    wf_cc_results.to_csv(cfg.out_dir / "wf_cc_results.csv")
+    wf_cc_out_path = cfg.out_dir / "wf_cc_results.csv"
+    logger.info("Writing: %s", wf_cc_out_path)
+    wf_cc_results.to_csv(wf_cc_out_path)
 
     plot_cfg = PlotConfig(show_plots=False, save_plots=save_plots, plots_dir=cfg.out_dir / "plots")
     _make_cc_bubble_plots(cfg=cfg, combined_cc_results_df=combined_cc_results_df, plot_cfg=plot_cfg)

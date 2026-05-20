@@ -35,7 +35,9 @@ def unpack_local_scada_data_v1(
         end_dt_excl=DATASET_V1_END_EXCL,
         rename_cols_using_aliases=True,
     )
-    shutdown_duration_df = pd.read_csv(data_dir / "Hill_of_Towie_ShutdownDuration.zip", index_col=0, parse_dates=[0])
+    shutdown_path = data_dir / "Hill_of_Towie_ShutdownDuration.zip"
+    logger.info("Reading: %s", shutdown_path)
+    shutdown_duration_df = pd.read_csv(shutdown_path, index_col=0, parse_dates=[0])
     return scada_df_to_wind_up_df(scada_df, shutdown_duration_df=shutdown_duration_df)
 
 
@@ -65,8 +67,10 @@ def unpack_local_meta_data(data_dir: Path = DATA_DIR, scada_index_name: str = "T
         if scada_index_name == "dtTimeStamp"
         else "Unknown"
     )
+    metadata_path = data_dir / "Hill_of_Towie_turbine_metadata.csv"
+    logger.info("Reading: %s", metadata_path)
     return (
-        pd.read_csv(data_dir / "Hill_of_Towie_turbine_metadata.csv")
+        pd.read_csv(metadata_path)
         .loc[:, ["Turbine Name", "Latitude", "Longitude"]]
         .rename(columns={"Turbine Name": "Name"})
         .assign(TimeZone="UTC", TimeSpanMinutes=10, TimeFormat=timestamp_format)

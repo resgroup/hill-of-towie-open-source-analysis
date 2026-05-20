@@ -113,8 +113,8 @@ def plot_wtg_10min_and_fastlog(
     fig.suptitle(f"{wtg}\n{date_range_str}")
 
     plot_path = out_dir / f"10min_vs_fastlog_{wtg}.png"
+    logger.info("Writing: %s", plot_path)
     fig.savefig(plot_path, dpi=150, bbox_inches="tight")
-    logger.info("Saved plot to %s", plot_path)
     plt.close(fig)
 
 
@@ -168,8 +168,8 @@ def plot_yaw_ope_counts_check(
         fig.suptitle(f"{wtg} Yaw Ope Counts Check\n{hour_str} UTC")
 
         plot_path = subdir / f"yaw_ope_counts_{wtg}_{hour_str}UTC.png"
+        logger.info("Writing: %s", plot_path)
         fig.savefig(plot_path, dpi=150, bbox_inches="tight")
-        logger.info("Saved plot to %s", plot_path)
         plt.close(fig)
 
 
@@ -229,8 +229,8 @@ def _plot_dynamic_yaw_control_tags(
     fig.suptitle(f"{wtg} Dynamic Yaw Control Tags\n{date_range_str}")
 
     plot_path = out_dir / f"dynamic_yaw_control_tags_{wtg}.png"
+    logger.info("Writing: %s", plot_path)
     fig.savefig(plot_path, dpi=150, bbox_inches="tight")
-    logger.info("Saved plot to %s", plot_path)
     plt.close(fig)
 
 
@@ -300,8 +300,8 @@ def plot_lidar_10min_and_fastlog(
         fig.suptitle(f"{lidar_name}\n{date_range_str}")
 
         plot_path = out_dir / f"10min_vs_fastlog_{lidar_name}.png"
+        logger.info("Writing: %s", plot_path)
         fig.savefig(plot_path, dpi=150, bbox_inches="tight")
-        logger.info("Saved plot to %s", plot_path)
         plt.close(fig)
 
 
@@ -396,8 +396,8 @@ def plot_wind_speed_and_direction_comparison(
     fig.suptitle(f"Wind Speed and Direction Comparison: {wtgs_str} vs LiDARs\n{date_range_str}")
 
     plot_path = out_dir / "wind_speed_and_direction_comparison.png"
+    logger.info("Writing: %s", plot_path)
     fig.savefig(plot_path, dpi=150, bbox_inches="tight")
-    logger.info("Saved plot to %s", plot_path)
     plt.close(fig)
 
 

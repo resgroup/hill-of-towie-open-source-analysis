@@ -44,7 +44,9 @@ def _finalize_and_save(axes, *, plot_start, plot_end, title, plot_dir):
     plt.suptitle(title)
     plt.tight_layout()
     plot_dir.mkdir(parents=True, exist_ok=True)
-    plt.savefig(plot_dir / f"{title.replace(':', '')}.png", bbox_inches="tight")
+    plot_path = plot_dir / f"{title.replace(':', '')}.png"
+    logger.info("Writing: %s", plot_path)
+    plt.savefig(plot_path, bbox_inches="tight")
     plt.close()
     logger.info("finished %s %s", plot_start, title)
 
@@ -224,7 +226,9 @@ if __name__ == "__main__":
     logger.info(msg)
 
     campaign_config_csv_dir = Path(__file__).parent / "controller_config"
-    campaign_default_steering_table = pd.read_csv(campaign_config_csv_dir / "wake-steering-lookup.csv").rename(
+    steering_lookup_path = campaign_config_csv_dir / "wake-steering-lookup.csv"
+    logger.info("Reading: %s", steering_lookup_path)
+    campaign_default_steering_table = pd.read_csv(steering_lookup_path).rename(
         columns={
             "device_name": "TurbineName",
             "wind_direction_degrees": "WindDirection_deg",

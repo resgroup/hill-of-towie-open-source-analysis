@@ -50,8 +50,8 @@ def plot_wake_dir_margin(
     fig.suptitle(f"Wake Steering vs Wind Direction\n{upwind} (upwind) vs {ref} (ref) yaw direction")
 
     plot_path = out_dir / f"wake_dir_margin_{upwind}_vs_{ref}_{first_wdir}_{last_wdir}.png"
+    logger.info("Writing: %s", plot_path)
     fig.savefig(plot_path, dpi=150, bbox_inches="tight")
-    logger.info("Saved plot to %s", plot_path)
     plt.close(fig)
 
 
@@ -67,7 +67,9 @@ if __name__ == "__main__":
         "T13": 1.2261276245117188,
     }
 
-    scada_df = pd.read_parquet(get_cache_dir() / "unpack_scada_data" / "hot_dy_scada_df.parquet")
+    scada_cache_path = get_cache_dir() / "unpack_scada_data" / "hot_dy_scada_df.parquet"
+    logger.info("Reading: %s", scada_cache_path)
+    scada_df = pd.read_parquet(scada_cache_path)
     scada_df = scada_df[scada_df.index > pd.Timestamp("2026-01-07 13:00:00", tz="UTC")]
     for upwind, ref, first_wdir, last_wdir in [
         ("T11", "ZX300_2428", 228, 255),

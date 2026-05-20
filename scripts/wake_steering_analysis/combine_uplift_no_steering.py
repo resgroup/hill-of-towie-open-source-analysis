@@ -20,7 +20,9 @@ def _load_yaw_stats(row, wind_up_out_dir: Path) -> dict | None:
     if not pre_path.exists() or not post_path.exists():
         logger.warning("pp_df files not found for %s (ref %s)", row.test_wtg, row.ref)
         return None
+    logger.info("Reading: %s", pre_path)
     pre_df = pd.read_parquet(pre_path)
+    logger.info("Reading: %s", post_path)
     post_df = pd.read_parquet(post_path)
     return _calc_yaw_stats(pre_df, post_df)
 
@@ -198,10 +200,9 @@ def combine_cc_results_with_yaw(
         yaw_stats_rows[row.Index] = stats if stats is not None else {}
     yaw_stats_df = pd.DataFrame.from_dict(yaw_stats_rows, orient="index")
     per_turbine_results = per_turbine_results.join(yaw_stats_df)
-    per_turbine_results.to_csv(
-        wind_up_out_dir / "HOT_dynamic_yaw_CC_only_results_per_test_ref_with_yaw.csv", index=False
-    )
-    logger.info("saved HOT_dynamic_yaw_CC_only_results_per_test_ref_with_yaw.csv")
+    per_turbine_with_yaw_path = wind_up_out_dir / "HOT_dynamic_yaw_CC_only_results_per_test_ref_with_yaw.csv"
+    logger.info("Writing: %s", per_turbine_with_yaw_path)
+    per_turbine_results.to_csv(per_turbine_with_yaw_path, index=False)
     tdf = combine_cc_only_results(per_turbine_results, plot_config=plot_config, exclude_refs=exclude_refs)
     tdf["yaph_change"] = (tdf["yaph_post"] - tdf["yaph_pre"]) / tdf["yaph_pre"]
     return tdf

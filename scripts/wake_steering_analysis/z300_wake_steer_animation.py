@@ -618,6 +618,7 @@ def _run_animation(
     wd_col_list = [wd_cols[h] for h in wd_heights]
     vert_col_list = [vert_ws_cols[h] for h in vert_heights]
 
+    logger.info("Writing: %s", output_path)
     with writer.saving(fig, str(output_path), dpi=100):
         for i, ts in enumerate(tqdm(timestamps, desc="frames")):
             title_artist.set_text(ts.strftime("%H:%M:%S UTC"))
@@ -709,6 +710,7 @@ def _run_animation(
             # Dump still PNGs every 5 minutes of data time.
             if ts.minute % 5 == 0 and ts.second == 0:
                 png_path = frames_dir / f"frame_{ts:%Y%m%d_%H%M}.png"
+                logger.debug("Writing: %s", png_path)
                 fig.savefig(png_path, dpi=100)
                 pngs_saved += 1
 

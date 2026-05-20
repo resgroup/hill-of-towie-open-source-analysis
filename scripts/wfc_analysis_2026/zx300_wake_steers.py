@@ -36,7 +36,7 @@ def _shade_toggle(ax, *, steer_df, toggle_col):
 
 def _finalize_and_save(axes, *, plot_start, plot_end, title, plot_dir):
     for ax in axes:
-        ax.grid(True)
+        ax.grid(visible=True)
         ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left", frameon=True)
     plt.xlim(plot_start, plot_end)
     plt.xticks(rotation=90)
@@ -129,7 +129,10 @@ def plot_wake_steering_period_with_zx300(
     for _ax in (ax, ax_twin):
         _ax.yaxis.set_major_locator(ticker.LinearLocator(6))
 
-    title = f"{steering_name} steering for {dependent_turbine_name} {plot_start.strftime('%Y-%m-%d %H:%M')} to {plot_end.strftime('%H:%M')}"
+    title = (
+        f"{steering_name} steering for {dependent_turbine_name} "
+        f"{plot_start.strftime('%Y-%m-%d %H:%M')} to {plot_end.strftime('%H:%M')}"
+    )
     _finalize_and_save([*axes, ax_twin], plot_start=plot_start, plot_end=plot_end, title=title, plot_dir=plot_dir)
 
     # plot diffs

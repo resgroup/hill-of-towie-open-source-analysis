@@ -36,7 +36,7 @@ def _shade_toggle(ax, *, steer_df, toggle_col):
 
 def _finalize_and_save(axes, *, plot_start, plot_end, title, plot_dir):
     for ax in axes:
-        ax.grid(True)
+        ax.grid(visible=True)
         ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left", frameon=True)
     plt.xlim(plot_start, plot_end)
     plt.xticks(rotation=90)

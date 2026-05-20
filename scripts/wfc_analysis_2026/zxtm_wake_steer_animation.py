@@ -8,7 +8,7 @@ The animations should show a birds eye view of the three turbines and data from 
 
 The ZXTM scans in a cone in front of the turbine with a 15 degree half angle (30 degree full angle).
 
-The turbine cartesian coordinates are available in scripts/wake_steering_analysis/floris_config/hot_emgauss.yaml (coordinate arrays are for the 21 turbines T1 to T21).
+The turbine cartesian coordinates are available in scripts/wfc_analysis_2026/floris_config/hot_emgauss.yaml (coordinate arrays are for the 21 turbines T1 to T21).
 
 The turbines should be visualized with a small circle (3m diameter) exactly at their coordinate which never moves (represents the tower). A rectangle represents the nacelle; the rectagle is 10m long and 4m wide and is attached to the tower slightly off centre; if the turbine is pointing west then there is 6m of rectangle to the left of the centre of the tower and 4m to the right. The rotos is a line 82m long attached to the long end of the nacelle; if the turbine is facing west the rotor line is vertical and centre is 6m left of the tower centre.
 

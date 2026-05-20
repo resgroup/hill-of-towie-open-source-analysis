@@ -16,7 +16,7 @@ from hot_open.unpack import unpack_local_meta_data
 from scripts.logger import setup_logger
 from scripts.wfc_analysis_2026.combine_uplift_no_steering import combine_cc_results_with_yaw
 from scripts.wfc_analysis_2026.hot_wake_steering_helpers import CONFIG_DIR
-from scripts.wfc_analysis_2026.uplift_per_steer import _hot_dy_lidar_datasets, hot_dy_scada_df, hot_dy_toggle_df
+from scripts.wfc_analysis_2026.uplift_ws import _hot_dy_lidar_datasets, hot_dy_scada_df, hot_dy_toggle_df
 
 logger = logging.getLogger(__name__)
 

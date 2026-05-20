@@ -127,6 +127,10 @@ the ten unchanged reference turbines, which is near 0% uplift as expected:
 
 ![combined uplift and 90% CI](https://github.com/user-attachments/assets/00b17f01-54ea-4532-ab1c-16921df0b70e)
 
+## Code for WeDoWind challenge
+
+`scripts/wedowind_challenge_2025` contains code used for the [WeDoWind 2025 power prediction kaggle competition](https://www.kaggle.com/competitions/hill-of-towie-wind-turbine-power-prediction), which used the Hill of Towie open dataset.
+
 ## Python environment
 
 The environment can be created and managed using [uv](https://docs.astral.sh/uv/). To create the environment:

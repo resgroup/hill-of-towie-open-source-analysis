@@ -26,7 +26,7 @@ def _load_yaw_stats_for_steer(row, wind_up_out_dir: Path) -> dict | None:
 
 
 def _calc_wakesteer_tdf(
-    trdf: pd.DataFrame, ref_list: list[str], weight_col: str = "unc_weight", sigma_ref: float = 0
+    trdf: pd.DataFrame, weight_col: str = "unc_weight", sigma_ref: float = 0
 ) -> pd.DataFrame:
     tdf = trdf.groupby(["upwind_wtg", "downwind_wtg"]).agg(
         p50_net_uplift=pd.NamedAgg(
@@ -153,8 +153,7 @@ def combine_wakesteer_results(all_wakesteer_results, exclude_refs: list[str] | N
     trdf["unc_one_sigma_frc"] = (trdf["net_p5_uplift"] - trdf["net_p95_uplift"]) / 2 / norm.ppf(0.95)
     weight_col = "unc_weight"
     trdf[weight_col] = 1 / (trdf["unc_one_sigma_frc"] ** 2)
-    ref_list = sorted(trdf["reference"].unique())
-    tdf = _calc_wakesteer_tdf(trdf, ref_list, weight_col)
+    tdf = _calc_wakesteer_tdf(trdf, weight_col)
     tdf["yaph_change"] = (tdf["yaph_post"] - tdf["yaph_pre"]) / tdf["yaph_pre"]
     return tdf
 

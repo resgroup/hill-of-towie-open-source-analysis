@@ -125,7 +125,10 @@ def plot_wake_steering_period(
     _shade_toggle(ax, steer_df=plot_steer_df, toggle_col=toggle_col)
     ax.set_ylabel("T07 wind speed [m/s]")
 
-    title = f"{steering_name} steering for {dependent_turbine_name} {plot_start.strftime('%Y-%m-%d %H:%M')} to {plot_end.strftime('%H:%M')}"
+    title = (
+        f"{steering_name} steering for {dependent_turbine_name} "
+        f"{plot_start.strftime('%Y-%m-%d %H:%M')} to {plot_end.strftime('%H:%M')}"
+    )
     _finalize_and_save(axes, plot_start=plot_start, plot_end=plot_end, title=title, plot_dir=plot_dir)
 
     # plot diffs
@@ -212,7 +215,10 @@ def plot_wake_steering_period(
     _shade_toggle(ax, steer_df=plot_steer_df, toggle_col=toggle_col)
     ax.set_ylabel("wind speed diff [m/s]")
 
-    title = f"{steering_name} steering for {dependent_turbine_name} {plot_start.strftime('%Y-%m-%d %H:%M')} to {plot_end.strftime('%H:%M')} diffs"
+    title = (
+        f"{steering_name} steering for {dependent_turbine_name} "
+        f"{plot_start.strftime('%Y-%m-%d %H:%M')} to {plot_end.strftime('%H:%M')} diffs"
+    )
     _finalize_and_save(axes, plot_start=plot_start, plot_end=plot_end, title=title, plot_dir=plot_dir)
 
 

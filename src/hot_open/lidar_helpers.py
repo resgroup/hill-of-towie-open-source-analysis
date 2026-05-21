@@ -8,6 +8,7 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 from pandas.api.types import is_datetime64_any_dtype
+from tqdm import tqdm
 from wind_up.reanalysis_data import MastOrLiDARDataset
 
 from hot_open.fastlog_helpers import _generate_dates_in_range
@@ -27,14 +28,18 @@ def load_zx_lidar_10min_data(  # noqa: C901
 ) -> pd.DataFrame:
     """Load 10-min ZX300/ZXTM LiDAR parquet files for a single unit and date range."""
     ensure_extracted("lidar_data.zip", data_dir=get_data_dir())
-    dfs = []
-    for fname in (data_dir / "timeseries" / lidar_unit_id).glob("*.parquet"):
+    lidar_dir = data_dir / "timeseries" / lidar_unit_id
+    files_to_read: list[tuple[Path, pd.Timestamp]] = []
+    for fname in lidar_dir.glob("*.parquet"):
         if not fname.stem.startswith("Wind10"):
             continue
         expected_date = pd.to_datetime(str(fname.stem).split("@")[-1].split(".")[0], format="Y%Y_M%m_D%d", utc=True)
         if expected_date < (start_dt - pd.Timedelta(days=2)) or expected_date > (end_dt_excl + pd.Timedelta(days=1)):
             continue
-        logger.info("Reading: %s", fname)
+        files_to_read.append((fname, expected_date))
+    logger.info("Reading %d parquet files from %s", len(files_to_read), lidar_dir)
+    dfs = []
+    for fname, expected_date in tqdm(files_to_read, desc=f"Reading {lidar_unit_id} 10-min parquet files"):
         _df = pd.read_parquet(fname)
         _df = _df.drop(columns=[x for x in _df.columns if x.startswith("Checksum")])
         # find a good timestamp column
@@ -176,17 +181,15 @@ def load_zx_lidar_fl_data(  # noqa: C901, PLR0912, PLR0913, PLR0915
         return pd.read_parquet(cache_path)
     ensure_extracted("lidar_data.zip", data_dir=get_data_dir())
     device_decr = "ZTM" if int(lidar_unit_id) >= ZX_ZTM_DEVICE_ID_MIN else ""
+    lidar_dir = data_dir / "timeseries" / str(lidar_unit_id)
     file_paths = [
-        data_dir
-        / "timeseries"
-        / str(lidar_unit_id)
-        / f"Wind_{device_decr}{lidar_unit_id}@{d.strftime('Y%Y_M%m_D%d')}.parquet"
+        lidar_dir / f"Wind_{device_decr}{lidar_unit_id}@{d.strftime('Y%Y_M%m_D%d')}.parquet"
         for d in _generate_dates_in_range(start_dt=start_dt, end_dt_excl=end_dt_excl)
     ]
+    logger.info("Reading %d fastlog parquet files from %s", len(file_paths), lidar_dir)
     dfs = []
-    for file_path in file_paths:
+    for file_path in tqdm(file_paths, desc=f"Reading {lidar_unit_id} fastlog parquet files"):
         try:
-            logger.info("Reading: %s", file_path)
             _df = pd.read_parquet(file_path)
         except FileNotFoundError:
             msg = f"File {file_path} not found."

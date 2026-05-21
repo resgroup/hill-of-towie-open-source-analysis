@@ -160,13 +160,16 @@ def _download_one_file(
                 existing_size = 0
             file_mode = "ab" if resume else "wb"
             remaining_bytes = max(0, _file_size - existing_size)
-            with Path.open(dst_fpath, file_mode) as f, tqdm(
-                total=remaining_bytes,
-                unit="B",
-                unit_scale=True,
-                unit_divisor=1024,
-                desc=f"Downloading {_file_name} ({_file_size / BYTES_IN_1MB:.2f} MB)",
-            ) as pbar:
+            with (
+                Path.open(dst_fpath, file_mode) as f,
+                tqdm(
+                    total=remaining_bytes,
+                    unit="B",
+                    unit_scale=True,
+                    unit_divisor=1024,
+                    desc=f"Downloading {_file_name} ({_file_size / BYTES_IN_1MB:.2f} MB)",
+                ) as pbar,
+            ):
                 for chunk in result.iter_content(chunk_size=CHUNK_SIZE):
                     f.write(chunk)
                     pbar.update(len(chunk))

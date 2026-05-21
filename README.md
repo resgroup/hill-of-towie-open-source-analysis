@@ -15,7 +15,11 @@ The repository currently covers three upgrade validation campaigns:
 
 Analysis scripts in this repo download the input data from Zenodo automatically on first
 use — no manual data staging is required. See `scripts/wfc_analysis_2026/inspect_data.py`
-for a short example of loading the open dataset into pandas dataframes.
+for a short example of loading the open dataset into pandas dataframes. An example plot
+this script makes is shown below; this plot compares standard SCADA 10-min data with the
+controller fastlog data available thanks to [Anemo](https://www.res-group.com/digital-solutions/anemo/).
+
+<img width="2018" height="1471" alt="10min_vs_fastlog_T03" src="https://github.com/user-attachments/assets/b77b9aeb-70e8-4120-bed7-069e9b938f1f" />
 
 ## Dynamic Yaw analysis
 

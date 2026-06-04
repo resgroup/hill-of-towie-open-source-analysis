@@ -98,6 +98,9 @@ long-term steering schedule will spend in each mode. The combination gives:
 - `z300_wake_steer_animation.py`, `zxtm_wake_steer_animation.py` — matplotlib
   animations of LiDAR and turbine data during steering events.
 
+The output of `zxtm_wake_steer_animation.py` is shown below (note wind is coming from SSW, bottom left of the middle plot):
+<img width="1400" height="1200" alt="zxtm_wake_steer_animation" src="https://github.com/user-attachments/assets/b3b5fdb2-b258-4f86-9ae9-c57d6c14d44b" />
+
 ## Earlier upgrade analysis (published in 2025)
 
 The folder `scripts/uplift_analysis_2025` uses [wind-up](https://github.com/resgroup/wind-up) to run two analyses of energy uplift

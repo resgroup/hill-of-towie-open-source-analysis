@@ -9,7 +9,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "requests>=2.32.3",
-    "tqdm>=4.67.0",
+    "tqdm>=4.68.1",
     "python-dotenv>=1.1.0",
     "res-wind-up>=0.4.10",
     "pandas>=2.3.3",
@@ -25,25 +25,25 @@ dependencies = [
 dev = [
     "pytest>=8.2.2",
     "poethepoet>=0.27.0",
-    "ruff>=0.5.0",
+    "ruff>=0.15.16",
     "mypy>=1.10.1",
-    "coverage>=7.5.4",
+    "coverage>=7.14.1",
     "deptry>=0.20.0",
     "pandas-stubs>=2.2.2.240603",
     "types-pyyaml>=6.0.12.20241230",
     "scipy-stubs>=1.15.2.1",
     "types-requests>=2.32.0.20250328",
-    "types-tqdm>=4.67.0.20250404",
-    "responses>=0.25.7",
-    "polars>=1.27.1",
+    "types-tqdm>=4.68.0.20260608",
+    "responses>=0.26.1",
+    "polars>=1.41.2",
 ]
 wedowind = [
     "autogluon>=1.4.0",
     "ephem>=4.2",
-    "jupyterlab>=4.4.1",
+    "jupyterlab>=4.5.8",
     "jupytext>=1.17.0",
     "kagglehub>=0.3.13",
-    "plotly>=6.0.1",
+    "plotly>=6.8.0",
     "xarray>=2025.4.0",
 ]
 

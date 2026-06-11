@@ -9,7 +9,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "requests>=2.32.3",
-    "tqdm>=4.68.1",
+    "tqdm>=4.68.2",
     "python-dotenv>=1.1.0",
     "res-wind-up>=0.4.10",
     "pandas>=2.3.3",
@@ -25,7 +25,7 @@ dependencies = [
 dev = [
     "pytest>=8.2.2",
     "poethepoet>=0.27.0",
-    "ruff>=0.15.16",
+    "ruff>=0.15.17",
     "mypy>=1.10.1",
     "coverage>=7.14.1",
     "deptry>=0.20.0",
@@ -42,7 +42,7 @@ wedowind = [
     "ephem>=4.2",
     "jupyterlab>=4.5.8",
     "jupytext>=1.17.0",
-    "kagglehub>=0.3.13",
+    "kagglehub>=1.0.2",
     "plotly>=6.8.0",
     "xarray>=2025.4.0",
 ]

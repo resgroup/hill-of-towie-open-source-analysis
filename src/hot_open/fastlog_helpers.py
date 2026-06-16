@@ -279,7 +279,7 @@ def _load_siemens_fastlog_files(  # noqa: C901, PLR0912
     logger.info("Reading fastlog files for %s %s from: %s", wtgid, day_str, fl_data_dir)
     tags_df = pd.DataFrame()
     for tag in tags_to_load:
-        prefix = "" if tag.startswith("computed_") else "Wtc_TDI_"
+        prefix = "" if tag.startswith(("computed_", "alarms_")) else "Wtc_TDI_"
         str_for_file_search = f"FL{wtgid}_{prefix}{tag}_{day_str.replace('-', '_')}"
         found_file = False
         for file in fl_data_dir.glob("*.prq"):

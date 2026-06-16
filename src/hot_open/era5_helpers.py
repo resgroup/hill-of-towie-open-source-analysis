@@ -19,7 +19,7 @@ HOT_LAT: float = 57.50
 HOT_LON: float = -3.25
 HOT_ERA5_START: str = "2000-01-01"
 HOT_ERA5_END: str = "2026-05-01"
-HOT_ERA5_FIELDS: list[str] = [
+ERA5_DEFAULT_FIELDS: list[str] = [
     "temperature_2m",
     "relative_humidity_2m",
     "dew_point_2m",
@@ -40,6 +40,7 @@ HOT_ERA5_FIELDS: list[str] = [
     "wind_gusts_10m",
     "weather_code",
 ]
+HOT_ERA5_FIELDS: list[str] = ERA5_DEFAULT_FIELDS
 
 _era5_cache_dir = get_cache_dir() / "era5_data"
 _era5_cache_dir.mkdir(parents=True, exist_ok=True)
@@ -71,18 +72,22 @@ def _era5_cache_path(lat: float, lon: float, start_date: str, end_date: str, fie
     return _era5_cache_dir / f"ERA5_{lat:.2f}_{lon:.2f}_{start_date}_{end_date}_{args_hash}.parquet"
 
 
-def get_hot_era5_hourly_df(
-    lat: float = HOT_LAT,
-    lon: float = HOT_LON,
-    start_date: str = HOT_ERA5_START,
-    end_date: str = HOT_ERA5_END,
-    fields: list[str] = HOT_ERA5_FIELDS,
+def get_era5_hourly_df(
+    *,
+    lat: float,
+    lon: float,
+    start_date: str = "2000-01-01",
+    end_date: str | None = None,
+    fields: list[str] = ERA5_DEFAULT_FIELDS,
 ) -> pd.DataFrame:
-    """Fetch hourly ERA5 data from Open-Meteo and return as a DataFrame.
+    """Fetch hourly ERA5 data from Open-Meteo for any location and return as a DataFrame.
 
-    Each unique combination of arguments is cached to its own parquet file
-    keyed by a hash of the arguments. Delete the cache file to force a refetch.
+    ``end_date`` defaults to today (UTC) when ``None``. Each unique combination of arguments
+    is cached to its own parquet file keyed by a hash of the arguments. Delete the cache file
+    to force a refetch.
     """
+    if end_date is None:
+        end_date = pd.Timestamp.now(tz="UTC").normalize().strftime("%Y-%m-%d")
     cache_path = _era5_cache_path(lat, lon, start_date, end_date, fields)
     if cache_path.exists():
         logger.info("Reading: %s", cache_path)
@@ -114,6 +119,15 @@ def get_hot_era5_hourly_df(
     logger.info("Writing: %s", cache_path)
     df.to_parquet(cache_path)
     return df
+
+
+def get_hot_era5_hourly_df(
+    start_date: str = HOT_ERA5_START,
+    end_date: str = HOT_ERA5_END,
+    fields: list[str] = HOT_ERA5_FIELDS,
+) -> pd.DataFrame:
+    """Fetch hourly ERA5 data for the HOT site (convenience wrapper over :func:`get_era5_hourly_df`)."""
+    return get_era5_hourly_df(lat=HOT_LAT, lon=HOT_LON, start_date=start_date, end_date=end_date, fields=fields)
 
 
 def get_hot_reanalysis_datasets() -> list[ReanalysisDataset]:

@@ -105,8 +105,14 @@ def get_fl_resampled(  # noqa: PLR0913
     min_data_count: float | None = None,
     cache_dir: Path | None = None,
     filestore_dir: Path | None = None,
+    siemens_parks: set[str] | None = None,
 ) -> pd.DataFrame:
-    """Return resampled fastlog data for multiple devices as a multi-level (device_id, tag) DataFrame."""
+    """Return resampled fastlog data for multiple devices as a multi-level (device_id, tag) DataFrame.
+
+    ``siemens_parks`` overrides the set of park ids loaded with the Siemens fastlog reader;
+    when ``None`` the module default ``SIEMENS_PARKS`` is used. Pass it to load parks that are
+    not part of the public dataset.
+    """
     filestore_dir = get_filestore_dir() if filestore_dir is None else filestore_dir
     device_id_dfs: dict[str, pd.DataFrame] = {}
     for device_id in device_ids:
@@ -122,6 +128,7 @@ def get_fl_resampled(  # noqa: PLR0913
             minmax_tags=minmax_tags,
             min_data_count=min_data_count,
             cache_dir=cache_dir,
+            siemens_parks=siemens_parks,
         )
         if not device_id_df.index.is_monotonic_increasing:
             msg = f"Resampled data index for {device_id} is not monotonic increasing."
@@ -154,6 +161,7 @@ def _get_fl_resampled_one_device_one_day(  # noqa: PLR0913
     minmax_tags: Sequence[str] | None = None,
     min_data_count: float | None = None,
     cache_dir: Path | None = None,
+    siemens_parks: set[str] | None = None,
 ) -> pd.DataFrame:
     if (end_dt_excl - start_dt) > dt.timedelta(days=1):
         msg = f"Date range must be one day or less. Got {start_dt=} {end_dt_excl=}"
@@ -164,7 +172,11 @@ def _get_fl_resampled_one_device_one_day(  # noqa: PLR0913
             msg = "Could not get current frame"
             raise RuntimeError(msg)
         args_info = inspect.getargvalues(frame)
-        params = {key: args_info.locals[key] for key in args_info.args if key not in {"cache_dir", "filestore_dir"}}
+        params = {
+            key: args_info.locals[key]
+            for key in args_info.args
+            if key not in {"cache_dir", "filestore_dir", "siemens_parks"}
+        }
         cache_key = create_consistent_hash(**params)
         cache_path = (
             cache_dir / "fl_resampled" / park_id / device_id / f"{start_dt.strftime('%Y%m%d')}_{cache_key}.parquet"
@@ -183,6 +195,7 @@ def _get_fl_resampled_one_device_one_day(  # noqa: PLR0913
         busy_tags=busy_tags,
         min_data_count=min_data_count,
         minmax_tags=minmax_tags,
+        siemens_parks=siemens_parks,
     )
     if cache_dir is not None and not result_df.empty:
         cache_path.parent.mkdir(exist_ok=True, parents=True)
@@ -224,6 +237,7 @@ def get_fl_resampled_one_device(  # noqa: PLR0913
     minmax_tags: Sequence[str] | None = None,
     min_data_count: float | None = None,
     cache_dir: Path | None = None,
+    siemens_parks: set[str] | None = None,
 ) -> pd.DataFrame:
     """Return resampled fastlog data for a single device over the given date range, chunked by day."""
     # chunk by day
@@ -243,6 +257,7 @@ def get_fl_resampled_one_device(  # noqa: PLR0913
             minmax_tags=minmax_tags,
             min_data_count=min_data_count,
             cache_dir=cache_dir,
+            siemens_parks=siemens_parks,
         )
         if not day_df.empty:
             day_dfs.append(day_df)
@@ -262,8 +277,9 @@ def get_fl_resampled_one_device(  # noqa: PLR0913
     return pd.DataFrame()
 
 
-def _get_tag_list_from_park_id(park_id: str) -> list[str]:
-    if park_id in SIEMENS_PARKS:
+def _get_tag_list_from_park_id(park_id: str, siemens_parks: set[str] | None = None) -> list[str]:
+    parks = SIEMENS_PARKS if siemens_parks is None else siemens_parks
+    if park_id in parks:
         return SIEMENS_TAGS
     msg = f"{park_id=} not implemented"
     raise NotImplementedError(msg)
@@ -279,7 +295,7 @@ def _load_siemens_fastlog_files(  # noqa: C901, PLR0912
     logger.info("Reading fastlog files for %s %s from: %s", wtgid, day_str, fl_data_dir)
     tags_df = pd.DataFrame()
     for tag in tags_to_load:
-        prefix = "" if tag.startswith("computed_") else "Wtc_TDI_"
+        prefix = "" if tag.startswith(("computed_", "alarms_")) else "Wtc_TDI_"
         str_for_file_search = f"FL{wtgid}_{prefix}{tag}_{day_str.replace('-', '_')}"
         found_file = False
         for file in fl_data_dir.glob("*.prq"):
@@ -357,25 +373,30 @@ def _get_raw_df_dict(  # noqa: PLR0913
     end_dt_excl: dt.datetime,
     filestore_dir: Path | None = None,
     tags: Sequence[str] | None = None,
+    siemens_parks: set[str] | None = None,
 ) -> dict[str, pd.DataFrame]:
     """Get dictionary of raw FL dataframes by tag."""
     filestore_dir = get_filestore_dir() if filestore_dir is None else filestore_dir
     dates_in_range = _generate_dates_in_range(start_dt, end_dt_excl)
+    parks = SIEMENS_PARKS if siemens_parks is None else siemens_parks
 
-    tags = _get_tag_list_from_park_id(park_id) if tags is None else tags
+    if park_id not in parks:
+        msg = f"{park_id=} not in siemens_parks={parks}; pass siemens_parks= to load this park"
+        raise NotImplementedError(msg)
+
+    tags = _get_tag_list_from_park_id(park_id, siemens_parks=parks) if tags is None else tags
 
     tag_df_dict = {}
     for tag in tags:
         tag_df_list = []
         for date in dates_in_range:
-            if park_id in SIEMENS_PARKS:
-                tag_df = _load_siemens_fastlog_files(
-                    park_id=park_id,
-                    filestore_dir=filestore_dir,
-                    wtgid=device_id,
-                    day_str=str(date),
-                    tags_to_load=[tag],
-                )
+            tag_df = _load_siemens_fastlog_files(
+                park_id=park_id,
+                filestore_dir=filestore_dir,
+                wtgid=device_id,
+                day_str=str(date),
+                tags_to_load=[tag],
+            )
             if not tag_df.empty:
                 tag_df_list.append(tag_df)
         if len(tag_df_list) == 0:
@@ -407,6 +428,7 @@ def make_fl_resampled_one_device(  # noqa: PLR0913
     busy_tags: Sequence[str] | None = None,
     minmax_tags: Sequence[str] | None = None,
     min_data_count: float | None = None,
+    siemens_parks: set[str] | None = None,
 ) -> pd.DataFrame:
     """Load raw fastlog data and resample it to the target timebase for a single device."""
     raw_df_dict = _get_raw_df_dict(
@@ -416,6 +438,7 @@ def make_fl_resampled_one_device(  # noqa: PLR0913
         end_dt_excl=end_dt_excl + pd.Timedelta(hours=1),
         filestore_dir=filestore_dir,
         tags=tags,
+        siemens_parks=siemens_parks,
     )
     if len(raw_df_dict) == 0:
         return pd.DataFrame(index=pd.DatetimeIndex([]))

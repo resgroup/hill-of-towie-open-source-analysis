@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from hot_open import era5_helpers
 from hot_open.era5_helpers import _build_era5_df
 
 
@@ -50,3 +51,38 @@ class TestBuildEra5Df:
         df = _build_era5_df(_make_mock_response(), fields)
         assert df["wind_speed_10m"].iloc[0] == pytest.approx(0.0)  # index 0
         assert df["wind_direction_10m"].iloc[0] == pytest.approx(1.0)  # index 1
+
+
+class TestGetEra5HourlyDf:
+    def test_hot_wrapper_delegates_with_hot_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        captured: dict[str, object] = {}
+
+        def fake_generic(**kwargs: object) -> pd.DataFrame:
+            captured.update(kwargs)
+            return pd.DataFrame()
+
+        monkeypatch.setattr(era5_helpers, "get_era5_hourly_df", fake_generic)
+        era5_helpers.get_hot_era5_hourly_df()
+        assert captured == {
+            "lat": era5_helpers.HOT_LAT,
+            "lon": era5_helpers.HOT_LON,
+            "start_date": era5_helpers.HOT_ERA5_START,
+            "end_date": era5_helpers.HOT_ERA5_END,
+            "fields": era5_helpers.HOT_ERA5_FIELDS,
+        }
+
+    def test_end_date_defaults_to_today(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        captured: dict[str, object] = {}
+
+        def fake_cache_path(*args: object) -> MagicMock:
+            # signature mirrors _era5_cache_path(lat, lon, start_date, end_date, fields)
+            captured["end_date"] = args[3]
+            mock_path = MagicMock()
+            mock_path.exists.return_value = True
+            return mock_path
+
+        monkeypatch.setattr(era5_helpers, "_era5_cache_path", fake_cache_path)
+        monkeypatch.setattr(era5_helpers.pd, "read_parquet", lambda _p: pd.DataFrame())
+        era5_helpers.get_era5_hourly_df(lat=1.0, lon=2.0)
+        today = pd.Timestamp.now(tz="UTC").normalize().strftime("%Y-%m-%d")
+        assert captured["end_date"] == today

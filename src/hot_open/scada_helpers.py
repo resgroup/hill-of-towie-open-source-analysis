@@ -145,23 +145,26 @@ def calc_shutdown_duration(wind_up_df: pd.DataFrame) -> pd.DataFrame:
     wind_up_df[DataColumns.shutdown_duration] = timebase_s - wind_up_df["Time ready to operate in period"].fillna(
         timebase_s
     )
-    # stuck data is believed to be an indicator of downtime
+    # Stuck data is believed to be an indicator of downtime: a turbine whose signals are
+    # unchanged from its OWN previous record. The dataframe holds one row per (timestamp,
+    # turbine) interleaved by timestamp, so both the forward-fill and the diff must be
+    # grouped by turbine (an ungrouped diff would compare adjacent rows belonging to
+    # different turbines instead of a single turbine over time).
+    signal_cols = [
+        DataColumns.active_power_mean,
+        DataColumns.active_power_sd,
+        DataColumns.wind_speed_mean,
+        DataColumns.wind_speed_sd,
+        DataColumns.gen_rpm_mean,
+        DataColumns.pitch_angle_mean,
+        DataColumns.yaw_angle_mean,
+    ]
+    turbine_key = wind_up_df["TurbineName"].to_numpy()
     diffdf = (
-        wind_up_df[
-            [
-                "TurbineName",
-                DataColumns.active_power_mean,
-                DataColumns.active_power_sd,
-                DataColumns.wind_speed_mean,
-                DataColumns.wind_speed_sd,
-                DataColumns.gen_rpm_mean,
-                DataColumns.pitch_angle_mean,
-                DataColumns.yaw_angle_mean,
-            ]
-        ]
-        .groupby("TurbineName", observed=False)
+        wind_up_df.groupby(turbine_key, observed=False)[signal_cols]
         .ffill()
         .fillna(0)
+        .groupby(turbine_key, observed=False)
         .diff()
     )
     stuck_data = (diffdf == 0).all(axis=1)

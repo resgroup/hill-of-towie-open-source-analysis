@@ -159,12 +159,11 @@ def calc_shutdown_duration(wind_up_df: pd.DataFrame) -> pd.DataFrame:
         DataColumns.pitch_angle_mean,
         DataColumns.yaw_angle_mean,
     ]
-    turbine_key = wind_up_df["TurbineName"].to_numpy()
     diffdf = (
-        wind_up_df.groupby(turbine_key, observed=False)[signal_cols]
+        wind_up_df.groupby("TurbineName", observed=False)[signal_cols]
         .ffill()
         .fillna(0)
-        .groupby(turbine_key, observed=False)
+        .groupby(wind_up_df["TurbineName"], observed=False)
         .diff()
     )
     stuck_data = (diffdf == 0).all(axis=1)

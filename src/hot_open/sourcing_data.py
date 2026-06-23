@@ -45,9 +45,9 @@ _HTTP_PARTIAL_CONTENT = 206
 
 def download_zenodo_data(
     record_id: str,
+    *,
     output_dir: Path | None = None,
     filenames: Collection[str] | None = None,
-    *,
     cache_overwrite: bool = False,
 ) -> None:
     """Download and caches files from zenodo.org."""

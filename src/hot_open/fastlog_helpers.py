@@ -106,12 +106,17 @@ def get_fl_resampled(  # noqa: PLR0913
     cache_dir: Path | None = None,
     filestore_dir: Path | None = None,
     siemens_parks: set[str] | None = None,
+    refresh_cache: bool = False,
 ) -> pd.DataFrame:
     """Return resampled fastlog data for multiple devices as a multi-level (device_id, tag) DataFrame.
 
     ``siemens_parks`` overrides the set of park ids loaded with the Siemens fastlog reader;
     when ``None`` the module default ``SIEMENS_PARKS`` is used. Pass it to load parks that are
     not part of the public dataset.
+
+    The per-day cache self-invalidates when a day's source files are newer than its cached
+    parquet (e.g. late/backfilled data), so partial recent days recover on a later run. Pass
+    ``refresh_cache=True`` to force every day to be recomputed and overwritten regardless.
     """
     filestore_dir = get_filestore_dir() if filestore_dir is None else filestore_dir
     device_id_dfs: dict[str, pd.DataFrame] = {}
@@ -129,6 +134,7 @@ def get_fl_resampled(  # noqa: PLR0913
             min_data_count=min_data_count,
             cache_dir=cache_dir,
             siemens_parks=siemens_parks,
+            refresh_cache=refresh_cache,
         )
         if not device_id_df.index.is_monotonic_increasing:
             msg = f"Resampled data index for {device_id} is not monotonic increasing."
@@ -162,6 +168,7 @@ def _get_fl_resampled_one_device_one_day(  # noqa: PLR0913
     min_data_count: float | None = None,
     cache_dir: Path | None = None,
     siemens_parks: set[str] | None = None,
+    refresh_cache: bool = False,
 ) -> pd.DataFrame:
     if (end_dt_excl - start_dt) > dt.timedelta(days=1):
         msg = f"Date range must be one day or less. Got {start_dt=} {end_dt_excl=}"
@@ -172,18 +179,31 @@ def _get_fl_resampled_one_device_one_day(  # noqa: PLR0913
             msg = "Could not get current frame"
             raise RuntimeError(msg)
         args_info = inspect.getargvalues(frame)
+        # refresh_cache is a control flag, not a data parameter: exclude it so it overwrites the
+        # real cache file rather than writing to a different hash.
         params = {
             key: args_info.locals[key]
             for key in args_info.args
-            if key not in {"cache_dir", "filestore_dir", "siemens_parks"}
+            if key not in {"cache_dir", "filestore_dir", "siemens_parks", "refresh_cache"}
         }
         cache_key = create_consistent_hash(**params)
         cache_path = (
             cache_dir / "fl_resampled" / park_id / device_id / f"{start_dt.strftime('%Y%m%d')}_{cache_key}.parquet"
         )
-        if cache_path.exists():
-            logger.info("Reading: %s", cache_path)
-            return pd.read_parquet(cache_path)
+        if cache_path.exists() and not refresh_cache:
+            source_mtime = _max_source_mtime(
+                park_id=park_id,
+                device_id=device_id,
+                start_dt=start_dt,
+                end_dt_excl=end_dt_excl,
+                filestore_dir=filestore_dir,
+            )
+            # A freshly written parquet's mtime is later than every source file read to build it,
+            # so an unchanged day stays a hit; a backfilled day (newer source mtime) recomputes.
+            if source_mtime is None or cache_path.stat().st_mtime >= source_mtime:
+                logger.info("Reading: %s", cache_path)
+                return pd.read_parquet(cache_path)
+            logger.info("Cache stale (source newer than cache); recomputing: %s", cache_path)
     result_df = make_fl_resampled_one_device(
         park_id=park_id,
         device_id=device_id,
@@ -224,6 +244,35 @@ def _generate_dates_in_range(start_dt: dt.datetime, end_dt_excl: dt.datetime) ->
     return [date.date() for date in date_range]
 
 
+def _max_source_mtime(
+    *,
+    park_id: str,
+    device_id: str,
+    start_dt: dt.datetime,
+    end_dt_excl: dt.datetime,
+    filestore_dir: Path | None = None,
+) -> float | None:
+    """Return the newest mtime among the raw FL files feeding this day's resample, or None.
+
+    Mirrors ``make_fl_resampled_one_device``'s read window (``start_dt - 1 day`` to
+    ``end_dt_excl + 1 hour``) so a backfill into the neighbouring day folders also invalidates
+    the cache. ``None`` means no source files were found (treated as "cannot be stale").
+    """
+    filestore_dir = get_filestore_dir() if filestore_dir is None else filestore_dir
+    raw_start = start_dt - pd.Timedelta(days=1)
+    raw_end_excl = end_dt_excl + pd.Timedelta(hours=1)
+    mtimes: list[float] = []
+    for date in _generate_dates_in_range(raw_start, raw_end_excl):
+        day_dir = filestore_dir / "FL" / park_id / device_id / str(date)
+        if not day_dir.is_dir():
+            continue
+        for file in day_dir.iterdir():
+            if file.name.startswith(".azDownload") or file.suffix not in {".prq", ".h5"}:
+                continue
+            mtimes.append(file.stat().st_mtime)
+    return max(mtimes) if mtimes else None
+
+
 def get_fl_resampled_one_device(  # noqa: PLR0913
     *,
     park_id: str,
@@ -238,6 +287,7 @@ def get_fl_resampled_one_device(  # noqa: PLR0913
     min_data_count: float | None = None,
     cache_dir: Path | None = None,
     siemens_parks: set[str] | None = None,
+    refresh_cache: bool = False,
 ) -> pd.DataFrame:
     """Return resampled fastlog data for a single device over the given date range, chunked by day."""
     # chunk by day
@@ -258,6 +308,7 @@ def get_fl_resampled_one_device(  # noqa: PLR0913
             min_data_count=min_data_count,
             cache_dir=cache_dir,
             siemens_parks=siemens_parks,
+            refresh_cache=refresh_cache,
         )
         if not day_df.empty:
             day_dfs.append(day_df)

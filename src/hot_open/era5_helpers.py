@@ -62,7 +62,7 @@ def _build_era5_df(response: object, fields: list[str]) -> pd.DataFrame:
     ).set_index("timestamp")
 
 
-def _era5_cache_path(lat: float, lon: float, start_date: str, end_date: str, fields: list[str]) -> Path:
+def _era5_cache_path(*, lat: float, lon: float, start_date: str, end_date: str, fields: list[str]) -> Path:
     """Build a deterministic parquet cache path from the request args."""
     args_blob = json.dumps(
         {"lat": lat, "lon": lon, "start_date": start_date, "end_date": end_date, "fields": list(fields)},
@@ -88,7 +88,7 @@ def get_era5_hourly_df(
     """
     if end_date is None:
         end_date = pd.Timestamp.now(tz="UTC").normalize().strftime("%Y-%m-%d")
-    cache_path = _era5_cache_path(lat, lon, start_date, end_date, fields)
+    cache_path = _era5_cache_path(lat=lat, lon=lon, start_date=start_date, end_date=end_date, fields=fields)
     if cache_path.exists():
         logger.info("Reading: %s", cache_path)
         return pd.read_parquet(cache_path)
@@ -122,6 +122,7 @@ def get_era5_hourly_df(
 
 
 def get_hot_era5_hourly_df(
+    *,
     start_date: str = HOT_ERA5_START,
     end_date: str = HOT_ERA5_END,
     fields: list[str] = HOT_ERA5_FIELDS,

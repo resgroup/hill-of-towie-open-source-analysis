@@ -45,12 +45,12 @@ _HTTP_PARTIAL_CONTENT = 206
 
 def download_zenodo_data(
     record_id: str,
+    *,
     output_dir: Path | None = None,
     filenames: Collection[str] | None = None,
-    *,
     cache_overwrite: bool = False,
 ) -> None:
-    """Download and caches files from zenodo.org."""
+    """Download and cache files from zenodo.org."""
     output_dir = output_dir if output_dir is not None else get_data_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
     metadata_fpath = output_dir / "zenodo_dataset_metadata.json"

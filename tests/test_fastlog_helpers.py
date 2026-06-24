@@ -131,6 +131,23 @@ class TestCacheSourceFreshness:
         parquets = list((cache / "fl_resampled" / PARK / DEVICE).glob("*.parquet"))
         assert len(parquets) == 1  # refresh_cache excluded from the cache key
 
+    def test_refresh_cache_removes_stale_cache_on_empty_recompute(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        filestore, cache = tmp_path / "fs", tmp_path / "cache"
+        _write_source_file(filestore=filestore, date_str="2024-01-01", mtime=1000.0)
+        idx = pd.DatetimeIndex([pd.Timestamp("2024-01-01")], name="timestamp")
+        monkeypatch.setattr(
+            flh, "make_fl_resampled_one_device", lambda **_: pd.DataFrame({"ActPower_Value": [1.0]}, index=idx)
+        )
+        _call(filestore, cache)
+        parquet = next((cache / "fl_resampled" / PARK / DEVICE).glob("*.parquet"))
+        # Recompute now yields an empty frame (e.g. source removed/filtered): the stale parquet
+        # must not survive, or a later non-refresh run would silently reuse it.
+        monkeypatch.setattr(flh, "make_fl_resampled_one_device", lambda **_: pd.DataFrame())
+        _call(filestore, cache, refresh_cache=True)
+        assert not parquet.exists()
+
     def test_neighbour_day_backfill_invalidates_cache(self, tmp_path: Path, spy_make: list[int]) -> None:
         filestore, cache = tmp_path / "fs", tmp_path / "cache"
         _write_source_file(filestore=filestore, date_str="2024-01-01", mtime=1000.0)

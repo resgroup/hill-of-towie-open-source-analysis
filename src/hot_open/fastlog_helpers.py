@@ -190,7 +190,11 @@ def _get_fl_resampled_one_device_one_day(  # noqa: PLR0913
         cache_path = (
             cache_dir / "fl_resampled" / park_id / device_id / f"{start_dt.strftime('%Y%m%d')}_{cache_key}.parquet"
         )
-        if cache_path.exists() and not refresh_cache:
+        if refresh_cache:
+            # Delete up-front so an empty recompute can't leave a stale parquet that later
+            # (non-refresh) runs would silently reuse, undermining the intent of refresh_cache.
+            cache_path.unlink(missing_ok=True)
+        elif cache_path.exists():
             source_mtime = _max_source_mtime(
                 park_id=park_id,
                 device_id=device_id,

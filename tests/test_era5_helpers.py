@@ -74,9 +74,9 @@ class TestGetEra5HourlyDf:
     def test_end_date_defaults_to_today(self, monkeypatch: pytest.MonkeyPatch) -> None:
         captured: dict[str, object] = {}
 
-        def fake_cache_path(*args: object) -> MagicMock:
-            # signature mirrors _era5_cache_path(lat, lon, start_date, end_date, fields)
-            captured["end_date"] = args[3]
+        def fake_cache_path(**kwargs: object) -> MagicMock:
+            # signature mirrors _era5_cache_path(*, lat, lon, start_date, end_date, fields)
+            captured["end_date"] = kwargs["end_date"]
             mock_path = MagicMock()
             mock_path.exists.return_value = True
             return mock_path

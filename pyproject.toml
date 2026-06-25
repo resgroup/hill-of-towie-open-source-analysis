@@ -9,9 +9,9 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "requests>=2.32.3",
-    "tqdm>=4.68.1",
+    "tqdm>=4.68.3",
     "python-dotenv>=1.1.0",
-    "res-wind-up>=0.4.10",
+    "res-wind-up>=0.5.0",
     "pandas>=2.3.3",
     "openmeteo-requests>=1.4.0",
     "requests-cache>=1.2.1",
@@ -23,11 +23,11 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "pytest>=8.2.2",
+    "pytest>=9.1.1",
     "poethepoet>=0.27.0",
-    "ruff>=0.15.16",
+    "ruff>=0.15.20",
     "mypy>=1.10.1",
-    "coverage>=7.14.1",
+    "coverage>=7.14.3",
     "deptry>=0.20.0",
     "pandas-stubs>=2.2.2.240603",
     "types-pyyaml>=6.0.12.20241230",
@@ -35,14 +35,14 @@ dev = [
     "types-requests>=2.32.0.20250328",
     "types-tqdm>=4.68.0.20260608",
     "responses>=0.26.1",
-    "polars>=1.41.2",
+    "polars>=1.42.0",
 ]
 wedowind = [
     "autogluon>=1.4.0",
     "ephem>=4.2",
-    "jupyterlab>=4.5.8",
-    "jupytext>=1.17.0",
-    "kagglehub>=0.3.13",
+    "jupyterlab>=4.6.0",
+    "jupytext>=1.19.4",
+    "kagglehub>=1.0.2",
     "plotly>=6.8.0",
     "xarray>=2025.4.0",
 ]

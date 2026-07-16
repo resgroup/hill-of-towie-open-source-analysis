@@ -554,11 +554,8 @@ def upsample_and_ffill_stopping_at_nans(
     freq = pd.Timedelta(milliseconds=subsampling_timebase_ms)
     upsampled = tag_df.resample(freq).ffill(limit=ffill_limit)
     last_ts = tag_df.index[-1]
-    tail_ts = last_ts.ceil(freq)
-    if tail_ts > upsampled.index[-1]:
-        tail_index = pd.DatetimeIndex([tail_ts], name=tag_df.index.name).as_unit(upsampled.index.unit)
-        tail = tag_df.iloc[[-1]].set_axis(tail_index)
-        upsampled = pd.concat([upsampled, tail])
+    if last_ts > upsampled.index[-1]:
+        upsampled = pd.concat([upsampled, tag_df.iloc[[-1]]])
     return upsampled
 
 

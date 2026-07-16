@@ -194,20 +194,9 @@ class TestTrailingObservationPreserved:
             subsampling_timebase_ms=1000,
             only_ffill_one_timebase=False,
         )
-        # The final observed value (cleared) must be represented on the upsampled grid.
-        assert up.index[-1] >= pd.Timestamp(self.CLEAR)
+        # The final observed value (cleared) must be represented, at its own timestamp (not shifted).
+        assert up.index[-1] == pd.Timestamp(self.CLEAR)
         assert bool(up["alarms_TEST"].dropna().iloc[-1]) is False
-
-    def test_upsample_does_not_over_extend(self) -> None:
-        # The grid may only reach the boundary at/after the last observation, not beyond.
-        tag_df = _latched_tag_df([(self.FIRE, True), (self.CLEAR, False)])
-        up = upsample_and_ffill_stopping_at_nans(
-            tag_df=tag_df,
-            timebase_s=60,
-            subsampling_timebase_ms=1000,
-            only_ffill_one_timebase=False,
-        )
-        assert up.index[-1] <= pd.Timestamp(self.CLEAR).ceil("1000ms")
 
     def test_final_minute_reads_cleared_after_coarse_resample(self) -> None:
         # Full assemble-and-resample path: the 16:40 minute must read cleared (False), not raised.
@@ -216,6 +205,15 @@ class TestTrailingObservationPreserved:
         col = resampled["alarms_TEST"]
         assert bool(col.loc["2026-07-15 16:39:00"]) is True
         assert bool(col.loc["2026-07-15 16:40:00"]) is False
+
+    def test_final_observation_stays_in_its_own_coarse_bin(self) -> None:
+        # A clear late in the final minute (…:59.9) must resample into THAT minute, not be rounded
+        # forward into the next one (nor create a spurious extra bin). Guards the reviewer's concern
+        # about anchoring the re-appended point at ceil(freq) instead of the observation time.
+        tag_df = _latched_tag_df([("2026-07-15 16:00:00", True), ("2026-07-15 16:40:59.900", False)])
+        col = resample_fastlog_tags(raw_df_dict={"alarms_TEST": tag_df}, timebase_s=60)["alarms_TEST"]
+        assert bool(col.loc["2026-07-15 16:40:00"]) is False
+        assert pd.Timestamp("2026-07-15 16:41:00") not in col.index
 
 
 # A small committed slice of real Hill of Towie fastlog (turbine 2304510, 2026-01-02, ~08:05-08:09,

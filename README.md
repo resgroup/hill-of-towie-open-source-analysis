@@ -23,6 +23,8 @@ controller fastlog data available thanks to [Anemo](https://www.res-group.com/di
 
 ## Dynamic Yaw analysis
 
+A presentation explaining Dynamic Yaw and the analysis in this repo is available [here](https://www.res-group.com/wp-content/uploads/2026/06/Alex-Clerc-wake-steering-WindEurope-Tech-2026-v2.pdf).
+
 The folder `scripts/wfc_analysis_2026` analyses the energy uplift from the
 [Dynamic Yaw](https://www.res-group.com/digital-solutions/dynamic-yaw/) **(DY)** controller trial at Hill of Towie. DY combines two control features which both provide energy uplift in different ways:
 

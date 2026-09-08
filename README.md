@@ -1,15 +1,15 @@
 # Hill of Towie - Open Source Dataset
 
-Analysis of the Hill of Towie wind farm open dataset: https://doi.org/10.5281/zenodo.14870021
+Analysis of the Hill of Towie wind farm open dataset: https://zenodo.org/records/22662930
 
 This repo contains analysis and helper functions to:
-- download the [open dataset from Zenodo](https://doi.org/10.5281/zenodo.14870021) which includes 10-minute SCADA, ~1Hz fastlog collected by [Anemo](https://www.res-group.com/digital-solutions/anemo/), controller telemetry and LiDAR data.
+- download the [open dataset from Zenodo](https://zenodo.org/records/22662930) which includes 10-minute SCADA, ~1Hz fastlog collected by [Anemo](https://www.res-group.com/digital-solutions/anemo/), controller telemetry and LiDAR data.
 - estimate energy uplift thanks to upgrades using the [wind-up](https://github.com/resgroup/wind-up) library
 - ad-hoc analysis of the [Dynamic Yaw](https://www.res-group.com/digital-solutions/dynamic-yaw/) trial, including wake-steering event finding and LiDAR analysis.
 
 **New to the dataset?** Field definitions, reference frames and known data quality issues are
 documented in `Hill_of_Towie_data_dictionary.md` in the
-[Zenodo data pack](https://doi.org/10.5281/zenodo.14870021).
+[Zenodo data pack](https://zenodo.org/records/22662930).
 
 The repository currently covers three upgrade validation campaigns:
 - the [Dynamic Yaw](https://www.res-group.com/digital-solutions/dynamic-yaw/) wake steering and collective yaw control trial, analysis first published in 2026 (`scripts/wfc_analysis_2026`)

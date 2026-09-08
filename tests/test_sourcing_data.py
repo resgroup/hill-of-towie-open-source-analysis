@@ -307,7 +307,7 @@ class TestEnsureHotDataFiles:
         # Pre-seed the metadata cache as if a prior download had written it.
         # No metadata URL is mocked here -- if download_zenodo_data tried to
         # refetch metadata, `responses` would raise ConnectionError.
-        metadata_fpath = tmp_path / "zenodo_dataset_metadata.json"
+        metadata_fpath = tmp_path / f"zenodo_dataset_metadata_{sourcing_data._HOT_V2_RECORD_ID}.json"  # noqa: SLF001
         metadata_fpath.write_text(
             json.dumps(
                 {
@@ -325,6 +325,34 @@ class TestEnsureHotDataFiles:
 
         assert (tmp_path / big_fname).read_bytes() == b"BIGFILE"  # untouched
         assert (tmp_path / small_fname).read_bytes() == small_content
+
+    @staticmethod
+    @responses.activate
+    def test_refetches_metadata_after_record_id_changes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Regression: a cache from an old record ID must not shadow the new record's file list."""
+        old_record_id = "old-record"
+        new_record_id = "new-record"
+        new_fname = "only_in_new_record.csv"
+        new_content = b"introduced,in,new,record\n"
+
+        # Simulate a cache left over from a previous ``_HOT_V2_RECORD_ID``.
+        old_metadata_fpath = tmp_path / f"zenodo_dataset_metadata_{old_record_id}.json"
+        old_metadata_fpath.write_text(json.dumps({"files": [{"key": "old_file.csv", "size": 1}]}))
+
+        monkeypatch.setattr(sourcing_data, "_HOT_V2_RECORD_ID", new_record_id)
+        responses.add(
+            responses.Response(
+                method="GET",
+                url=f"https://zenodo.org/api/records/{new_record_id}",
+                json={"files": [{"key": new_fname, "links": {"self": "http://new.url"}, "size": len(new_content)}]},
+            )
+        )
+        responses.add(responses.Response(method="GET", url="http://new.url", body=new_content))
+
+        ensure_hot_data_files([new_fname], data_dir=tmp_path)
+
+        assert (tmp_path / new_fname).read_bytes() == new_content
+        assert (tmp_path / f"zenodo_dataset_metadata_{new_record_id}.json").is_file()
 
 
 def _build_lidar_zip_bytes() -> bytes:

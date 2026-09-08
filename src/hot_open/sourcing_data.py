@@ -43,6 +43,15 @@ _RETRYABLE_EXCEPTIONS: tuple[type[requests.RequestException], ...] = (
 _HTTP_PARTIAL_CONTENT = 206
 
 
+def _metadata_cache_path(output_dir: Path, record_id: str) -> Path:
+    """Path to the cached Zenodo record metadata, namespaced by record ID.
+
+    Namespacing avoids serving a stale file list from a previous record
+    (e.g. an earlier dataset version) after ``record_id`` changes.
+    """
+    return output_dir / f"zenodo_dataset_metadata_{record_id}.json"
+
+
 def download_zenodo_data(
     record_id: str,
     *,
@@ -53,7 +62,7 @@ def download_zenodo_data(
     """Download and cache files from zenodo.org."""
     output_dir = output_dir if output_dir is not None else get_data_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
-    metadata_fpath = output_dir / "zenodo_dataset_metadata.json"
+    metadata_fpath = _metadata_cache_path(output_dir, record_id)
 
     if not cache_overwrite and metadata_fpath.is_file():
         msg = f"Loading metadata from {metadata_fpath}"
@@ -238,13 +247,13 @@ def _resolve_download_failure(
     return 0
 
 
-def _missing_small_files_from_cached_metadata(target_dir: Path) -> list[str]:
+def _missing_small_files_from_cached_metadata(target_dir: Path, record_id: str) -> list[str]:
     """Return small-file keys absent from ``target_dir`` based on cached Zenodo metadata.
 
     Returns an empty list when the metadata cache is missing or unreadable; the
     next successful Zenodo fetch rewrites the cache.
     """
-    metadata_fpath = target_dir / "zenodo_dataset_metadata.json"
+    metadata_fpath = _metadata_cache_path(target_dir, record_id)
     if not metadata_fpath.is_file():
         return []
     try:
@@ -277,7 +286,7 @@ def ensure_hot_data_files(
     target_dir = data_dir if data_dir is not None else get_data_dir()
     requested = list(filenames)
     missing_requested = [f for f in requested if not (target_dir / f).is_file()]
-    missing_small = _missing_small_files_from_cached_metadata(target_dir)
+    missing_small = _missing_small_files_from_cached_metadata(target_dir, _HOT_V2_RECORD_ID)
     if not missing_requested and not missing_small:
         logger.info(
             "ensure_hot_data_files: all %d requested files already present at %s "

@@ -272,7 +272,7 @@ class TestEnsureHotDataFiles:
         responses.add(
             responses.Response(
                 method="GET",
-                url="https://zenodo.org/api/records/20204946",
+                url="https://zenodo.org/api/records/22662930",
                 json={"files": [{"key": fname, "links": {"self": "http://myfile.url"}, "size": len(expected_content)}]},
             )
         )
@@ -345,7 +345,7 @@ class TestEnsureExtracted:
         responses.add(
             responses.Response(
                 method="GET",
-                url="https://zenodo.org/api/records/20204946",
+                url="https://zenodo.org/api/records/22662930",
                 json={"files": [{"key": zip_name, "links": {"self": "http://lidar.zip.url"}, "size": len(zip_bytes)}]},
             )
         )
@@ -385,7 +385,7 @@ class TestEnsureExtracted:
         responses.add(
             responses.Response(
                 method="GET",
-                url="https://zenodo.org/api/records/20204946",
+                url="https://zenodo.org/api/records/22662930",
                 json={"files": [{"key": zip_name, "links": {"self": "http://lidar.zip.url"}, "size": len(zip_bytes)}]},
             )
         )
@@ -405,7 +405,7 @@ class TestEnsureExtracted:
         responses.add(
             responses.Response(
                 method="GET",
-                url="https://zenodo.org/api/records/20204946",
+                url="https://zenodo.org/api/records/22662930",
                 json={"files": [{"key": zip_name, "links": {"self": "http://garbage.url"}, "size": 4}]},
             )
         )

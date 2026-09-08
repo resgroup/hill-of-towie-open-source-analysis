@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 BYTES_IN_1MB = 1024 * 1024
 CHUNK_SIZE = 10 * BYTES_IN_1MB
 SMALL_FILE_THRESHOLD_BYTES = 2 * BYTES_IN_1MB
-_HOT_V2_RECORD_ID = "20204946"
+_HOT_V2_RECORD_ID = "22662930"
 
 # Network resilience knobs for streamed Zenodo downloads.
 # ``timeout`` is passed to ``requests.get`` as a ``(connect, read)`` tuple.

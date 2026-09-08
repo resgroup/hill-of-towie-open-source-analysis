@@ -4,6 +4,10 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    allow:
+      # uv.lock pins the full transitive tree, but we only want PRs for
+      # packages we actually declare in pyproject.toml.
+      - dependency-type: "direct"
     groups:
       python-minor-and-patch:
         patterns:

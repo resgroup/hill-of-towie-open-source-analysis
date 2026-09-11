@@ -531,6 +531,17 @@ def _ffill_limit_from_seconds(*, ffill_limit_s: float, subsampling_timebase_ms: 
     return limit
 
 
+def _full_resample_grid(*, raw_df_dict: dict[str, pd.DataFrame], timebase_s: int) -> pd.DatetimeIndex:
+    """Resample grid spanning every tag, for masks that must cover tags the busy frame lacks."""
+    spans = [x.index for x in raw_df_dict.values() if not x.empty]
+    if not spans:
+        return pd.DatetimeIndex([], name=TIMESTAMP_NAME)
+    freq = f"{timebase_s}s"
+    start = min(x[0] for x in spans).floor(freq)
+    end = max(x[-1] for x in spans).floor(freq)
+    return pd.date_range(start, end, freq=freq, name=TIMESTAMP_NAME)
+
+
 def upsample_and_ffill_stopping_at_nans(  # noqa: PLR0913
     *,
     tag_df: pd.DataFrame,
@@ -640,9 +651,19 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
             ffill_limit_s=busy_tag_ffill_limit_s,
         )
         busy_upsampled = pd.merge_ordered(busy_upsampled, tag_upsampled, on=TIMESTAMP_NAME).set_index(TIMESTAMP_NAME)
-    busy_resampled = busy_upsampled.resample(f"{timebase_s}s").mean()
-    busy_nan = busy_resampled.isna()
-    busy_tag_nan_times = busy_resampled.index[busy_nan.any(axis=1) if require_all_busy_tags else busy_nan.all(axis=1)]
+    busy_nan = busy_upsampled.resample(f"{timebase_s}s").mean().isna()
+    if require_all_busy_tags:
+        # A busy tag that is absent from raw_df_dict, or holds an empty frame, never became a
+        # column above -- so without this it would be silently treated as not required, which is
+        # the one case this flag exists for.
+        absent = [x for x in busy_tags if x not in busy_nan.columns]
+        if absent:
+            busy_nan = busy_nan.reindex(_full_resample_grid(raw_df_dict=raw_df_dict, timebase_s=timebase_s))
+            for tag in absent:
+                busy_nan[tag] = True
+        busy_tag_nan_times = busy_nan.index[busy_nan.any(axis=1)]
+    else:
+        busy_tag_nan_times = busy_nan.index[busy_nan.all(axis=1)]
     if not isinstance(busy_tag_nan_times, pd.DatetimeIndex):
         msg = f"Expected a DatetimeIndex, but got {type(busy_tag_nan_times)}"
         raise TypeError(msg)
@@ -661,7 +682,7 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
             subsampling_timebase_ms=subsampling_timebase_ms,
             only_ffill_one_timebase=tag not in ffill_tags,
             busy_tag_nan_times=busy_tag_nan_times if len(busy_tag_nan_times) > 0 else None,
-            ffill_limit_s=busy_tag_ffill_limit_s if tag not in ffill_tags else None,
+            ffill_limit_s=busy_tag_ffill_limit_s if tag in busy_tags else None,
         )
         upsampled = pd.merge_ordered(upsampled, tag_upsampled, on=TIMESTAMP_NAME).set_index(TIMESTAMP_NAME)
     if upsampled.empty:
@@ -702,7 +723,7 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 subsampling_timebase_ms=subsampling_timebase_ms,
                 only_ffill_one_timebase=min_data_count_tag not in ffill_tags,
                 busy_tag_nan_times=busy_tag_nan_times if len(busy_tag_nan_times) > 0 else None,
-                ffill_limit_s=busy_tag_ffill_limit_s if min_data_count_tag not in ffill_tags else None,
+                ffill_limit_s=busy_tag_ffill_limit_s if min_data_count_tag in busy_tags else None,
             )
             count_df = tag_upsampled.resample(f"{timebase_s}s").count()
         else:

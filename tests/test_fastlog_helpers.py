@@ -407,3 +407,87 @@ class TestRequireAllBusyTags:
             resample_fastlog_tags(raw_df_dict=raw, timebase_s=60, busy_tags=self.BUSY),
             resample_fastlog_tags(raw_df_dict=raw, timebase_s=60, busy_tags=self.BUSY, require_all_busy_tags=True),
         )
+
+
+class TestRequireAllBusyTagsWithNoData:
+    """A required busy tag with *no* data at all must still count as missing.
+
+    The busy-tag loop skips tags absent from ``raw_df_dict`` or holding an empty frame, so they
+    never become a column in the availability mask and would be silently treated as not required --
+    the worst case, and a live one, since per-day loading gives an empty frame for any day falling
+    wholly inside a dead-channel stretch.
+    """
+
+    BUSY = ("busy_a", "busy_b")
+    # slow_c samples at 10:00/10:05/10:10, so this point is purely forward-filled. Real
+    # observations are deliberately kept even here -- the mask stops bridging, it does not
+    # delete data a tag actually reported.
+    DURING = "2024-03-01 10:07:00"
+
+    def _raw(self, busy_b: str) -> dict[str, pd.DataFrame]:
+        raw = {"busy_a": _slow_scada_tag_df("busy_a"), "slow_c": _slow_scada_tag_df("slow_c", period_s=300)}
+        if busy_b == "empty":
+            raw["busy_b"] = _slow_scada_tag_df("busy_b").iloc[:0]
+        elif busy_b == "present":
+            raw["busy_b"] = _slow_scada_tag_df("busy_b")
+        return raw
+
+    @pytest.mark.parametrize("busy_b", ["empty", "absent"])
+    def test_busy_tag_with_no_data_is_still_required(self, busy_b: str) -> None:
+        resampled = resample_fastlog_tags(
+            raw_df_dict=self._raw(busy_b), timebase_s=60, busy_tags=self.BUSY, require_all_busy_tags=True
+        )
+        assert pd.isna(resampled["slow_c"].loc[self.DURING])
+
+    def test_every_busy_tag_missing_masks_everything(self) -> None:
+        raw = {"slow_c": _slow_scada_tag_df("slow_c", period_s=300)}
+        resampled = resample_fastlog_tags(
+            raw_df_dict=raw, timebase_s=60, busy_tags=self.BUSY, require_all_busy_tags=True
+        )
+        assert pd.isna(resampled["slow_c"].loc[self.DURING])
+
+    def test_default_is_unaffected_by_a_missing_busy_tag(self) -> None:
+        resampled = resample_fastlog_tags(raw_df_dict=self._raw("absent"), timebase_s=60, busy_tags=self.BUSY)
+        assert not pd.isna(resampled["slow_c"].loc[self.DURING])
+
+
+class TestBusyTagHorizonIsScopedToBusyTags:
+    """``busy_tag_ffill_limit_s`` must reach busy tags only, not everything outside ``ffill_tags``.
+
+    Those two sets coincide only under the default ``ffill_tags``. With a custom list there is a
+    third category -- neither busy nor ffill -- which keeps the one-timebase limit; widening it
+    would change unrelated output values and contradict the parameter's documented scope.
+    """
+
+    def _raw(self) -> dict[str, pd.DataFrame]:
+        return {"busy_a": _slow_scada_tag_df("busy_a"), "status_d": _slow_scada_tag_df("status_d", period_s=120)}
+
+    def test_non_busy_non_ffill_tag_keeps_the_one_timebase_limit(self) -> None:
+        default = resample_fastlog_tags(raw_df_dict=self._raw(), timebase_s=60, busy_tags=("busy_a",), ffill_tags=())
+        widened = resample_fastlog_tags(
+            raw_df_dict=self._raw(), timebase_s=60, busy_tags=("busy_a",), ffill_tags=(), busy_tag_ffill_limit_s=600
+        )
+        pd.testing.assert_series_equal(default["status_d"], widened["status_d"])
+
+    def test_non_busy_min_data_count_tag_keeps_the_one_timebase_limit(self) -> None:
+        # A longer horizon would inflate the tag's per-window sample count and stop min_data_count
+        # masking the low-coverage windows it is there to catch.
+        default = resample_fastlog_tags(
+            raw_df_dict=self._raw(),
+            timebase_s=60,
+            busy_tags=("busy_a",),
+            ffill_tags=(),
+            min_data_count=30,
+            min_data_count_tag="status_d",
+        )
+        widened = resample_fastlog_tags(
+            raw_df_dict=self._raw(),
+            timebase_s=60,
+            busy_tags=("busy_a",),
+            ffill_tags=(),
+            min_data_count=30,
+            min_data_count_tag="status_d",
+            busy_tag_ffill_limit_s=600,
+        )
+        # busy_a legitimately differs (it *is* busy); status_d and the masking it drives must not.
+        pd.testing.assert_series_equal(default["status_d"], widened["status_d"])

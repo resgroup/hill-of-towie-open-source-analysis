@@ -107,8 +107,12 @@ def get_fl_resampled(  # noqa: PLR0913
     filestore_dir: Path | None = None,
     siemens_parks: set[str] | None = None,
     refresh_cache: bool = False,
+    **resample_kwargs: object,
 ) -> pd.DataFrame:
     """Return resampled fastlog data for multiple devices as a multi-level (device_id, tag) DataFrame.
+
+    Extra keyword arguments are forwarded to :func:`resample_fastlog_tags` and join the per-day
+    cache key when they differ from its defaults.
 
     ``siemens_parks`` overrides the set of park ids loaded with the Siemens fastlog reader;
     when ``None`` the module default ``SIEMENS_PARKS`` is used. Pass it to load parks that are
@@ -135,6 +139,7 @@ def get_fl_resampled(  # noqa: PLR0913
             cache_dir=cache_dir,
             siemens_parks=siemens_parks,
             refresh_cache=refresh_cache,
+            **resample_kwargs,
         )
         if not device_id_df.index.is_monotonic_increasing:
             msg = f"Resampled data index for {device_id} is not monotonic increasing."
@@ -169,6 +174,7 @@ def _get_fl_resampled_one_device_one_day(  # noqa: PLR0913
     cache_dir: Path | None = None,
     siemens_parks: set[str] | None = None,
     refresh_cache: bool = False,
+    **resample_kwargs: object,
 ) -> pd.DataFrame:
     if (end_dt_excl - start_dt) > dt.timedelta(days=1):
         msg = f"Date range must be one day or less. Got {start_dt=} {end_dt_excl=}"
@@ -186,6 +192,11 @@ def _get_fl_resampled_one_device_one_day(  # noqa: PLR0913
             for key in args_info.args
             if key not in {"cache_dir", "filestore_dir", "siemens_parks", "refresh_cache"}
         }
+        # Forwarded resample options join the key so a day cached under different aggregation
+        # settings cannot be mistaken for a match. Defaulted options are omitted, which is what
+        # keeps keys written before those options existed valid. Note **resample_kwargs does not
+        # appear in args_info.args, so the legacy part of the key is byte-identical either way.
+        params.update(_non_default_resample_kwargs(resample_kwargs))
         cache_key = create_consistent_hash(**params)
         cache_path = (
             cache_dir / "fl_resampled" / park_id / device_id / f"{start_dt.strftime('%Y%m%d')}_{cache_key}.parquet"
@@ -220,6 +231,7 @@ def _get_fl_resampled_one_device_one_day(  # noqa: PLR0913
         min_data_count=min_data_count,
         minmax_tags=minmax_tags,
         siemens_parks=siemens_parks,
+        **resample_kwargs,
     )
     if cache_dir is not None and not result_df.empty:
         cache_path.parent.mkdir(exist_ok=True, parents=True)
@@ -292,8 +304,13 @@ def get_fl_resampled_one_device(  # noqa: PLR0913
     cache_dir: Path | None = None,
     siemens_parks: set[str] | None = None,
     refresh_cache: bool = False,
+    **resample_kwargs: object,
 ) -> pd.DataFrame:
-    """Return resampled fastlog data for a single device over the given date range, chunked by day."""
+    """Return resampled fastlog data for a single device over the given date range, chunked by day.
+
+    Extra keyword arguments are forwarded to :func:`resample_fastlog_tags` and join the per-day
+    cache key when they differ from its defaults.
+    """
     # chunk by day
     day_dfs = []
     for day in _generate_dates_in_range(start_dt, end_dt_excl):
@@ -313,6 +330,7 @@ def get_fl_resampled_one_device(  # noqa: PLR0913
             cache_dir=cache_dir,
             siemens_parks=siemens_parks,
             refresh_cache=refresh_cache,
+            **resample_kwargs,
         )
         if not day_df.empty:
             day_dfs.append(day_df)
@@ -484,8 +502,18 @@ def make_fl_resampled_one_device(  # noqa: PLR0913
     minmax_tags: Sequence[str] | None = None,
     min_data_count: float | None = None,
     siemens_parks: set[str] | None = None,
+    **resample_kwargs: object,
 ) -> pd.DataFrame:
-    """Load raw fastlog data and resample it to the target timebase for a single device."""
+    """Load raw fastlog data and resample it to the target timebase for a single device.
+
+    Extra keyword arguments are forwarded to :func:`resample_fastlog_tags`, so options such as
+    ``circular_tags``, ``ffill_tags``, ``std_tags``, ``min_raw_data_count``,
+    ``busy_tag_ffill_limit_s`` and ``require_all_busy_tags`` are reachable from here. They are
+    forwarded rather than enumerated deliberately: an enumerated list silently went stale as
+    ``resample_fastlog_tags`` gained options, leaving several of them unreachable through the
+    cache layer, and ``circular_tags`` in particular then fell back to a hardcoded tag-name set
+    so a park named otherwise had its directions averaged across the 0/360 wrap.
+    """
     raw_df_dict = _get_raw_df_dict(
         park_id=park_id,
         device_id=device_id,
@@ -507,6 +535,7 @@ def make_fl_resampled_one_device(  # noqa: PLR0913
         busy_tags=busy_tags,
         minmax_tags=minmax_tags,
         min_data_count=min_data_count,
+        **resample_kwargs,  # type: ignore[arg-type]
     )
 
     return (
@@ -784,6 +813,22 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
         resampled_df.loc[low_raw_times, numeric_all] = np.nan
         resampled_df.loc[low_raw_times, nonnumeric_all] = pd.NA
     return resampled_df
+
+
+def _non_default_resample_kwargs(resample_kwargs: dict) -> dict:
+    """Return only the resample options that differ from ``resample_fastlog_tags``' defaults.
+
+    Cache keys must change when aggregation settings change, but omitting defaulted options is
+    what keeps keys written before an option existed valid. Hashing every option instead would
+    mean that merely widening ``resample_fastlog_tags``' signature orphaned every cached day,
+    over parameters whose defaults reproduce the previous behaviour exactly.
+    """
+    defaults = {
+        name: param.default
+        for name, param in inspect.signature(resample_fastlog_tags).parameters.items()
+        if param.default is not inspect.Parameter.empty
+    }
+    return {k: v for k, v in resample_kwargs.items() if k not in defaults or v != defaults[k]}
 
 
 def create_consistent_hash(**kwargs) -> str:  # noqa: ANN003

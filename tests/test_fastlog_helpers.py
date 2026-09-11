@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Any, ClassVar
 
 import pandas as pd
 import pytest
@@ -542,7 +543,7 @@ class TestStdTags:
     def test_circular_std_is_small_for_a_tight_cluster_and_large_for_a_spread(self) -> None:
         tight = _direction_tag_df("AcWindDr_Value", [359.0, 0.0, 1.0, 2.0, 358.0, 0.5])
         spread = _direction_tag_df("AcWindDr_Value", [10.0, 100.0, 190.0, 280.0, 55.0, 145.0])
-        kwargs = {
+        kwargs: dict[str, Any] = {
             "timebase_s": 60,
             "busy_tags": ("AcWindDr_Value",),
             "circular_tags": ("AcWindDr_Value",),
@@ -558,7 +559,7 @@ class TestStdTags:
     def test_circular_std_is_rotation_invariant(self, offset: float) -> None:
         # The property that distinguishes a circular statistic from a linear one.
         values = [10.0, 25.0, 3.0, 355.0, 18.0, 340.0]
-        kwargs = {
+        kwargs: dict[str, Any] = {
             "timebase_s": 60,
             "busy_tags": ("AcWindDr_Value",),
             "circular_tags": ("AcWindDr_Value",),
@@ -631,7 +632,7 @@ class TestMinRawDataCount:
 
     def test_none_by_default_changes_nothing(self) -> None:
         raw = self._raw(period_s=36)
-        kwargs = {"timebase_s": 60, "busy_tags": self.BUSY, "busy_tag_ffill_limit_s": 45}
+        kwargs: dict[str, Any] = {"timebase_s": 60, "busy_tags": self.BUSY, "busy_tag_ffill_limit_s": 45}
         pd.testing.assert_frame_equal(
             resample_fastlog_tags(raw_df_dict=raw, **kwargs),
             resample_fastlog_tags(raw_df_dict=raw, min_raw_data_count=None, **kwargs),
@@ -643,7 +644,7 @@ class TestMinRawDataCount:
             "busy_a": _slow_scada_tag_df("busy_a", period_s=12, minutes=10),
             "busy_b": _slow_scada_tag_df("busy_b", period_s=60, minutes=10),
         }
-        kwargs = {
+        kwargs: dict[str, Any] = {
             "raw_df_dict": raw,
             "timebase_s": 60,
             "busy_tags": ("busy_a", "busy_b"),
@@ -654,3 +655,123 @@ class TestMinRawDataCount:
         all_below = resample_fastlog_tags(**kwargs, require_all_busy_tags=False)
         assert any_below["busy_a"].isna().all()
         assert all_below["busy_a"].iloc[:-1].notna().all()
+
+
+class TestResampleOptionsReachTheCacheLayer:
+    """Resample options must be settable through the cached, day-chunked entry points.
+
+    ``make_fl_resampled_one_device`` used to enumerate the options it forwarded, and that list
+    went stale as ``resample_fastlog_tags`` gained more: ``circular_tags``, ``ffill_tags``,
+    ``busy_tag_ffill_limit_s`` and ``require_all_busy_tags`` were all unreachable through the
+    cache layer. ``circular_tags`` mattered most, since falling back to its hardcoded default
+    silently averages a differently-named direction tag across the 0/360 wrap.
+    """
+
+    @pytest.fixture
+    def spy_resample(self, monkeypatch: pytest.MonkeyPatch) -> dict:
+        """Capture the kwargs resample_fastlog_tags is called with, and stub out the raw load."""
+        seen: dict = {}
+
+        def fake_resample(**kwargs: object) -> pd.DataFrame:
+            seen.update(kwargs)
+            return pd.DataFrame(
+                {"ActPower_Value": [1.0]}, index=pd.DatetimeIndex([DAY], name=TIMESTAMP_NAME, freq="1s")
+            )
+
+        monkeypatch.setattr(flh, "resample_fastlog_tags", fake_resample)
+        monkeypatch.setattr(
+            flh,
+            "_get_raw_df_dict",
+            lambda **_: {
+                "ActPower_Value": pd.DataFrame(
+                    {"ActPower_Value": [1.0]}, index=pd.DatetimeIndex([DAY], name=TIMESTAMP_NAME)
+                )
+            },
+        )
+        return seen
+
+    @pytest.mark.parametrize(
+        ("option", "value"),
+        [
+            ("circular_tags", ("AcWindDr_Value",)),
+            ("ffill_tags", ()),
+            ("std_tags", ("ActPower_Value",)),
+            ("min_raw_data_count", 3),
+            ("busy_tag_ffill_limit_s", 45),
+            ("require_all_busy_tags", True),
+        ],
+    )
+    def test_option_reaches_resample_fastlog_tags(self, spy_resample: dict, option: str, value: object) -> None:
+        flh.make_fl_resampled_one_device(
+            park_id=PARK,
+            device_id=DEVICE,
+            start_dt=DAY,
+            end_dt_excl=DAY_END,
+            siemens_parks={PARK},
+            **{option: value},  # type: ignore[arg-type]
+        )
+        assert spy_resample[option] == value
+
+    def test_option_reaches_through_the_day_chunking_and_cache(
+        self, spy_resample: dict, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # tz-aware, because this entry point coerces its result index to UTC before trimming it.
+        monkeypatch.setattr(flh, "_max_source_mtime", lambda **_: None)
+        flh.get_fl_resampled_one_device(
+            park_id=PARK,
+            device_id=DEVICE,
+            start_dt=pd.Timestamp(DAY, tz="UTC"),
+            end_dt_excl=pd.Timestamp(DAY_END, tz="UTC"),
+            cache_dir=tmp_path,
+            siemens_parks={PARK},
+            require_all_busy_tags=True,
+            busy_tag_ffill_limit_s=45,
+        )
+        assert spy_resample["require_all_busy_tags"] is True
+        assert spy_resample["busy_tag_ffill_limit_s"] == 45
+
+
+class TestCacheKeyStability:
+    """Adding resample options must not orphan days cached before those options existed.
+
+    The key is built by introspection over the named arguments, so a defaulted option has to be
+    left out of it: hashing every option would mean merely widening the signature invalidated
+    every cached day, over parameters whose defaults reproduce the previous behaviour exactly.
+    """
+
+    LEGACY_PARAMS: ClassVar[dict[str, Any]] = {
+        "park_id": "HOT",
+        "device_id": "2304512",
+        "start_dt": pd.Timestamp("2024-01-01"),
+        "end_dt_excl": pd.Timestamp("2024-01-02"),
+        "timebase_s": 1,
+        "tags": None,
+        "busy_tags": None,
+        "minmax_tags": None,
+        "min_data_count": None,
+    }
+    # Measured on the commit before std_tags/min_raw_data_count were added. A change here means
+    # every existing user's cache silently stops being found.
+    LEGACY_KEY = "IZfqhKlUtfd8GBnRSyEDIWIdDgeRGuVH"
+
+    def test_legacy_default_key_is_unchanged(self) -> None:
+        assert flh.create_consistent_hash(**self.LEGACY_PARAMS) == self.LEGACY_KEY
+
+    def test_defaulted_options_are_omitted_from_the_key(self) -> None:
+        assert flh._non_default_resample_kwargs({}) == {}  # noqa: SLF001
+        # Explicitly passing a default is indistinguishable from not passing it, by design.
+        assert flh._non_default_resample_kwargs({"std_tags": None, "require_all_busy_tags": False}) == {}  # noqa: SLF001
+
+    def test_non_default_options_are_kept_in_the_key(self) -> None:
+        kept = flh._non_default_resample_kwargs(  # noqa: SLF001
+            {"require_all_busy_tags": True, "min_raw_data_count": 3, "std_tags": None}
+        )
+        assert kept == {"require_all_busy_tags": True, "min_raw_data_count": 3}
+
+    def test_an_unknown_option_is_kept_rather_than_silently_dropped(self) -> None:
+        # A typo must not be swallowed; resample_fastlog_tags will raise on it anyway.
+        assert flh._non_default_resample_kwargs({"not_a_real_option": 1}) == {"not_a_real_option": 1}  # noqa: SLF001
+
+    def test_a_non_default_option_changes_the_key(self) -> None:
+        with_option = dict(self.LEGACY_PARAMS) | {"require_all_busy_tags": True}
+        assert flh.create_consistent_hash(**with_option) != self.LEGACY_KEY

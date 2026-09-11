@@ -297,3 +297,113 @@ class TestUpsampleUnchangedExceptTrailingPoint:
         # No pre-existing grid point is changed, and at most one trailing point is added.
         pd.testing.assert_frame_equal(new.loc[old.index], old, check_freq=False)
         assert 0 <= len(new) - len(old) <= 1
+
+
+def _slow_scada_tag_df(
+    tag: str,
+    *,
+    start: str = "2024-03-01 10:00:00",
+    minutes: int = 10,
+    period_s: int = 10,
+    drop_between: tuple[str, str] | None = None,
+) -> pd.DataFrame:
+    """Build a tag sampled every ``period_s`` (OPC-like), optionally with samples missing.
+
+    Unlike fastlog, a busy tag here reports every ~10s rather than every timebase, so at a fine
+    ``timebase_s`` most sub-grid cells hold no sample.
+    """
+    idx = pd.date_range(
+        pd.Timestamp(start),
+        pd.Timestamp(start) + pd.Timedelta(minutes=minutes),
+        freq=f"{period_s}s",
+        name=TIMESTAMP_NAME,
+    )
+    if drop_between is not None:
+        lo, hi = (pd.Timestamp(x) for x in drop_between)
+        idx = idx[(idx < lo) | (idx > hi)]
+    return pd.DataFrame({tag: range(len(idx))}, index=idx, dtype=float)
+
+
+class TestBusyTagFfillLimit:
+    """``busy_tag_ffill_limit_s`` decouples a busy tag's hold horizon from the output timebase.
+
+    Holding busy tags for one timebase suits fastlog, where they report every timebase. On slower
+    logging such as OPC it does not: 10s data on a 1s grid leaves the tag absent from 9 cells in
+    10, so every window reads as an outage.
+    """
+
+    BUSY = ("busy_a", "busy_b")
+
+    def _raw(self) -> dict[str, pd.DataFrame]:
+        return {
+            "busy_a": _slow_scada_tag_df("busy_a"),
+            "busy_b": _slow_scada_tag_df("busy_b"),
+            "slow_c": _slow_scada_tag_df("slow_c", period_s=60),
+        }
+
+    def test_one_second_grid_is_unusable_without_a_limit(self) -> None:
+        # Guards the status quo this parameter exists to fix (and that the default keeps it).
+        resampled = resample_fastlog_tags(raw_df_dict=self._raw(), timebase_s=1, busy_tags=self.BUSY)
+        assert resampled["busy_a"].isna().mean() > 0.8
+
+    def test_limit_restores_busy_tag_coverage_on_a_one_second_grid(self) -> None:
+        resampled = resample_fastlog_tags(
+            raw_df_dict=self._raw(), timebase_s=1, busy_tags=self.BUSY, busy_tag_ffill_limit_s=45
+        )
+        assert resampled["busy_a"].isna().mean() < 0.05
+
+    def test_limit_equal_to_timebase_reproduces_the_default(self) -> None:
+        # The parameter is expressed in the same units as the behaviour it generalises, so setting
+        # it to one timebase must be a no-op. This is what makes it safe to default to None.
+        default = resample_fastlog_tags(raw_df_dict=self._raw(), timebase_s=60, busy_tags=self.BUSY)
+        explicit = resample_fastlog_tags(
+            raw_df_dict=self._raw(), timebase_s=60, busy_tags=self.BUSY, busy_tag_ffill_limit_s=60
+        )
+        pd.testing.assert_frame_equal(default, explicit)
+
+    def test_limit_finer_than_the_subsampling_grid_raises(self) -> None:
+        with pytest.raises(ValueError, match="busy_tag_ffill_limit_s"):
+            resample_fastlog_tags(
+                raw_df_dict=self._raw(), timebase_s=600, busy_tags=self.BUSY, busy_tag_ffill_limit_s=0.5
+            )
+
+
+class TestRequireAllBusyTags:
+    """``require_all_busy_tags`` treats busy tags as independent rather than interchangeable.
+
+    The default assumes busy tags fail together. They don't always: a vane channel can die for days
+    while power and wind speed keep logging, and the default then forward-fills every other tag
+    across the dead stretch.
+    """
+
+    BUSY = ("busy_a", "busy_b")
+    DEAD = ("2024-03-01 10:02:00", "2024-03-01 10:08:00")
+    # Well inside the dead stretch, clear of the one-timebase hold at its leading edge.
+    DURING_DEAD = "2024-03-01 10:06:00"
+
+    def _raw(self, *, healthy: bool = False) -> dict[str, pd.DataFrame]:
+        return {
+            "busy_a": _slow_scada_tag_df("busy_a"),
+            "busy_b": _slow_scada_tag_df("busy_b", drop_between=None if healthy else self.DEAD),
+            "slow_c": _slow_scada_tag_df("slow_c", period_s=300),
+        }
+
+    def test_default_forward_fills_across_one_dead_busy_tag(self) -> None:
+        # Status quo: busy_a is still reporting, so nothing is treated as an outage.
+        resampled = resample_fastlog_tags(raw_df_dict=self._raw(), timebase_s=60, busy_tags=self.BUSY)
+        assert not pd.isna(resampled["slow_c"].loc[self.DURING_DEAD])
+
+    def test_require_all_stops_the_fill_across_one_dead_busy_tag(self) -> None:
+        resampled = resample_fastlog_tags(
+            raw_df_dict=self._raw(), timebase_s=60, busy_tags=self.BUSY, require_all_busy_tags=True
+        )
+        assert pd.isna(resampled["slow_c"].loc[self.DURING_DEAD])
+
+    def test_no_effect_when_every_busy_tag_is_reporting(self) -> None:
+        # The flag must cost nothing on healthy data, or it is not safe to turn on by default
+        # for a whole dataset.
+        kwargs = {"raw_df_dict": self._raw(healthy=True), "timebase_s": 60, "busy_tags": self.BUSY}
+        pd.testing.assert_frame_equal(
+            resample_fastlog_tags(**kwargs),
+            resample_fastlog_tags(**kwargs, require_all_busy_tags=True),
+        )

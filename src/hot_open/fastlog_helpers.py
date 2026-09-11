@@ -516,13 +516,29 @@ def make_fl_resampled_one_device(  # noqa: PLR0913
     )
 
 
-def upsample_and_ffill_stopping_at_nans(
+def _ffill_limit_from_seconds(*, ffill_limit_s: float, subsampling_timebase_ms: int, arg_name: str) -> int:
+    """Convert a forward-fill horizon in seconds to a pandas ffill limit in sub-grid steps.
+
+    Matches the one-timebase convention, so passing one timebase is a no-op.
+    """
+    limit = round(ffill_limit_s * 1000 / subsampling_timebase_ms) - 1
+    if limit < 1:
+        msg = (
+            f"{arg_name}={ffill_limit_s} is not longer than the subsampling timebase "
+            f"({subsampling_timebase_ms}ms), so nothing would be forward-filled"
+        )
+        raise ValueError(msg)
+    return limit
+
+
+def upsample_and_ffill_stopping_at_nans(  # noqa: PLR0913
     *,
     tag_df: pd.DataFrame,
     timebase_s: int,
     subsampling_timebase_ms: int,
     only_ffill_one_timebase: bool,
     busy_tag_nan_times: pd.DatetimeIndex | None = None,
+    ffill_limit_s: float | None = None,
 ) -> pd.DataFrame:
     """Upsample a DataFrame and forward-fill, stopping the forward fill at NaNs.
 
@@ -539,6 +555,10 @@ def upsample_and_ffill_stopping_at_nans(
         otherwise forward fill until NaN or busy_tag NaN is applied.
     busy_tag_nan_times : pd.DatetimeIndex | None
         DatetimeIndex of times when the busy tag is NaN and forward filling must stop
+    ffill_limit_s : float | None
+        Forward-fill horizon in seconds, overriding only_ffill_one_timebase. For tags whose
+        reporting interval is unrelated to timebase_s, e.g. 10s OPC logs on a 1s grid.
+        ffill_limit_s=timebase_s reproduces only_ffill_one_timebase=True.
 
     """
     if tag_df.empty:
@@ -550,7 +570,12 @@ def upsample_and_ffill_stopping_at_nans(
         # add nans to df at busy_tag_nan_times
         tag_df = tag_df.reindex(tag_df.index.union(busy_tag_nan_times_to_add))
     upsampling_factor = timebase_s * 1000 // (subsampling_timebase_ms)
-    ffill_limit = None if not only_ffill_one_timebase else upsampling_factor - 1
+    if ffill_limit_s is not None:
+        ffill_limit = _ffill_limit_from_seconds(
+            ffill_limit_s=ffill_limit_s, subsampling_timebase_ms=subsampling_timebase_ms, arg_name="ffill_limit_s"
+        )
+    else:
+        ffill_limit = None if not only_ffill_one_timebase else upsampling_factor - 1
     freq = pd.Timedelta(milliseconds=subsampling_timebase_ms)
     upsampled = tag_df.resample(freq).ffill(limit=ffill_limit)
     last_ts = tag_df.index[-1]
@@ -569,8 +594,19 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
     minmax_tags: Sequence[str] | None = None,
     min_data_count: float | None = None,
     min_data_count_tag: str | None = None,
+    busy_tag_ffill_limit_s: float | None = None,
+    require_all_busy_tags: bool = False,
 ) -> pd.DataFrame:
-    """Resample all tags to the target timebase."""
+    """Resample all tags to the target timebase.
+
+    ``busy_tag_ffill_limit_s`` is how long a busy tag's value stays representative, in seconds.
+    It defaults to one timebase, which suits fastlog but not slower logging such as OPC: 10s data
+    on a 1s grid leaves a busy tag absent from 9 cells in 10, so every window reads as an outage.
+
+    ``require_all_busy_tags`` makes a window an outage when *any* busy tag is missing rather than
+    only when all are. Use it where busy tags fail independently -- a vane channel dying while
+    power keeps logging, which the default would forward-fill every other tag across.
+    """
     if busy_tags is None:
         siemens_typical_busy_tags = {"ActPower_Value", "AcWindSp_AcWindSp", "GenRpm_Value"}
         busy_tags = tuple(x for x in raw_df_dict if x in siemens_typical_busy_tags)
@@ -587,6 +623,12 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
         )
 
     subsampling_timebase_ms = min(1000, timebase_s * 1000 // 20)
+    if busy_tag_ffill_limit_s is not None:
+        _ffill_limit_from_seconds(
+            ffill_limit_s=busy_tag_ffill_limit_s,
+            subsampling_timebase_ms=subsampling_timebase_ms,
+            arg_name="busy_tag_ffill_limit_s",
+        )
     busy_upsampled = pd.DataFrame(index=pd.DatetimeIndex([], name=TIMESTAMP_NAME))
     for tag, tag_df in raw_df_dict.items():
         if tag not in busy_tags or tag_df.empty:
@@ -596,10 +638,12 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
             timebase_s=timebase_s,
             subsampling_timebase_ms=subsampling_timebase_ms,
             only_ffill_one_timebase=True,
+            ffill_limit_s=busy_tag_ffill_limit_s,
         )
         busy_upsampled = pd.merge_ordered(busy_upsampled, tag_upsampled, on=TIMESTAMP_NAME).set_index(TIMESTAMP_NAME)
     busy_resampled = busy_upsampled.resample(f"{timebase_s}s").mean()
-    busy_tag_nan_times = busy_resampled.index[busy_resampled.isna().all(axis=1)]
+    busy_nan = busy_resampled.isna()
+    busy_tag_nan_times = busy_resampled.index[busy_nan.any(axis=1) if require_all_busy_tags else busy_nan.all(axis=1)]
     if not isinstance(busy_tag_nan_times, pd.DatetimeIndex):
         msg = f"Expected a DatetimeIndex, but got {type(busy_tag_nan_times)}"
         raise TypeError(msg)
@@ -618,6 +662,7 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
             subsampling_timebase_ms=subsampling_timebase_ms,
             only_ffill_one_timebase=tag not in ffill_tags,
             busy_tag_nan_times=busy_tag_nan_times if len(busy_tag_nan_times) > 0 else None,
+            ffill_limit_s=busy_tag_ffill_limit_s if tag not in ffill_tags else None,
         )
         upsampled = pd.merge_ordered(upsampled, tag_upsampled, on=TIMESTAMP_NAME).set_index(TIMESTAMP_NAME)
     if upsampled.empty:
@@ -658,6 +703,7 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 subsampling_timebase_ms=subsampling_timebase_ms,
                 only_ffill_one_timebase=min_data_count_tag not in ffill_tags,
                 busy_tag_nan_times=busy_tag_nan_times if len(busy_tag_nan_times) > 0 else None,
+                ffill_limit_s=busy_tag_ffill_limit_s if min_data_count_tag not in ffill_tags else None,
             )
             count_df = tag_upsampled.resample(f"{timebase_s}s").count()
         else:

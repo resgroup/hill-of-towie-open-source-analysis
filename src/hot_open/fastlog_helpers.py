@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 from pyarrow.lib import ArrowInvalid
 
-from hot_open.circular_math import circ_mean_resample_degrees
+from hot_open.circular_math import circ_mean_resample_degrees, circ_std_resample_degrees
 from hot_open.settings import get_cache_dir, get_data_dir, get_filestore_dir
 from hot_open.sourcing_data import ensure_extracted
 
@@ -602,8 +602,10 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
     ffill_tags: Sequence[str] | None = None,
     circular_tags: Sequence[str] | None = None,
     minmax_tags: Sequence[str] | None = None,
+    std_tags: Sequence[str] | None = None,
     min_data_count: float | None = None,
     min_data_count_tag: str | None = None,
+    min_raw_data_count: float | None = None,
     busy_tag_ffill_limit_s: float | None = None,
     require_all_busy_tags: bool = False,
 ) -> pd.DataFrame:
@@ -616,6 +618,19 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
     ``require_all_busy_tags`` makes a window an outage when *any* busy tag is missing rather than
     only when all are. Use it where busy tags fail independently -- a vane channel dying while
     power keeps logging, which the default would forward-fill every other tag across.
+
+    ``std_tags`` emits a ``std_<tag>`` column per named tag, computed on the same upsampled grid
+    as the mean so it is duration weighted and consistent with the other aggregates. Tags also in
+    ``circular_tags`` get the circular standard deviation, since a plain one is meaningless across
+    the 0/360 wrap.
+
+    ``min_data_count`` counts non-NaN *sub-grid cells* of the busy tags, so it saturates once
+    ``busy_tag_ffill_limit_s`` is set: with a 45s horizon a 60s window starved from 5 raw samples
+    to 2 still reports 60 filled cells, indistinguishable from a healthy one. Use
+    ``min_raw_data_count`` to require a minimum number of *raw* samples per window instead, which
+    is what catches a run of short gaps that never individually trip the outage check. Its polarity
+    follows ``require_all_busy_tags``: with that set, any busy tag below the threshold masks the
+    window, otherwise all of them must be.
     """
     if busy_tags is None:
         siemens_typical_busy_tags = {"ActPower_Value", "AcWindSp_AcWindSp", "GenRpm_Value"}
@@ -712,6 +727,21 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
             min_df = upsampled[minmax_tags_in_upsampled].resample(f"{timebase_s}s").min()
             min_df = min_df.rename(columns={x: f"min_{x}" for x in minmax_tags_in_upsampled})
             resampled_df = pd.merge_ordered(resampled_df, min_df, on=TIMESTAMP_NAME).set_index(TIMESTAMP_NAME)
+    if std_tags is not None:
+        std_tags_in_upsampled = [x for x in std_tags if x in upsampled.columns]
+        # Circular tags need the resultant-length formula; a plain std is meaningless across 0/360.
+        circ_std_tags = [x for x in std_tags_in_upsampled if x in circ_cols]
+        linear_std_tags = [x for x in std_tags_in_upsampled if x not in circ_cols]
+        std_frames = []
+        if linear_std_tags:
+            std_frames.append(upsampled[linear_std_tags].resample(f"{timebase_s}s").std())
+        if circ_std_tags:
+            std_frames.append(
+                circ_std_resample_degrees(upsampled[circ_std_tags], resample_timedelta=pd.Timedelta(f"{timebase_s}s"))
+            )
+        for std_df in std_frames:
+            std_df = std_df.rename(columns={x: f"std_{x}" for x in std_df.columns})  # noqa: PLW2901
+            resampled_df = pd.merge_ordered(resampled_df, std_df, on=TIMESTAMP_NAME).set_index(TIMESTAMP_NAME)
     resampled_df.index = pd.DatetimeIndex(resampled_df.index, freq=f"{timebase_s}s")
 
     if min_data_count is not None:
@@ -732,6 +762,27 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
         resampled_df.loc[low_count_times, numeric_cols] = np.nan
         resampled_df.loc[low_count_times, circ_cols] = np.nan
         resampled_df.loc[low_count_times, nonnumeric_cols] = pd.NA
+
+    if min_raw_data_count is not None:
+        # Raw samples per window, not sub-grid cells: see this function's docstring for why the
+        # cell count cannot express this once busy_tag_ffill_limit_s is set.
+        raw_counts = pd.DataFrame(index=resampled_df.index)
+        for tag in busy_tags:
+            raw_tag_df = raw_df_dict.get(tag)
+            if raw_tag_df is None or raw_tag_df.empty:
+                # An absent or empty busy tag has no samples, so it fails the threshold. Matches
+                # require_all_busy_tags, which also treats such a tag as missing rather than absent.
+                raw_counts[tag] = 0
+            else:
+                counts = raw_tag_df[tag].resample(f"{timebase_s}s").count()
+                raw_counts[tag] = counts.reindex(resampled_df.index, fill_value=0)
+        below = raw_counts.lt(min_raw_data_count)
+        low_raw_times = raw_counts.index[below.any(axis=1) if require_all_busy_tags else below.all(axis=1)]
+        # Blanks the derived std_/min_/max_ columns too, so a masked window keeps no aggregate.
+        numeric_all = resampled_df.select_dtypes(include="number").columns
+        nonnumeric_all = resampled_df.select_dtypes(exclude="number").columns
+        resampled_df.loc[low_raw_times, numeric_all] = np.nan
+        resampled_df.loc[low_raw_times, nonnumeric_all] = pd.NA
     return resampled_df
 
 

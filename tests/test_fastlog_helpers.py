@@ -491,3 +491,166 @@ class TestBusyTagHorizonIsScopedToBusyTags:
         )
         # busy_a legitimately differs (it *is* busy); status_d and the masking it drives must not.
         pd.testing.assert_series_equal(default["status_d"], widened["status_d"])
+
+
+def _direction_tag_df(
+    tag: str,
+    values: list[float],
+    *,
+    start: str = "2024-03-01 10:00:00",
+    period_s: int = 10,
+) -> pd.DataFrame:
+    """Build a direction tag whose samples are exactly ``values``, one every ``period_s``."""
+    idx = pd.date_range(pd.Timestamp(start), periods=len(values), freq=f"{period_s}s", name=TIMESTAMP_NAME)
+    return pd.DataFrame({tag: values}, index=idx, dtype=float)
+
+
+class TestStdTags:
+    """``std_tags`` emits a per-window standard deviation, circular-aware.
+
+    Callers who want variability alongside the mean had to compute it themselves, and a plain
+    std is wrong for a direction: the spread of 359 and 1 degrees is 1 degree, not 253.
+    """
+
+    def test_non_circular_std_matches_pandas_std_on_the_same_grid(self) -> None:
+        raw = {"linear_a": _slow_scada_tag_df("linear_a", period_s=10, minutes=5)}
+        resampled = resample_fastlog_tags(
+            raw_df_dict=raw, timebase_s=60, busy_tags=("linear_a",), std_tags=("linear_a",)
+        )
+        upsampled = upsample_and_ffill_stopping_at_nans(
+            tag_df=raw["linear_a"], timebase_s=60, subsampling_timebase_ms=1000, only_ffill_one_timebase=True
+        )
+        expected = upsampled["linear_a"].resample("60s").std()
+        pd.testing.assert_series_equal(
+            resampled["std_linear_a"].dropna(), expected.reindex(resampled.index).dropna(), check_names=False
+        )
+
+    def test_std_column_is_named_with_a_prefix(self) -> None:
+        raw = {"linear_a": _slow_scada_tag_df("linear_a")}
+        resampled = resample_fastlog_tags(
+            raw_df_dict=raw, timebase_s=60, busy_tags=("linear_a",), std_tags=("linear_a",)
+        )
+        assert "std_linear_a" in resampled.columns
+        assert "linear_a" in resampled.columns
+
+    def test_no_std_columns_by_default(self) -> None:
+        # The parameter must cost nothing when unused, or it is not safe to add.
+        raw = {"linear_a": _slow_scada_tag_df("linear_a")}
+        default = resample_fastlog_tags(raw_df_dict=raw, timebase_s=60, busy_tags=("linear_a",))
+        assert not [c for c in default.columns if c.startswith("std_")]
+
+    def test_circular_std_is_small_for_a_tight_cluster_and_large_for_a_spread(self) -> None:
+        tight = _direction_tag_df("AcWindDr_Value", [359.0, 0.0, 1.0, 2.0, 358.0, 0.5])
+        spread = _direction_tag_df("AcWindDr_Value", [10.0, 100.0, 190.0, 280.0, 55.0, 145.0])
+        kwargs = {
+            "timebase_s": 60,
+            "busy_tags": ("AcWindDr_Value",),
+            "circular_tags": ("AcWindDr_Value",),
+            "std_tags": ("AcWindDr_Value",),
+        }
+        tight_std = resample_fastlog_tags(raw_df_dict={"AcWindDr_Value": tight}, **kwargs)["std_AcWindDr_Value"]
+        spread_std = resample_fastlog_tags(raw_df_dict={"AcWindDr_Value": spread}, **kwargs)["std_AcWindDr_Value"]
+        # A plain std would call the tight cluster ~180 deg because it straddles 0/360.
+        assert tight_std.dropna().max() < 5
+        assert spread_std.dropna().min() > 40
+
+    @pytest.mark.parametrize("offset", [0.0, 37.0, 180.0, 359.0])
+    def test_circular_std_is_rotation_invariant(self, offset: float) -> None:
+        # The property that distinguishes a circular statistic from a linear one.
+        values = [10.0, 25.0, 3.0, 355.0, 18.0, 340.0]
+        kwargs = {
+            "timebase_s": 60,
+            "busy_tags": ("AcWindDr_Value",),
+            "circular_tags": ("AcWindDr_Value",),
+            "std_tags": ("AcWindDr_Value",),
+        }
+        base = resample_fastlog_tags(
+            raw_df_dict={"AcWindDr_Value": _direction_tag_df("AcWindDr_Value", values)}, **kwargs
+        )["std_AcWindDr_Value"]
+        rotated_values = [(v + offset) % 360 for v in values]
+        rotated = resample_fastlog_tags(
+            raw_df_dict={"AcWindDr_Value": _direction_tag_df("AcWindDr_Value", rotated_values)}, **kwargs
+        )["std_AcWindDr_Value"]
+        pd.testing.assert_series_equal(base, rotated, check_names=False)
+
+
+class TestMinRawDataCount:
+    """``min_raw_data_count`` counts *raw* samples, which ``min_data_count`` cannot.
+
+    ``min_data_count`` counts sub-grid cells, and those saturate once ``busy_tag_ffill_limit_s``
+    is set: a 60s window starved from 5 raw samples to 1-2 still reports 60 filled cells, so it
+    is indistinguishable from a healthy one. That is exactly the case a minimum-coverage rule
+    exists to catch, and the busy-tag fill hides it by design.
+    """
+
+    BUSY = ("busy_a",)
+
+    def _raw(self, *, period_s: int) -> dict[str, pd.DataFrame]:
+        return {"busy_a": _slow_scada_tag_df("busy_a", period_s=period_s, minutes=10)}
+
+    def test_min_data_count_cannot_tell_a_starved_window_from_a_healthy_one(self) -> None:
+        # Guards the limitation this parameter exists for; if this ever fails, re-read the docs.
+        healthy = resample_fastlog_tags(
+            raw_df_dict=self._raw(period_s=12),
+            timebase_s=60,
+            busy_tags=self.BUSY,
+            busy_tag_ffill_limit_s=45,
+            min_data_count=4,
+        )
+        starved = resample_fastlog_tags(
+            raw_df_dict=self._raw(period_s=36),
+            timebase_s=60,
+            busy_tags=self.BUSY,
+            busy_tag_ffill_limit_s=45,
+            min_data_count=4,
+        )
+        # Excluding the trailing partial window, which is legitimately short of samples.
+        assert healthy["busy_a"].iloc[:-1].notna().all()
+        assert starved["busy_a"].iloc[:-1].notna().all()
+
+    def test_masks_a_starved_window(self) -> None:
+        starved = resample_fastlog_tags(
+            raw_df_dict=self._raw(period_s=36),
+            timebase_s=60,
+            busy_tags=self.BUSY,
+            busy_tag_ffill_limit_s=45,
+            min_raw_data_count=4,
+        )
+        assert starved["busy_a"].isna().all()
+
+    def test_keeps_a_window_meeting_the_threshold(self) -> None:
+        healthy = resample_fastlog_tags(
+            raw_df_dict=self._raw(period_s=12),
+            timebase_s=60,
+            busy_tags=self.BUSY,
+            busy_tag_ffill_limit_s=45,
+            min_raw_data_count=4,
+        )
+        # 60s / 12s = 5 raw samples per window, so a threshold of 4 must not bite.
+        assert healthy["busy_a"].iloc[:-1].notna().all()
+
+    def test_none_by_default_changes_nothing(self) -> None:
+        raw = self._raw(period_s=36)
+        kwargs = {"timebase_s": 60, "busy_tags": self.BUSY, "busy_tag_ffill_limit_s": 45}
+        pd.testing.assert_frame_equal(
+            resample_fastlog_tags(raw_df_dict=raw, **kwargs),
+            resample_fastlog_tags(raw_df_dict=raw, min_raw_data_count=None, **kwargs),
+        )
+
+    def test_polarity_follows_require_all_busy_tags(self) -> None:
+        # One busy tag well fed, one starved. require_all -> any tag below threshold masks.
+        raw = {
+            "busy_a": _slow_scada_tag_df("busy_a", period_s=12, minutes=10),
+            "busy_b": _slow_scada_tag_df("busy_b", period_s=60, minutes=10),
+        }
+        kwargs = {
+            "raw_df_dict": raw,
+            "timebase_s": 60,
+            "busy_tags": ("busy_a", "busy_b"),
+            "busy_tag_ffill_limit_s": 45,
+            "min_raw_data_count": 4,
+        }
+        any_below = resample_fastlog_tags(**kwargs, require_all_busy_tags=True)
+        all_below = resample_fastlog_tags(**kwargs, require_all_busy_tags=False)
+        assert any_below["busy_a"].isna().all()
+        assert all_below["busy_a"].iloc[:-1].notna().all()

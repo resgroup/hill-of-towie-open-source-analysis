@@ -570,12 +570,11 @@ def upsample_and_ffill_stopping_at_nans(  # noqa: PLR0913
         # add nans to df at busy_tag_nan_times
         tag_df = tag_df.reindex(tag_df.index.union(busy_tag_nan_times_to_add))
     upsampling_factor = timebase_s * 1000 // (subsampling_timebase_ms)
+    ffill_limit: int | None = upsampling_factor - 1 if only_ffill_one_timebase else None
     if ffill_limit_s is not None:
         ffill_limit = _ffill_limit_from_seconds(
             ffill_limit_s=ffill_limit_s, subsampling_timebase_ms=subsampling_timebase_ms, arg_name="ffill_limit_s"
         )
-    else:
-        ffill_limit = None if not only_ffill_one_timebase else upsampling_factor - 1
     freq = pd.Timedelta(milliseconds=subsampling_timebase_ms)
     upsampled = tag_df.resample(freq).ffill(limit=ffill_limit)
     last_ts = tag_df.index[-1]

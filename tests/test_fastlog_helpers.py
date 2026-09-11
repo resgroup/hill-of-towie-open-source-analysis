@@ -402,8 +402,8 @@ class TestRequireAllBusyTags:
     def test_no_effect_when_every_busy_tag_is_reporting(self) -> None:
         # The flag must cost nothing on healthy data, or it is not safe to turn on by default
         # for a whole dataset.
-        kwargs = {"raw_df_dict": self._raw(healthy=True), "timebase_s": 60, "busy_tags": self.BUSY}
+        raw = self._raw(healthy=True)
         pd.testing.assert_frame_equal(
-            resample_fastlog_tags(**kwargs),
-            resample_fastlog_tags(**kwargs, require_all_busy_tags=True),
+            resample_fastlog_tags(raw_df_dict=raw, timebase_s=60, busy_tags=self.BUSY),
+            resample_fastlog_tags(raw_df_dict=raw, timebase_s=60, busy_tags=self.BUSY, require_all_busy_tags=True),
         )

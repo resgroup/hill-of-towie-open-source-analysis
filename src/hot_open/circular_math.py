@@ -65,6 +65,38 @@ def circ_mean_resample_degrees(df: pd.DataFrame, *, resample_timedelta: pd.Timed
     return pd.DataFrame(result, index=sin_df_resampled.index, columns=df.columns)
 
 
+def circ_std_resample_degrees(df: pd.DataFrame, *, resample_timedelta: pd.Timedelta) -> pd.DataFrame:
+    """Apply resample and circular standard deviation to a DataFrame efficiently.
+
+    A plain standard deviation is wrong for a direction: the spread of 359 and 1 degrees is
+    1 degree, not 253. This uses the mean resultant length R of the unit vectors, then
+    sqrt(-2 * ln(R)) -- the standard circular deviation, which is rotation invariant.
+
+    R is clipped at 1 so floating-point overshoot on a perfectly tight window yields 0 rather
+    than NaN from the log of a number just above 1.
+
+    Args:
+    ----
+        df: DataFrame where each column contains circular data in degrees from 0 inclusive to 360 exclusive.
+        resample_timedelta: Timebase to resample the data to.
+
+    Returns:
+    -------
+        Resampled DataFrame with the circular standard deviation of each column, in degrees.
+
+    """
+    if not isinstance(df.index, pd.DatetimeIndex):
+        msg = "DataFrame must have a DatetimeIndex."
+        raise TypeError(msg)
+
+    rad_df = np.deg2rad(df)
+    sin_resampled = pd.DataFrame(np.sin(rad_df), index=df.index, columns=df.columns).resample(resample_timedelta).mean()
+    cos_resampled = pd.DataFrame(np.cos(rad_df), index=df.index, columns=df.columns).resample(resample_timedelta).mean()
+    resultant_length = np.sqrt(sin_resampled**2 + cos_resampled**2).clip(upper=1.0)
+    result = np.rad2deg(np.sqrt(-2 * np.log(resultant_length)))
+    return pd.DataFrame(result, index=sin_resampled.index, columns=df.columns)
+
+
 def circ_mean_dataframe_columns(df: pd.DataFrame) -> pd.Series:
     """Apply ciruclar mean to DataFrame columns efficiently.
 

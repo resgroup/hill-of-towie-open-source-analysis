@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 from pyarrow.lib import ArrowInvalid
 
-from hot_open.circular_math import circ_mean_resample_degrees
+from hot_open.circular_math import circ_mean_resample_degrees, circ_std_resample_degrees
 from hot_open.settings import get_cache_dir, get_data_dir, get_filestore_dir
 from hot_open.sourcing_data import ensure_extracted
 
@@ -107,8 +107,12 @@ def get_fl_resampled(  # noqa: PLR0913
     filestore_dir: Path | None = None,
     siemens_parks: set[str] | None = None,
     refresh_cache: bool = False,
+    **resample_kwargs: object,
 ) -> pd.DataFrame:
     """Return resampled fastlog data for multiple devices as a multi-level (device_id, tag) DataFrame.
+
+    Extra keyword arguments are forwarded to :func:`resample_fastlog_tags` and join the per-day
+    cache key when they differ from its defaults.
 
     ``siemens_parks`` overrides the set of park ids loaded with the Siemens fastlog reader;
     when ``None`` the module default ``SIEMENS_PARKS`` is used. Pass it to load parks that are
@@ -135,6 +139,7 @@ def get_fl_resampled(  # noqa: PLR0913
             cache_dir=cache_dir,
             siemens_parks=siemens_parks,
             refresh_cache=refresh_cache,
+            **resample_kwargs,
         )
         if not device_id_df.index.is_monotonic_increasing:
             msg = f"Resampled data index for {device_id} is not monotonic increasing."
@@ -169,6 +174,7 @@ def _get_fl_resampled_one_device_one_day(  # noqa: PLR0913
     cache_dir: Path | None = None,
     siemens_parks: set[str] | None = None,
     refresh_cache: bool = False,
+    **resample_kwargs: object,
 ) -> pd.DataFrame:
     if (end_dt_excl - start_dt) > dt.timedelta(days=1):
         msg = f"Date range must be one day or less. Got {start_dt=} {end_dt_excl=}"
@@ -186,6 +192,11 @@ def _get_fl_resampled_one_device_one_day(  # noqa: PLR0913
             for key in args_info.args
             if key not in {"cache_dir", "filestore_dir", "siemens_parks", "refresh_cache"}
         }
+        # Forwarded resample options join the key so a day cached under different aggregation
+        # settings cannot be mistaken for a match. Defaulted options are omitted, which is what
+        # keeps keys written before those options existed valid. Note **resample_kwargs does not
+        # appear in args_info.args, so the legacy part of the key is byte-identical either way.
+        params.update(_non_default_resample_kwargs(resample_kwargs))
         cache_key = create_consistent_hash(**params)
         cache_path = (
             cache_dir / "fl_resampled" / park_id / device_id / f"{start_dt.strftime('%Y%m%d')}_{cache_key}.parquet"
@@ -220,6 +231,7 @@ def _get_fl_resampled_one_device_one_day(  # noqa: PLR0913
         min_data_count=min_data_count,
         minmax_tags=minmax_tags,
         siemens_parks=siemens_parks,
+        **resample_kwargs,
     )
     if cache_dir is not None and not result_df.empty:
         cache_path.parent.mkdir(exist_ok=True, parents=True)
@@ -292,8 +304,13 @@ def get_fl_resampled_one_device(  # noqa: PLR0913
     cache_dir: Path | None = None,
     siemens_parks: set[str] | None = None,
     refresh_cache: bool = False,
+    **resample_kwargs: object,
 ) -> pd.DataFrame:
-    """Return resampled fastlog data for a single device over the given date range, chunked by day."""
+    """Return resampled fastlog data for a single device over the given date range, chunked by day.
+
+    Extra keyword arguments are forwarded to :func:`resample_fastlog_tags` and join the per-day
+    cache key when they differ from its defaults.
+    """
     # chunk by day
     day_dfs = []
     for day in _generate_dates_in_range(start_dt, end_dt_excl):
@@ -313,6 +330,7 @@ def get_fl_resampled_one_device(  # noqa: PLR0913
             cache_dir=cache_dir,
             siemens_parks=siemens_parks,
             refresh_cache=refresh_cache,
+            **resample_kwargs,
         )
         if not day_df.empty:
             day_dfs.append(day_df)
@@ -484,8 +502,18 @@ def make_fl_resampled_one_device(  # noqa: PLR0913
     minmax_tags: Sequence[str] | None = None,
     min_data_count: float | None = None,
     siemens_parks: set[str] | None = None,
+    **resample_kwargs: object,
 ) -> pd.DataFrame:
-    """Load raw fastlog data and resample it to the target timebase for a single device."""
+    """Load raw fastlog data and resample it to the target timebase for a single device.
+
+    Extra keyword arguments are forwarded to :func:`resample_fastlog_tags`, so options such as
+    ``circular_tags``, ``ffill_tags``, ``std_tags``, ``min_raw_data_count``,
+    ``busy_tag_ffill_limit_s`` and ``require_all_busy_tags`` are reachable from here. They are
+    forwarded rather than enumerated deliberately: an enumerated list silently went stale as
+    ``resample_fastlog_tags`` gained options, leaving several of them unreachable through the
+    cache layer, and ``circular_tags`` in particular then fell back to a hardcoded tag-name set
+    so a park named otherwise had its directions averaged across the 0/360 wrap.
+    """
     raw_df_dict = _get_raw_df_dict(
         park_id=park_id,
         device_id=device_id,
@@ -507,6 +535,7 @@ def make_fl_resampled_one_device(  # noqa: PLR0913
         busy_tags=busy_tags,
         minmax_tags=minmax_tags,
         min_data_count=min_data_count,
+        **resample_kwargs,  # type: ignore[arg-type]
     )
 
     return (
@@ -602,8 +631,10 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
     ffill_tags: Sequence[str] | None = None,
     circular_tags: Sequence[str] | None = None,
     minmax_tags: Sequence[str] | None = None,
+    std_tags: Sequence[str] | None = None,
     min_data_count: float | None = None,
     min_data_count_tag: str | None = None,
+    min_raw_data_count: float | None = None,
     busy_tag_ffill_limit_s: float | None = None,
     require_all_busy_tags: bool = False,
 ) -> pd.DataFrame:
@@ -616,6 +647,19 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
     ``require_all_busy_tags`` makes a window an outage when *any* busy tag is missing rather than
     only when all are. Use it where busy tags fail independently -- a vane channel dying while
     power keeps logging, which the default would forward-fill every other tag across.
+
+    ``std_tags`` emits a ``std_<tag>`` column per named tag, computed on the same upsampled grid
+    as the mean so it is duration weighted and consistent with the other aggregates. Tags also in
+    ``circular_tags`` get the circular standard deviation, since a plain one is meaningless across
+    the 0/360 wrap.
+
+    ``min_data_count`` counts non-NaN *sub-grid cells* of the busy tags, so it saturates once
+    ``busy_tag_ffill_limit_s`` is set: with a 45s horizon a 60s window starved from 5 raw samples
+    to 2 still reports 60 filled cells, indistinguishable from a healthy one. Use
+    ``min_raw_data_count`` to require a minimum number of *raw* samples per window instead, which
+    is what catches a run of short gaps that never individually trip the outage check. Its polarity
+    follows ``require_all_busy_tags``: with that set, any busy tag below the threshold masks the
+    window, otherwise all of them must be.
     """
     if busy_tags is None:
         siemens_typical_busy_tags = {"ActPower_Value", "AcWindSp_AcWindSp", "GenRpm_Value"}
@@ -712,6 +756,21 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
             min_df = upsampled[minmax_tags_in_upsampled].resample(f"{timebase_s}s").min()
             min_df = min_df.rename(columns={x: f"min_{x}" for x in minmax_tags_in_upsampled})
             resampled_df = pd.merge_ordered(resampled_df, min_df, on=TIMESTAMP_NAME).set_index(TIMESTAMP_NAME)
+    if std_tags is not None:
+        std_tags_in_upsampled = [x for x in std_tags if x in upsampled.columns]
+        # Circular tags need the resultant-length formula; a plain std is meaningless across 0/360.
+        circ_std_tags = [x for x in std_tags_in_upsampled if x in circ_cols]
+        linear_std_tags = [x for x in std_tags_in_upsampled if x not in circ_cols]
+        std_frames = []
+        if linear_std_tags:
+            std_frames.append(upsampled[linear_std_tags].resample(f"{timebase_s}s").std())
+        if circ_std_tags:
+            std_frames.append(
+                circ_std_resample_degrees(upsampled[circ_std_tags], resample_timedelta=pd.Timedelta(f"{timebase_s}s"))
+            )
+        for std_df in std_frames:
+            std_df = std_df.rename(columns={x: f"std_{x}" for x in std_df.columns})  # noqa: PLW2901
+            resampled_df = pd.merge_ordered(resampled_df, std_df, on=TIMESTAMP_NAME).set_index(TIMESTAMP_NAME)
     resampled_df.index = pd.DatetimeIndex(resampled_df.index, freq=f"{timebase_s}s")
 
     if min_data_count is not None:
@@ -732,7 +791,44 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
         resampled_df.loc[low_count_times, numeric_cols] = np.nan
         resampled_df.loc[low_count_times, circ_cols] = np.nan
         resampled_df.loc[low_count_times, nonnumeric_cols] = pd.NA
+
+    if min_raw_data_count is not None:
+        # Raw samples per window, not sub-grid cells: see this function's docstring for why the
+        # cell count cannot express this once busy_tag_ffill_limit_s is set.
+        raw_counts = pd.DataFrame(index=resampled_df.index)
+        for tag in busy_tags:
+            raw_tag_df = raw_df_dict.get(tag)
+            if raw_tag_df is None or raw_tag_df.empty:
+                # An absent or empty busy tag has no samples, so it fails the threshold. Matches
+                # require_all_busy_tags, which also treats such a tag as missing rather than absent.
+                raw_counts[tag] = 0
+            else:
+                counts = raw_tag_df[tag].resample(f"{timebase_s}s").count()
+                raw_counts[tag] = counts.reindex(resampled_df.index, fill_value=0)
+        below = raw_counts.lt(min_raw_data_count)
+        low_raw_times = raw_counts.index[below.any(axis=1) if require_all_busy_tags else below.all(axis=1)]
+        # Blanks the derived std_/min_/max_ columns too, so a masked window keeps no aggregate.
+        numeric_all = resampled_df.select_dtypes(include="number").columns
+        nonnumeric_all = resampled_df.select_dtypes(exclude="number").columns
+        resampled_df.loc[low_raw_times, numeric_all] = np.nan
+        resampled_df.loc[low_raw_times, nonnumeric_all] = pd.NA
     return resampled_df
+
+
+def _non_default_resample_kwargs(resample_kwargs: dict) -> dict:
+    """Return only the resample options that differ from ``resample_fastlog_tags``' defaults.
+
+    Cache keys must change when aggregation settings change, but omitting defaulted options is
+    what keeps keys written before an option existed valid. Hashing every option instead would
+    mean that merely widening ``resample_fastlog_tags``' signature orphaned every cached day,
+    over parameters whose defaults reproduce the previous behaviour exactly.
+    """
+    defaults = {
+        name: param.default
+        for name, param in inspect.signature(resample_fastlog_tags).parameters.items()
+        if param.default is not inspect.Parameter.empty
+    }
+    return {k: v for k, v in resample_kwargs.items() if k not in defaults or v != defaults[k]}
 
 
 def create_consistent_hash(**kwargs) -> str:  # noqa: ANN003

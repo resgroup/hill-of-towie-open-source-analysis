@@ -702,16 +702,18 @@ def _fastest_logging_interval_ms(*, raw_df_dict: dict[str, pd.DataFrame], tags: 
     The quickest rather than the average: a grid coarser than the fastest tag throws that tag's
     samples away before anything is aggregated, which is what the rate-aware grid exists to stop.
     """
-    intervals = []
+    intervals: list[float] = []
     for tag in tags:
         tag_df = raw_df_dict.get(tag)
         if tag_df is None or len(tag_df) < 2:  # noqa: PLR2004
             continue
-        deltas_s = pd.Series(tag_df.index).diff().dt.total_seconds()
-        quick_s, median_s = deltas_s.quantile(_LOGGING_INTERVAL_QUANTILE), deltas_s.median()
+        # Differenced in numpy rather than through .diff().dt, whose element type the pandas stubs
+        # cannot follow on an index built at runtime.
+        deltas_s = np.diff(tag_df.index.to_numpy(dtype="datetime64[ns]")) / np.timedelta64(1, "s")
+        quick_s, median_s = np.quantile(deltas_s, _LOGGING_INTERVAL_QUANTILE), np.median(deltas_s)
         if pd.isna(quick_s) or pd.isna(median_s) or median_s <= 0:
             continue
-        interval_s = max(quick_s, median_s * _MIN_INTERVAL_FRACTION_OF_MEDIAN)
+        interval_s = float(max(quick_s, median_s * _MIN_INTERVAL_FRACTION_OF_MEDIAN))
         if interval_s > 0:
             intervals.append(interval_s * 1000)
     return min(intervals) if intervals else None

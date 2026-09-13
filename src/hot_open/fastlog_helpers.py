@@ -164,6 +164,12 @@ RawLoader = Callable[[pd.Timestamp, pd.Timestamp], dict[str, pd.DataFrame]]
 
 The one thing the chunk/cache orchestration needs from a data source. Anything satisfying it
 -- a filestore tree, a parquet file, a database -- can reuse that orchestration.
+
+**The bounds are naive, and the frames returned must be too.** Chunks are cut on calendar dates
+and carry no timezone, whatever the caller asked the range in: they name a wall clock in the
+source's own terms, and the returned index has to match them or the trim inside each chunk cannot
+compare. ``get_resampled_chunked_cached`` localises the finished product to the caller's timezone
+once, at the end. A source stored tz-aware should convert to UTC on the way out.
 """
 
 # A chunk is loaded with context either side before being trimmed back, so a value carried in
@@ -173,6 +179,28 @@ The one thing the chunk/cache orchestration needs from a data source. Anything s
 # falls inside a long outage would escape being masked.
 _CHUNK_LEAD_IN = pd.Timedelta(days=1)
 _CHUNK_TRAIL = pd.Timedelta(hours=1)
+
+
+def _check_range_timezone(start_dt: dt.datetime, end_dt_excl: dt.datetime) -> None:
+    """Refuse a range whose calendar days are not a flat 24 hours.
+
+    Both ends are checked together, because neither alone is enough. A zone sitting at a non-zero
+    offset shifts every chunk boundary off the source's own midnight; a zone whose offset *changes*
+    between the two ends has a daylight-saving transition inside the range, so one of its calendar
+    days is 23 or 25 hours and cutting it as 24 would silently drop or double an hour. A zone that
+    is merely capable of DST but sits at zero throughout the range -- Europe/London in winter, say
+    -- is fine, and is allowed.
+    """
+    offsets = [pd.Timestamp(x).utcoffset() for x in (start_dt, end_dt_excl)]
+    if all(x is None for x in offsets):
+        return
+    if any(x != dt.timedelta(0) for x in offsets) or offsets[0] != offsets[1]:
+        msg = (
+            f"start_dt/end_dt_excl must be naive, or in a timezone at a zero offset throughout the "
+            f"range; got {start_dt!r} to {end_dt_excl!r}. Chunks are cut on calendar dates, which "
+            "are only an unambiguous 24 hours when the offset does not move."
+        )
+        raise ValueError(msg)
 
 
 def _resample_one_chunk(
@@ -233,8 +261,14 @@ def _get_resampled_one_chunk_cached(  # noqa: PLR0913
             # (non-refresh) runs would silently reuse, undermining the intent of refresh_cache.
             cache_path.unlink(missing_ok=True)
         elif cache_path.exists():
+            # The range actually read, lead-in and trail included, not the chunk's own bounds: a
+            # backfill into the neighbouring day changes this chunk's output, so it has to
+            # invalidate it. Expanding here rather than inside each callback keeps the contract
+            # honest -- a source implementing the documented range would otherwise miss it.
             source_mtime = (
-                None if source_mtime_fn is None else source_mtime_fn(pd.Timestamp(start_dt), pd.Timestamp(end_dt_excl))
+                None
+                if source_mtime_fn is None
+                else source_mtime_fn(pd.Timestamp(start_dt) - _CHUNK_LEAD_IN, pd.Timestamp(end_dt_excl) + _CHUNK_TRAIL)
             )
             # A freshly written parquet's mtime is later than every source file read to build it,
             # so an unchanged chunk stays a hit; a backfilled one (newer source mtime) recomputes.
@@ -292,12 +326,18 @@ def get_resampled_chunked_cached(  # noqa: PLR0913
     it -- e.g. a park and device, or a file and turbine id. The date range and ``timebase_s`` are
     added here, and any ``resample_kwargs`` differing from ``resample_fastlog_tags``' defaults.
 
-    ``source_mtime_fn`` returns the newest source mtime for a range, so a chunk whose source has
-    been rewritten recomputes. Leave it ``None`` for an immutable source, which keeps cached
-    chunks indefinitely.
+    ``source_mtime_fn`` is given the range actually read -- the chunk plus its lead-in and trail --
+    and returns the newest source mtime over it, so a chunk whose source has been rewritten
+    recomputes. Leave it ``None`` for an immutable source, which keeps cached chunks indefinitely.
+
+    ``start_dt``/``end_dt_excl`` must be naive, or at a zero UTC offset throughout the range. A
+    range that sits at another offset, or crosses a daylight-saving change, is refused: chunks are
+    cut on calendar dates, and a date is only an unambiguous 24 hours when the offset does not move.
+    ``load_raw`` always receives naive bounds regardless; see :data:`RawLoader`.
 
     Extra keyword arguments are forwarded to :func:`resample_fastlog_tags`.
     """
+    _check_range_timezone(start_dt, end_dt_excl)
     chunk_dfs = []
     for day in _generate_dates_in_range(start_dt, end_dt_excl):
         day_df = _get_resampled_one_chunk_cached(
@@ -387,15 +427,14 @@ def _max_source_mtime(
     end_dt_excl: dt.datetime,
     filestore_dir: Path | None = None,
 ) -> float | None:
-    """Return the newest mtime among the raw FL files feeding this day's resample, or None.
+    """Return the newest mtime among the raw FL files covering a range, or None.
 
-    Mirrors ``make_fl_resampled_one_device``'s read window (``start_dt - 1 day`` to
-    ``end_dt_excl + 1 hour``) so a backfill into the neighbouring day folders also invalidates
-    the cache. ``None`` means no source files were found (treated as "cannot be stale").
+    The range given is the one actually read, lead-in and trail included -- the chunk layer expands
+    it before calling, so this does not. ``None`` means no source files were found, which is
+    treated as "cannot be stale".
     """
     filestore_dir = get_filestore_dir() if filestore_dir is None else filestore_dir
-    raw_start = start_dt - pd.Timedelta(days=1)
-    raw_end_excl = end_dt_excl + pd.Timedelta(hours=1)
+    raw_start, raw_end_excl = start_dt, end_dt_excl
     mtimes: list[float] = []
     for date in _generate_dates_in_range(raw_start, raw_end_excl):
         day_dir = filestore_dir / "FL" / park_id / device_id / str(date)
@@ -1010,9 +1049,11 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
         else:
             count_df = busy_upsampled.resample(f"{timebase_s}s").count()
         low_count_times = count_df.index[count_df.lt(min_data_count).all(axis=1)]  # type:ignore[call-overload,arg-type]
-        resampled_df.loc[low_count_times, numeric_cols] = np.nan
-        resampled_df.loc[low_count_times, circ_cols] = np.nan
-        resampled_df.loc[low_count_times, nonnumeric_cols] = pd.NA
+        # Every output column, not just the tag columns: this used to leave the derived std_/min_/
+        # max_ columns populated, so a window masked for low coverage still reported a standard
+        # deviation and a range beside its blanked mean. min_raw_data_count below does the same.
+        resampled_df.loc[low_count_times, resampled_df.select_dtypes(include="number").columns] = np.nan
+        resampled_df.loc[low_count_times, resampled_df.select_dtypes(exclude="number").columns] = pd.NA
 
     if min_raw_data_count is not None:
         # Raw samples per window, not sub-grid cells: see this function's docstring for why the

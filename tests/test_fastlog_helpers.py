@@ -659,6 +659,37 @@ class TestMinRawDataCount:
         assert all_below["busy_a"].iloc[:-1].notna().all()
 
 
+class TestLowCoverageMaskingClearsEveryColumn:
+    """A window masked for low coverage must not keep a standard deviation or a range.
+
+    ``min_data_count`` used to blank only the tag columns, so a masked window reported a NaN mean
+    beside a populated ``std_``/``min_``/``max_`` -- the reading that looks like real data because
+    everything around it is. ``min_raw_data_count`` always blanked everything; now both do.
+    """
+
+    @staticmethod
+    def _starved_raw() -> dict[str, pd.DataFrame]:
+        # One window of dense samples, then one with almost none.
+        dense = pd.date_range("2024-01-01 00:00", periods=60, freq="1s", name=TIMESTAMP_NAME)
+        sparse = pd.DatetimeIndex(["2024-01-01 00:01:05"], name=TIMESTAMP_NAME)
+        idx = dense.append(sparse)
+        return {"ActPower_Value": pd.DataFrame({"ActPower_Value": np.arange(len(idx), dtype=float)}, index=idx)}
+
+    @pytest.mark.parametrize("option", ["min_data_count", "min_raw_data_count"])
+    def test_a_masked_window_keeps_no_aggregate(self, option: str) -> None:
+        threshold: dict[str, Any] = {option: 10}
+        resampled = resample_fastlog_tags(
+            raw_df_dict=self._starved_raw(),
+            timebase_s=60,
+            busy_tags=("ActPower_Value",),
+            minmax_tags=("ActPower_Value",),
+            std_tags=("ActPower_Value",),
+            **threshold,
+        )
+        masked = resampled.loc["2024-01-01 00:01:00"]
+        assert masked.isna().all(), f"{option} left {list(masked.dropna().index)} populated"
+
+
 class TestResampleOptionsReachTheCacheLayer:
     """Resample options must be settable through the cached, day-chunked entry points.
 
@@ -958,6 +989,65 @@ class TestGetResampledChunkedCached:
         self._chunked(raw, cache_dir=tmp_path, source_mtime_fn=source_mtime_fn)
         assert len(asked) == 3  # every chunk checked
         assert len(list(tmp_path.glob("*.parquet"))) == before  # recomputed in place, same key
+
+    def test_source_mtime_fn_sees_the_range_actually_read(self, tmp_path: Path) -> None:
+        # Not the chunk's own bounds: a backfill into the lead-in day changes this chunk's output,
+        # so a source implementing the documented range has to be told about it.
+        raw = _synthetic_raw()
+        self._chunked(raw, cache_dir=tmp_path)
+        seen: list[tuple[pd.Timestamp, pd.Timestamp]] = []
+
+        def source_mtime_fn(start_dt: pd.Timestamp, end_dt_excl: pd.Timestamp) -> None:
+            seen.append((start_dt, end_dt_excl))
+
+        self._chunked(raw, cache_dir=tmp_path, source_mtime_fn=source_mtime_fn)
+        first_chunk_start, first_chunk_end = seen[0]
+        assert first_chunk_start == CHUNK_START - pd.Timedelta(days=1)
+        assert first_chunk_end == CHUNK_START + pd.Timedelta(days=1, hours=1)
+
+    @pytest.mark.parametrize(
+        ("tz", "start", "end"),
+        [
+            # Spans the spring transition: one of these calendar days is 23 hours, not 24.
+            ("Europe/London", "2024-03-29", "2024-04-02"),
+            # Sits at a non-zero offset, so every chunk boundary is off the source's own midnight.
+            ("US/Eastern", "2024-03-01", "2024-03-04"),
+        ],
+    )
+    def test_a_range_whose_days_are_not_24_hours_is_refused(self, tz: str, start: str, end: str) -> None:
+        with pytest.raises(ValueError, match=r"zero offset|naive"):
+            flh.get_resampled_chunked_cached(
+                load_raw=_slice_loader(_synthetic_raw()),
+                start_dt=pd.Timestamp(start, tz=tz),
+                end_dt_excl=pd.Timestamp(end, tz=tz),
+                timebase_s=60,
+                cache_key_extra={"source": "synthetic"},
+            )
+
+    def test_a_zone_at_zero_offset_throughout_is_allowed(self) -> None:
+        # Merely being capable of DST is not a problem: in winter this zone is UTC, and its calendar
+        # days are a flat 24 hours, so refusing it would be over-strict.
+        result = flh.get_resampled_chunked_cached(
+            load_raw=_slice_loader(_synthetic_raw()),
+            start_dt=pd.Timestamp(CHUNK_START, tz="Europe/London"),
+            end_dt_excl=pd.Timestamp(CHUNK_END, tz="Europe/London"),
+            timebase_s=60,
+            cache_key_extra={"source": "synthetic"},
+            **CHUNK_KW,
+        )
+        assert not result.empty
+
+    def test_a_utc_range_is_accepted(self) -> None:
+        result = flh.get_resampled_chunked_cached(
+            load_raw=_slice_loader(_synthetic_raw()),
+            start_dt=pd.Timestamp(CHUNK_START, tz="UTC"),
+            end_dt_excl=pd.Timestamp(CHUNK_END, tz="UTC"),
+            timebase_s=60,
+            cache_key_extra={"source": "synthetic"},
+            **CHUNK_KW,
+        )
+        # Localised once, at the end, rather than per chunk.
+        assert str(result.index.tz) == "UTC"  # type: ignore[attr-defined]
 
     def test_no_cache_dir_still_works(self) -> None:
         # Caching is optional; the chunking is not.

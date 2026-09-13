@@ -687,10 +687,19 @@ _ALLOWED_SUBSAMPLING_MS = (10, 20, 25, 50, 100, 125, 200, 250, 500, 1000)
 _MAX_AUTO_SUBSAMPLING_MS = 1000
 
 
-def _median_logging_interval_ms(*, raw_df_dict: dict[str, pd.DataFrame], tags: Sequence[str]) -> float | None:
-    """Return the fastest median inter-sample interval among ``tags``, in ms, or None if unknown.
+# A tag's own quick end, not its middle: a grid on the median still steps over the faster half of
+# its samples. Tuned against a controller's own 10-minute statistics, where dropping from the
+# median (100ms for a 10Hz power tag) to its 10th percentile (50ms) cut the worst-case min/max
+# disagreement from 13-17kW to 1-2kW. Floored at a tenth of the median so a tag that logs in bursts
+# -- a p10 of a millisecond, a median of a second -- cannot demand a grid its data does not justify.
+_LOGGING_INTERVAL_QUANTILE = 0.1
+_MIN_INTERVAL_FRACTION_OF_MEDIAN = 0.1
 
-    The fastest rather than the average: a grid coarser than the quickest tag throws that tag's
+
+def _fastest_logging_interval_ms(*, raw_df_dict: dict[str, pd.DataFrame], tags: Sequence[str]) -> float | None:
+    """Return the quickest of ``tags``' logging intervals, in ms, or None if there is none to measure.
+
+    The quickest rather than the average: a grid coarser than the fastest tag throws that tag's
     samples away before anything is aggregated, which is what the rate-aware grid exists to stop.
     """
     intervals = []
@@ -698,9 +707,13 @@ def _median_logging_interval_ms(*, raw_df_dict: dict[str, pd.DataFrame], tags: S
         tag_df = raw_df_dict.get(tag)
         if tag_df is None or len(tag_df) < 2:  # noqa: PLR2004
             continue
-        median_s = pd.Series(tag_df.index).diff().dt.total_seconds().median()
-        if pd.notna(median_s) and median_s > 0:
-            intervals.append(median_s * 1000)
+        deltas_s = pd.Series(tag_df.index).diff().dt.total_seconds()
+        quick_s, median_s = deltas_s.quantile(_LOGGING_INTERVAL_QUANTILE), deltas_s.median()
+        if pd.isna(quick_s) or pd.isna(median_s) or median_s <= 0:
+            continue
+        interval_s = max(quick_s, median_s * _MIN_INTERVAL_FRACTION_OF_MEDIAN)
+        if interval_s > 0:
+            intervals.append(interval_s * 1000)
     return min(intervals) if intervals else None
 
 
@@ -727,7 +740,7 @@ def _resolve_subsampling_timebase_ms(
     if subsampling_timebase_ms is None:
         return legacy
     if subsampling_timebase_ms == "auto":
-        fastest_ms = _median_logging_interval_ms(raw_df_dict=raw_df_dict, tags=busy_tags)
+        fastest_ms = _fastest_logging_interval_ms(raw_df_dict=raw_df_dict, tags=busy_tags)
         if fastest_ms is None:
             # Nothing to measure (no busy tag, or a single sample): the timebase is all we know.
             return legacy

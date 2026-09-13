@@ -1071,6 +1071,32 @@ class TestSubsamplingGrid:
         )
         assert chosen == 1000
 
+    def test_auto_follows_the_quick_end_not_the_middle(self) -> None:
+        # A tag whose samples alternate 100ms/20ms: a grid on the median still steps over half of
+        # them, so the rule takes the tag's quick end instead.
+        idx = pd.DatetimeIndex(
+            pd.Timestamp("2024-03-01") + pd.to_timedelta(np.cumsum([100, 20] * 300), unit="ms"), name=TIMESTAMP_NAME
+        )
+        raw = {"ActPower_Value": pd.DataFrame({"ActPower_Value": np.arange(600.0)}, index=idx)}
+        chosen = flh._resolve_subsampling_timebase_ms(  # noqa: SLF001
+            subsampling_timebase_ms="auto", timebase_s=600, raw_df_dict=raw, busy_tags=("ActPower_Value",)
+        )
+        assert chosen == 20
+
+    def test_auto_ignores_a_burst_the_median_contradicts(self) -> None:
+        # An event-logged tag: a sample a second, plus an occasional extra 1ms behind one. Its 10th
+        # percentile is that 1ms burst, which would demand a grid the data does not justify, so the
+        # interval is floored at a tenth of the median -- 100ms here, where the unfloored rule
+        # would have taken the finest grid allowed.
+        base = np.arange(300) * 1000.0
+        offsets = np.sort(np.concatenate([base, base[::5] + 1.0]))
+        idx = pd.DatetimeIndex(pd.Timestamp("2024-03-01") + pd.to_timedelta(offsets, unit="ms"), name=TIMESTAMP_NAME)
+        raw = {"ActPower_Value": pd.DataFrame({"ActPower_Value": np.arange(len(idx), dtype=float)}, index=idx)}
+        chosen = flh._resolve_subsampling_timebase_ms(  # noqa: SLF001
+            subsampling_timebase_ms="auto", timebase_s=600, raw_df_dict=raw, busy_tags=("ActPower_Value",)
+        )
+        assert chosen == 100
+
     def test_auto_falls_back_when_there_is_nothing_to_measure(self) -> None:
         assert (
             flh._resolve_subsampling_timebase_ms(  # noqa: SLF001

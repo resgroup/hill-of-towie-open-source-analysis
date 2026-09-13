@@ -686,6 +686,12 @@ _ALLOWED_SUBSAMPLING_MS = (10, 20, 25, 50, 100, 125, 200, 250, 500, 1000)
 # a product built on it stays comparable with them.
 _MAX_AUTO_SUBSAMPLING_MS = 1000
 
+# The grid has to be at least this much finer than the output window. A limited forward fill is
+# expressed as "fill at most upsampling_factor - 1 cells", so a grid equal to the window leaves a
+# limit of zero -- which pandas rejects, and which could not mean "hold for one window" anyway,
+# since the as-of alignment onto the grid is itself the first fill step.
+_MIN_UPSAMPLING_FACTOR = 2
+
 
 # A tag's own quick end, not its middle: a grid on the median still steps over the faster half of
 # its samples. Tuned against a controller's own 10-minute statistics, where dropping from the
@@ -746,7 +752,7 @@ def _resolve_subsampling_timebase_ms(
         if fastest_ms is None:
             # Nothing to measure (no busy tag, or a single sample): the timebase is all we know.
             return legacy
-        ceiling = min(_MAX_AUTO_SUBSAMPLING_MS, timebase_s * 1000)
+        ceiling = min(_MAX_AUTO_SUBSAMPLING_MS, timebase_s * 1000 // _MIN_UPSAMPLING_FACTOR)
         allowed = [x for x in _ALLOWED_SUBSAMPLING_MS if x <= min(fastest_ms, ceiling)]
         chosen = max(allowed) if allowed else min(_ALLOWED_SUBSAMPLING_MS)
         msg = f"sub-sampling grid {chosen}ms from a fastest busy-tag interval of {fastest_ms:.0f}ms"
@@ -755,10 +761,11 @@ def _resolve_subsampling_timebase_ms(
     if not isinstance(subsampling_timebase_ms, int) or isinstance(subsampling_timebase_ms, bool):
         msg = f"subsampling_timebase_ms must be an int, 'auto' or None, got {subsampling_timebase_ms!r}"
         raise TypeError(msg)
-    if not 1 <= subsampling_timebase_ms <= timebase_s * 1000:
+    coarsest = timebase_s * 1000 // _MIN_UPSAMPLING_FACTOR
+    if not 1 <= subsampling_timebase_ms <= coarsest:
         msg = (
-            f"subsampling_timebase_ms={subsampling_timebase_ms} must be between 1 and the output "
-            f"window itself ({timebase_s * 1000}ms)"
+            f"subsampling_timebase_ms={subsampling_timebase_ms} must be between 1 and {coarsest}ms, "
+            f"i.e. at least {_MIN_UPSAMPLING_FACTOR}x finer than the {timebase_s}s output window"
         )
         raise ValueError(msg)
     return subsampling_timebase_ms

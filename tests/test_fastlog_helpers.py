@@ -1063,13 +1063,47 @@ class TestSubsamplingGrid:
         )
         assert chosen == 1000
 
-    def test_auto_is_capped_at_the_output_window(self) -> None:
-        # At timebase_s=1 a 1s grid is already the whole window; nothing coarser can be allowed.
+    def test_auto_stays_at_least_twice_as_fine_as_the_output_window(self) -> None:
+        """At timebase_s=1 the 1s cap would make the grid the whole window, which cannot work.
+
+        A limited forward fill is "at most upsampling_factor - 1 cells", so a grid equal to the
+        window leaves a limit of zero: pandas rejects it, and it could not mean "hold for one
+        window" anyway, since aligning an irregular sample onto the grid is itself the first fill
+        step. Both routes into that -- a busy tag without busy_tag_ffill_limit_s, and any tag left
+        out of ffill_tags -- raised ValueError("Limit must be greater than 0") before this floor.
+        """
         raw = {"WindSpeed": _tag_at_interval("WindSpeed", 12_000)}
         chosen = flh._resolve_subsampling_timebase_ms(  # noqa: SLF001
             subsampling_timebase_ms="auto", timebase_s=1, raw_df_dict=raw, busy_tags=("WindSpeed",)
         )
-        assert chosen == 1000
+        assert chosen == 500
+
+    @pytest.mark.parametrize("ffill_tags", [None, ()])
+    def test_a_slow_source_resamples_to_one_second(self, ffill_tags: tuple | None) -> None:
+        # The regression the floor above exists for, through the public function rather than the
+        # rule: a source logged every 12s, asked for a 1s product, with nothing to widen the fill.
+        idx = pd.date_range("2024-01-01", periods=50, freq="12s", name=TIMESTAMP_NAME)
+        raw = {
+            "WindSpeed": pd.DataFrame({"WindSpeed": np.arange(50.0)}, index=idx),
+            "NacDir": pd.DataFrame({"NacDir": np.arange(50.0)}, index=idx),
+        }
+        resampled = resample_fastlog_tags(
+            raw_df_dict=raw,
+            timebase_s=1,
+            busy_tags=("WindSpeed",),
+            ffill_tags=ffill_tags,
+            subsampling_timebase_ms="auto",
+        )
+        assert not resampled.empty
+        assert resampled["WindSpeed"].notna().any()
+
+    def test_an_explicit_grid_as_coarse_as_the_window_is_refused(self) -> None:
+        # Refused with an explanation rather than surfacing as pandas' "Limit must be greater than 0"
+        # from three layers down.
+        with pytest.raises(ValueError, match="finer than"):
+            flh._resolve_subsampling_timebase_ms(  # noqa: SLF001
+                subsampling_timebase_ms=1000, timebase_s=1, raw_df_dict={}, busy_tags=()
+            )
 
     def test_auto_follows_the_quick_end_not_the_middle(self) -> None:
         # A tag whose samples alternate 100ms/20ms: a grid on the median still steps over half of

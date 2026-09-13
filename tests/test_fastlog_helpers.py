@@ -1,7 +1,10 @@
 import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any, ClassVar
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -10,9 +13,9 @@ from hot_open.fastlog_helpers import (
     SIEMENS_PARKS,
     SIEMENS_TAGS,
     TIMESTAMP_NAME,
-    _get_fl_resampled_one_device_one_day,
     _get_raw_df_dict,
     _get_tag_list_from_park_id,
+    get_fl_resampled_one_device,
     resample_fastlog_tags,
     upsample_and_ffill_stopping_at_nans,
 )
@@ -74,7 +77,8 @@ def _write_source_file(*, filestore: Path, date_str: str, mtime: float) -> Path:
 
 
 def _call(filestore: Path, cache_dir: Path, *, refresh_cache: bool = False) -> pd.DataFrame:
-    return _get_fl_resampled_one_device_one_day(
+    """Resample one day through the production entry point, cache and all."""
+    return get_fl_resampled_one_device(
         park_id=PARK,
         device_id=DEVICE,
         start_dt=DAY,
@@ -100,7 +104,7 @@ class TestCacheSourceFreshness:
             idx = pd.DatetimeIndex([start_dt], name="timestamp")
             return pd.DataFrame({"ActPower_Value": [1.0]}, index=idx)
 
-        monkeypatch.setattr(flh, "make_fl_resampled_one_device", stub)
+        monkeypatch.setattr(flh, "_resample_one_chunk", stub)
         return calls
 
     def test_fresh_cache_is_reused(self, tmp_path: Path, spy_make: list[int]) -> None:
@@ -141,14 +145,12 @@ class TestCacheSourceFreshness:
         filestore, cache = tmp_path / "fs", tmp_path / "cache"
         _write_source_file(filestore=filestore, date_str="2024-01-01", mtime=1000.0)
         idx = pd.DatetimeIndex([pd.Timestamp("2024-01-01")], name="timestamp")
-        monkeypatch.setattr(
-            flh, "make_fl_resampled_one_device", lambda **_: pd.DataFrame({"ActPower_Value": [1.0]}, index=idx)
-        )
+        monkeypatch.setattr(flh, "_resample_one_chunk", lambda **_: pd.DataFrame({"ActPower_Value": [1.0]}, index=idx))
         _call(filestore, cache)
         parquet = next((cache / "fl_resampled" / PARK / DEVICE).glob("*.parquet"))
         # Recompute now yields an empty frame (e.g. source removed/filtered): the stale parquet
         # must not survive, or a later non-refresh run would silently reuse it.
-        monkeypatch.setattr(flh, "make_fl_resampled_one_device", lambda **_: pd.DataFrame())
+        monkeypatch.setattr(flh, "_resample_one_chunk", lambda **_: pd.DataFrame())
         _call(filestore, cache, refresh_cache=True)
         assert not parquet.exists()
 
@@ -775,3 +777,239 @@ class TestCacheKeyStability:
     def test_a_non_default_option_changes_the_key(self) -> None:
         with_option = dict(self.LEGACY_PARAMS) | {"require_all_busy_tags": True}
         assert flh.create_consistent_hash(**with_option) != self.LEGACY_KEY
+
+
+CHUNK_START = pd.Timestamp("2024-03-01")
+CHUNK_END = pd.Timestamp("2024-03-04")
+CHUNK_KW: dict[str, Any] = {
+    "busy_tags": ("ActPower_Value", "AcWindSp_AcWindSp"),
+    "require_all_busy_tags": True,
+    "busy_tag_ffill_limit_s": 45,
+    "minmax_tags": ("ActPower_Value",),
+    "std_tags": ("ActPower_Value",),
+}
+
+
+def _synthetic_raw() -> dict[str, pd.DataFrame]:
+    """Three days of 10s data holding both outage shapes the chunked path has to survive.
+
+    A row-arrival gap stops every tag at once (day 2); a dead busy tag stops the vane while power
+    keeps logging (day 3), which no row-arrival check can see. Neither sits on a chunk boundary,
+    so a chunk that lost its lead-in would mask differently from an unchunked run rather than
+    failing outright.
+    """
+    idx = pd.date_range(CHUNK_START, CHUNK_END, freq="10s", inclusive="left", name=TIMESTAMP_NAME)
+    counter = np.arange(len(idx))
+    power = pd.Series(np.sin(counter / 97) * 1000 + 1500, index=idx)
+    wind = pd.Series(np.cos(counter / 53) * 3 + 8, index=idx)
+    gap = (idx >= pd.Timestamp("2024-03-02 04:00")) & (idx < pd.Timestamp("2024-03-02 04:20"))
+    dead = (idx >= pd.Timestamp("2024-03-03 09:00")) & (idx < pd.Timestamp("2024-03-03 09:30"))
+    return {
+        "ActPower_Value": power[~gap].to_frame("ActPower_Value"),
+        "AcWindSp_AcWindSp": wind[~gap & ~dead].to_frame("AcWindSp_AcWindSp"),
+    }
+
+
+def _slice_loader(raw: dict[str, pd.DataFrame]) -> flh.RawLoader:
+    """Return a RawLoader serving a prepared raw dict, the way a real source serves a date range."""
+
+    def load_raw(start_dt: pd.Timestamp, end_dt_excl: pd.Timestamp) -> dict[str, pd.DataFrame]:
+        return {tag: df[(df.index >= start_dt) & (df.index < end_dt_excl)] for tag, df in raw.items()}
+
+    return load_raw
+
+
+def _counting_stub(calls: list[int]) -> "object":
+    """Return a _resample_one_chunk stand-in that records that it was called."""
+
+    def stub(**_: object) -> pd.DataFrame:
+        calls.append(1)
+        return pd.DataFrame()
+
+    return stub
+
+
+class TestGetResampledChunkedCached:
+    """The chunk/cache layer driven by an injected raw source rather than the Siemens filestore."""
+
+    def _chunked(self, raw: dict[str, pd.DataFrame], **kwargs: Any) -> pd.DataFrame:  # noqa: ANN401
+        return flh.get_resampled_chunked_cached(
+            load_raw=_slice_loader(raw),
+            start_dt=CHUNK_START,
+            end_dt_excl=CHUNK_END,
+            timebase_s=60,
+            cache_key_extra={"source": "synthetic"},
+            **(CHUNK_KW | kwargs),
+        )
+
+    def test_chunked_matches_unchunked(self) -> None:
+        # What the lead-in is for: resampling three days one day at a time must give the same
+        # answer, masking included, as resampling them together.
+        raw = _synthetic_raw()
+        whole = resample_fastlog_tags(raw_df_dict=raw, timebase_s=60, **CHUNK_KW)
+        expected = whole[(whole.index >= CHUNK_START) & (whole.index < CHUNK_END)].resample("60s").last()
+
+        actual = self._chunked(raw)
+
+        pd.testing.assert_frame_equal(actual, expected, check_freq=False)
+
+    def test_both_outages_are_masked(self) -> None:
+        # Keeps the test above from passing vacuously: with nothing masked, chunked and unchunked
+        # would agree trivially and the lead-in would not be under test at all. It also pins the
+        # two masks' different reach -- a row-arrival gap voids the window, a dead busy tag voids
+        # only itself, since the tags still reporting are still reporting the truth.
+        actual = self._chunked(_synthetic_raw())
+        assert actual.loc["2024-03-02 04:05":"2024-03-02 04:15"].isna().all().all()
+        dead = slice("2024-03-03 09:05", "2024-03-03 09:25")
+        assert actual.loc[dead, "AcWindSp_AcWindSp"].isna().all()
+        assert actual.loc[dead, "ActPower_Value"].notna().all()
+        assert actual["ActPower_Value"].notna().sum() > 4000  # and the rest of the three days survives
+
+    def test_cache_hit_on_second_call(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        raw = _synthetic_raw()
+        first = self._chunked(raw, cache_dir=tmp_path)
+        calls: list[int] = []
+        monkeypatch.setattr(flh, "_resample_one_chunk", _counting_stub(calls))
+        second = self._chunked(raw, cache_dir=tmp_path)
+        assert calls == []
+        pd.testing.assert_frame_equal(first, second, check_freq=False)
+
+    def test_changed_resample_option_misses_the_cache(self, tmp_path: Path) -> None:
+        raw = _synthetic_raw()
+        self._chunked(raw, cache_dir=tmp_path)
+        self._chunked(raw, cache_dir=tmp_path, min_raw_data_count=3)
+        assert len(list(tmp_path.glob("*.parquet"))) == 2 * 3  # two settings x three days
+
+    def test_cache_key_extra_separates_sources(self, tmp_path: Path) -> None:
+        # Two sources with identical resample options must not read each other's chunks.
+        raw = _synthetic_raw()
+        self._chunked(raw, cache_dir=tmp_path)
+        flh.get_resampled_chunked_cached(
+            load_raw=_slice_loader(raw),
+            start_dt=CHUNK_START,
+            end_dt_excl=CHUNK_END,
+            timebase_s=60,
+            cache_key_extra={"source": "other"},
+            cache_dir=tmp_path,
+            **CHUNK_KW,
+        )
+        assert len(list(tmp_path.glob("*.parquet"))) == 2 * 3
+
+    def test_cache_subdir_is_used(self, tmp_path: Path) -> None:
+        self._chunked(_synthetic_raw(), cache_dir=tmp_path, cache_subdir=("resampled", "synthetic"))
+        assert len(list((tmp_path / "resampled" / "synthetic").glob("*.parquet"))) == 3
+
+    def test_cache_key_is_stable_across_processes(self, tmp_path: Path) -> None:
+        """A key built by introspecting an injected callable would move every run.
+
+        ``create_consistent_hash`` falls back to ``str(obj)`` for anything it does not recognise,
+        and a function or ``functools.partial`` stringifies with its memory address. The failure
+        mode is a silent permanent cache miss, never an error, so it has to be checked across real
+        processes rather than within one.
+        """
+        script = tmp_path / "run_once.py"
+        script.write_text(
+            "from functools import partial\n"
+            "from pathlib import Path\n"
+            "import sys\n"
+            "import pandas as pd\n"
+            "from hot_open.fastlog_helpers import get_resampled_chunked_cached\n"
+            "def load_raw(start_dt, end_dt_excl, unused=None):\n"
+            "    idx = pd.date_range('2024-03-01', periods=60, freq='10s', name='timestamp')\n"
+            "    df = pd.DataFrame({'ActPower_Value': range(60)}, index=idx, dtype=float)\n"
+            "    return {'ActPower_Value': df[(df.index >= start_dt) & (df.index < end_dt_excl)]}\n"
+            "get_resampled_chunked_cached(\n"
+            "    load_raw=partial(load_raw, unused=1),\n"
+            "    start_dt=pd.Timestamp('2024-03-01'),\n"
+            "    end_dt_excl=pd.Timestamp('2024-03-02'),\n"
+            "    timebase_s=60,\n"
+            "    cache_key_extra={'source': 'synthetic'},\n"
+            "    cache_dir=Path(sys.argv[1]),\n"
+            ")\n",
+            encoding="utf-8",
+        )
+        cache = tmp_path / "cache"
+        for _ in range(2):
+            subprocess.run([sys.executable, str(script), str(cache)], check=True)  # noqa: S603
+        assert len(list(cache.glob("*.parquet"))) == 1
+
+    def test_source_mtime_none_keeps_a_cached_chunk(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        # An immutable source (a parquet datapack) must keep its chunks however old they look.
+        raw = _synthetic_raw()
+        self._chunked(raw, cache_dir=tmp_path)
+        for parquet in tmp_path.glob("*.parquet"):
+            os.utime(parquet, (0.0, 0.0))
+        calls: list[int] = []
+        monkeypatch.setattr(flh, "_resample_one_chunk", _counting_stub(calls))
+        self._chunked(raw, cache_dir=tmp_path)
+        assert calls == []
+
+    def test_newer_source_mtime_invalidates_a_cached_chunk(self, tmp_path: Path) -> None:
+        raw = _synthetic_raw()
+        self._chunked(raw, cache_dir=tmp_path)
+        newest = max(x.stat().st_mtime for x in tmp_path.glob("*.parquet"))
+        asked: list[int] = []
+
+        def source_mtime_fn(start_dt: pd.Timestamp, end_dt_excl: pd.Timestamp) -> float:  # noqa: ARG001
+            asked.append(1)
+            return newest + 1000
+
+        before = len(list(tmp_path.glob("*.parquet")))
+        self._chunked(raw, cache_dir=tmp_path, source_mtime_fn=source_mtime_fn)
+        assert len(asked) == 3  # every chunk checked
+        assert len(list(tmp_path.glob("*.parquet"))) == before  # recomputed in place, same key
+
+    def test_no_cache_dir_still_works(self) -> None:
+        # Caching is optional; the chunking is not.
+        assert not self._chunked(_synthetic_raw()).empty
+
+    def test_empty_source_returns_an_empty_frame(self, tmp_path: Path) -> None:
+        empty = flh.get_resampled_chunked_cached(
+            load_raw=lambda *_: {},
+            start_dt=CHUNK_START,
+            end_dt_excl=CHUNK_END,
+            timebase_s=60,
+            cache_key_extra={"source": "synthetic"},
+            cache_dir=tmp_path,
+        )
+        assert empty.empty
+        assert list(tmp_path.glob("*.parquet")) == []  # nothing cached, so a later real load recomputes
+
+
+class TestSiemensWrapperOverGenericLayer:
+    """``get_fl_resampled_one_device`` is a caller of the generic layer, not its own copy of it."""
+
+    @pytest.fixture
+    def stub_chunk(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Stand in for the resample, so these tests are about the wrapper and nothing else."""
+        idx = pd.DatetimeIndex([pd.Timestamp("2024-01-01")], name=TIMESTAMP_NAME)
+        monkeypatch.setattr(flh, "_resample_one_chunk", lambda **_: pd.DataFrame({"ActPower_Value": [1.0]}, index=idx))
+        monkeypatch.setattr(flh, "_max_source_mtime", lambda **_: None)
+
+    @pytest.mark.usefixtures("stub_chunk")
+    def test_end_to_end_cache_key_is_unchanged(self, tmp_path: Path) -> None:
+        # The strongest form of the pin below: not just that the hash function is stable, but that
+        # the wrapper still feeds it the same parameter set. A change orphans every cached day.
+        get_fl_resampled_one_device(
+            park_id="HOT",
+            device_id="2304512",
+            start_dt=pd.Timestamp("2024-01-01", tz="UTC"),
+            end_dt_excl=pd.Timestamp("2024-01-02", tz="UTC"),
+            timebase_s=1,
+            cache_dir=tmp_path,
+        )
+        cached = list((tmp_path / "fl_resampled" / "HOT" / "2304512").glob("*.parquet"))
+        assert [x.name for x in cached] == [f"20240101_{TestCacheKeyStability.LEGACY_KEY}.parquet"]
+
+    @pytest.mark.usefixtures("stub_chunk")
+    def test_naive_chunks_are_localised_for_a_tz_aware_range(self, tmp_path: Path) -> None:
+        # Chunks are cut on naive calendar dates and HOT fastlog files carry naive timestamps, but
+        # every HOT caller asks in UTC -- so the result has to come back tz-aware.
+        result = get_fl_resampled_one_device(
+            park_id="HOT",
+            device_id="2304512",
+            start_dt=pd.Timestamp("2024-01-01", tz="UTC"),
+            end_dt_excl=pd.Timestamp("2024-01-02", tz="UTC"),
+            cache_dir=tmp_path,
+        )
+        assert str(result.index.tz) == "UTC"  # type: ignore[attr-defined]

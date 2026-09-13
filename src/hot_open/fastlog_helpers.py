@@ -7,7 +7,7 @@ import inspect
 import json
 import logging
 import os
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import cast
 
@@ -159,78 +159,96 @@ def get_fl_resampled(  # noqa: PLR0913
     ]
 
 
-def _get_fl_resampled_one_device_one_day(  # noqa: PLR0913
+RawLoader = Callable[[pd.Timestamp, pd.Timestamp], dict[str, pd.DataFrame]]
+"""Load raw per-tag frames covering ``[start, end)``, keyed by tag, nulls dropped.
+
+The one thing the chunk/cache orchestration needs from a data source. Anything satisfying it
+-- a filestore tree, a parquet file, a database -- can reuse that orchestration.
+"""
+
+# A chunk is loaded with context either side before being trimmed back, so a value carried in
+# from before the chunk is available and nothing is bridged across its edges. The lead-in must
+# exceed one output window, not merely a gap cutoff: resample_fastlog_tags disregards the first
+# NaN in a run of busy-tag NaNs, so without a spare window the first window of every chunk that
+# falls inside a long outage would escape being masked.
+_CHUNK_LEAD_IN = pd.Timedelta(days=1)
+_CHUNK_TRAIL = pd.Timedelta(hours=1)
+
+
+def _resample_one_chunk(
     *,
-    park_id: str,
-    device_id: str,
+    load_raw: RawLoader,
     start_dt: dt.datetime,
     end_dt_excl: dt.datetime,
-    timebase_s: int = 1,
-    filestore_dir: Path | None = None,
-    tags: Sequence[str] | None = None,
-    busy_tags: Sequence[str] | None = None,
-    minmax_tags: Sequence[str] | None = None,
-    min_data_count: float | None = None,
+    timebase_s: int,
+    **resample_kwargs: object,
+) -> pd.DataFrame:
+    """Load one chunk with context either side, resample it, then trim back to the chunk."""
+    raw_df_dict = load_raw(pd.Timestamp(start_dt) - _CHUNK_LEAD_IN, pd.Timestamp(end_dt_excl) + _CHUNK_TRAIL)
+    if len(raw_df_dict) == 0:
+        return pd.DataFrame(index=pd.DatetimeIndex([]))
+
+    resampled_df = resample_fastlog_tags(
+        raw_df_dict=raw_df_dict,
+        timebase_s=timebase_s,
+        **resample_kwargs,  # type: ignore[arg-type]
+    )
+    return (
+        resampled_df[(resampled_df.index >= pd.Timestamp(start_dt)) & (resampled_df.index < pd.Timestamp(end_dt_excl))]
+        .resample(f"{timebase_s}s")
+        .last()
+    )
+
+
+def _get_resampled_one_chunk_cached(  # noqa: PLR0913
+    *,
+    load_raw: RawLoader,
+    start_dt: dt.datetime,
+    end_dt_excl: dt.datetime,
+    timebase_s: int,
+    cache_key_extra: dict,
+    cache_subdir: tuple[str, ...] = (),
+    source_mtime_fn: Callable[[pd.Timestamp, pd.Timestamp], float | None] | None = None,
     cache_dir: Path | None = None,
-    siemens_parks: set[str] | None = None,
     refresh_cache: bool = False,
     **resample_kwargs: object,
 ) -> pd.DataFrame:
-    if (end_dt_excl - start_dt) > dt.timedelta(days=1):
-        msg = f"Date range must be one day or less. Got {start_dt=} {end_dt_excl=}"
-        raise ValueError(msg)
+    """Resample one chunk, reading from and writing to a per-chunk parquet cache."""
     if cache_dir is not None:
-        frame = inspect.currentframe()
-        if frame is None:
-            msg = "Could not get current frame"
-            raise RuntimeError(msg)
-        args_info = inspect.getargvalues(frame)
-        # refresh_cache is a control flag, not a data parameter: exclude it so it overwrites the
-        # real cache file rather than writing to a different hash.
-        params = {
-            key: args_info.locals[key]
-            for key in args_info.args
-            if key not in {"cache_dir", "filestore_dir", "siemens_parks", "refresh_cache"}
+        # An explicit dict, not argument introspection: a RawLoader is a callable, and
+        # create_consistent_hash falls back to str() for one, which embeds its memory address
+        # and so changes every process. That would be a silent permanent cache miss. Only the
+        # caller knows what identifies its source, hence cache_key_extra.
+        key_params = {
+            **cache_key_extra,
+            "start_dt": start_dt,
+            "end_dt_excl": end_dt_excl,
+            "timebase_s": timebase_s,
+            **_non_default_resample_kwargs(resample_kwargs),
         }
-        # Forwarded resample options join the key so a day cached under different aggregation
-        # settings cannot be mistaken for a match. Defaulted options are omitted, which is what
-        # keeps keys written before those options existed valid. Note **resample_kwargs does not
-        # appear in args_info.args, so the legacy part of the key is byte-identical either way.
-        params.update(_non_default_resample_kwargs(resample_kwargs))
-        cache_key = create_consistent_hash(**params)
-        cache_path = (
-            cache_dir / "fl_resampled" / park_id / device_id / f"{start_dt.strftime('%Y%m%d')}_{cache_key}.parquet"
-        )
+        cache_key = create_consistent_hash(**key_params)
+        cache_path = cache_dir.joinpath(*cache_subdir) / f"{start_dt.strftime('%Y%m%d')}_{cache_key}.parquet"
         if refresh_cache:
             # Delete up-front so an empty recompute can't leave a stale parquet that later
             # (non-refresh) runs would silently reuse, undermining the intent of refresh_cache.
             cache_path.unlink(missing_ok=True)
         elif cache_path.exists():
-            source_mtime = _max_source_mtime(
-                park_id=park_id,
-                device_id=device_id,
-                start_dt=start_dt,
-                end_dt_excl=end_dt_excl,
-                filestore_dir=filestore_dir,
+            source_mtime = (
+                None if source_mtime_fn is None else source_mtime_fn(pd.Timestamp(start_dt), pd.Timestamp(end_dt_excl))
             )
             # A freshly written parquet's mtime is later than every source file read to build it,
-            # so an unchanged day stays a hit; a backfilled day (newer source mtime) recomputes.
+            # so an unchanged chunk stays a hit; a backfilled one (newer source mtime) recomputes.
+            # source_mtime_fn=None means never invalidate, which is right for an immutable source.
             if source_mtime is None or cache_path.stat().st_mtime >= source_mtime:
                 logger.info("Reading: %s", cache_path)
                 return pd.read_parquet(cache_path)
             logger.info("Cache stale (source newer than cache); recomputing: %s", cache_path)
-    result_df = make_fl_resampled_one_device(
-        park_id=park_id,
-        device_id=device_id,
+
+    result_df = _resample_one_chunk(
+        load_raw=load_raw,
         start_dt=start_dt,
         end_dt_excl=end_dt_excl,
         timebase_s=timebase_s,
-        filestore_dir=filestore_dir,
-        tags=tags,
-        busy_tags=busy_tags,
-        min_data_count=min_data_count,
-        minmax_tags=minmax_tags,
-        siemens_parks=siemens_parks,
         **resample_kwargs,
     )
     if cache_dir is not None and not result_df.empty:
@@ -246,10 +264,111 @@ def _get_fl_resampled_one_device_one_day(  # noqa: PLR0913
             result_df.to_csv(csv_path)
             msg = f"Saved resampled data to CSV at {csv_path} for troubleshooting."
             logger.info(msg)
-            msg = f"Returning empty dataframe for {park_id=} {device_id=} {start_dt=}"
+            msg = f"Returning empty dataframe for {cache_key_extra=} {start_dt=}"
             logger.warning(msg)
             return pd.DataFrame()
     return result_df
+
+
+def get_resampled_chunked_cached(  # noqa: PLR0913
+    *,
+    load_raw: RawLoader,
+    start_dt: dt.datetime,
+    end_dt_excl: dt.datetime,
+    timebase_s: int = 1,
+    cache_key_extra: dict,
+    cache_subdir: tuple[str, ...] = (),
+    source_mtime_fn: Callable[[pd.Timestamp, pd.Timestamp], float | None] | None = None,
+    cache_dir: Path | None = None,
+    refresh_cache: bool = False,
+    **resample_kwargs: object,
+) -> pd.DataFrame:
+    """Resample a date range from any raw source, chunked by day with a per-day parquet cache.
+
+    ``load_raw`` supplies the data, so this orchestration is not tied to any one source; see
+    :data:`RawLoader`. ``get_fl_resampled_one_device`` is the Siemens filestore caller of it.
+
+    ``cache_key_extra`` must carry whatever identifies the source, since only the caller knows
+    it -- e.g. a park and device, or a file and turbine id. The date range and ``timebase_s`` are
+    added here, and any ``resample_kwargs`` differing from ``resample_fastlog_tags``' defaults.
+
+    ``source_mtime_fn`` returns the newest source mtime for a range, so a chunk whose source has
+    been rewritten recomputes. Leave it ``None`` for an immutable source, which keeps cached
+    chunks indefinitely.
+
+    Extra keyword arguments are forwarded to :func:`resample_fastlog_tags`.
+    """
+    chunk_dfs = []
+    for day in _generate_dates_in_range(start_dt, end_dt_excl):
+        day_df = _get_resampled_one_chunk_cached(
+            load_raw=load_raw,
+            start_dt=pd.Timestamp(day),
+            end_dt_excl=pd.Timestamp(day) + pd.DateOffset(days=1),
+            timebase_s=timebase_s,
+            cache_key_extra=cache_key_extra,
+            cache_subdir=cache_subdir,
+            source_mtime_fn=source_mtime_fn,
+            cache_dir=cache_dir,
+            refresh_cache=refresh_cache,
+            **resample_kwargs,
+        )
+        if not day_df.empty:
+            chunk_dfs.append(day_df)
+    if len(chunk_dfs) == 0:
+        return pd.DataFrame()
+    result_df = pd.concat(chunk_dfs)
+    range_tz = pd.Timestamp(start_dt).tz
+    if result_df.index.tzinfo is None and range_tz is not None:  # type: ignore[attr-defined]
+        # Chunks are cut on naive calendar dates, so they come back naive however the caller asked.
+        # Localise rather than convert: a source's timestamps are in the clock its caller asks in
+        # (HOT fastlog files carry naive UTC, and every HOT caller asks in UTC).
+        result_df.index = result_df.index.tz_localize(range_tz)  # type: ignore[attr-defined]
+    return (
+        result_df[(result_df.index >= pd.Timestamp(start_dt)) & (result_df.index < pd.Timestamp(end_dt_excl))]
+        .resample(f"{timebase_s}s")
+        .last()
+    )
+
+
+def _siemens_raw_loader(
+    *,
+    park_id: str,
+    device_id: str,
+    filestore_dir: Path | None = None,
+    tags: Sequence[str] | None = None,
+    siemens_parks: set[str] | None = None,
+) -> RawLoader:
+    """Return a :data:`RawLoader` reading one device out of the Siemens fastlog filestore."""
+
+    def load_raw(start_dt: pd.Timestamp, end_dt_excl: pd.Timestamp) -> dict[str, pd.DataFrame]:
+        return _get_raw_df_dict(
+            park_id=park_id,
+            device_id=device_id,
+            start_dt=start_dt,
+            end_dt_excl=end_dt_excl,
+            filestore_dir=filestore_dir,
+            tags=tags,
+            siemens_parks=siemens_parks,
+        )
+
+    return load_raw
+
+
+def _siemens_source_mtime_fn(
+    *, park_id: str, device_id: str, filestore_dir: Path | None = None
+) -> Callable[[pd.Timestamp, pd.Timestamp], float | None]:
+    """Return the source-freshness callback for one device's Siemens fastlog files."""
+
+    def source_mtime(start_dt: pd.Timestamp, end_dt_excl: pd.Timestamp) -> float | None:
+        return _max_source_mtime(
+            park_id=park_id,
+            device_id=device_id,
+            start_dt=start_dt,
+            end_dt_excl=end_dt_excl,
+            filestore_dir=filestore_dir,
+        )
+
+    return source_mtime
 
 
 def _generate_dates_in_range(start_dt: dt.datetime, end_dt_excl: dt.datetime) -> list[dt.date]:
@@ -308,46 +427,49 @@ def get_fl_resampled_one_device(  # noqa: PLR0913
 ) -> pd.DataFrame:
     """Return resampled fastlog data for a single device over the given date range, chunked by day.
 
+    The Siemens filestore caller of :func:`get_resampled_chunked_cached`; the chunking, per-day
+    parquet cache and source-freshness check all live there.
+
     Extra keyword arguments are forwarded to :func:`resample_fastlog_tags` and join the per-day
     cache key when they differ from its defaults.
     """
-    # chunk by day
-    day_dfs = []
-    for day in _generate_dates_in_range(start_dt, end_dt_excl):
-        day_start_dt = pd.Timestamp(day)
-        day_end_dt_excl = pd.Timestamp(day) + pd.DateOffset(days=1)
-        day_df = _get_fl_resampled_one_device_one_day(
+    result_df = get_resampled_chunked_cached(
+        load_raw=_siemens_raw_loader(
             park_id=park_id,
             device_id=device_id,
-            start_dt=day_start_dt,
-            end_dt_excl=day_end_dt_excl,
-            timebase_s=timebase_s,
             filestore_dir=filestore_dir,
             tags=tags,
-            busy_tags=busy_tags,
-            minmax_tags=minmax_tags,
-            min_data_count=min_data_count,
-            cache_dir=cache_dir,
             siemens_parks=siemens_parks,
-            refresh_cache=refresh_cache,
-            **resample_kwargs,
-        )
-        if not day_df.empty:
-            day_dfs.append(day_df)
-    if len(day_dfs) > 0:
-        result_df = pd.concat(day_dfs)
-        # convert result_df index to DateTimeIndex if necessary
-        if result_df.index.tzinfo is None:  # type: ignore[attr-defined]
-            # HOT FastLog is in UTC
-            result_df.index = pd.to_datetime(result_df.index, utc=True)
-        return (
-            result_df[(result_df.index >= pd.Timestamp(start_dt)) & (result_df.index < pd.Timestamp(end_dt_excl))]
-            .resample(f"{timebase_s}s")
-            .last()
-        )
-    msg = f"No data found for {park_id=} {device_id=} between {start_dt=} and {end_dt_excl=}"
-    logger.warning(msg)
-    return pd.DataFrame()
+        ),
+        start_dt=start_dt,
+        end_dt_excl=end_dt_excl,
+        timebase_s=timebase_s,
+        # Reproduces, exactly, the parameter set the per-day key used to be built from by argument
+        # introspection. Every entry is hashed whatever its value, including None, because that is
+        # what the introspected version did: adding or dropping one here silently orphans every day
+        # every HOT user has cached. TestSiemensWrapperOverGenericLayer pins the resulting key.
+        cache_key_extra={
+            "park_id": park_id,
+            "device_id": device_id,
+            "tags": tags,
+            "busy_tags": busy_tags,
+            "minmax_tags": minmax_tags,
+            "min_data_count": min_data_count,
+        },
+        cache_subdir=("fl_resampled", park_id, device_id),
+        source_mtime_fn=_siemens_source_mtime_fn(park_id=park_id, device_id=device_id, filestore_dir=filestore_dir),
+        cache_dir=cache_dir,
+        refresh_cache=refresh_cache,
+        busy_tags=busy_tags,
+        minmax_tags=minmax_tags,
+        min_data_count=min_data_count,
+        **resample_kwargs,
+    )
+    if result_df.empty:
+        msg = f"No data found for {park_id=} {device_id=} between {start_dt=} and {end_dt_excl=}"
+        logger.warning(msg)
+        return pd.DataFrame()
+    return result_df
 
 
 def _get_tag_list_from_park_id(park_id: str, siemens_parks: set[str] | None = None) -> list[str]:
@@ -506,6 +628,10 @@ def make_fl_resampled_one_device(  # noqa: PLR0913
 ) -> pd.DataFrame:
     """Load raw fastlog data and resample it to the target timebase for a single device.
 
+    The uncached single-range Siemens entry point; :func:`get_fl_resampled_one_device` is the
+    chunked, cached one. Both read with the same lead-in, since both go through
+    :func:`_resample_one_chunk`.
+
     Extra keyword arguments are forwarded to :func:`resample_fastlog_tags`, so options such as
     ``circular_tags``, ``ffill_tags``, ``std_tags``, ``min_raw_data_count``,
     ``busy_tag_ffill_limit_s`` and ``require_all_busy_tags`` are reachable from here. They are
@@ -514,34 +640,23 @@ def make_fl_resampled_one_device(  # noqa: PLR0913
     cache layer, and ``circular_tags`` in particular then fell back to a hardcoded tag-name set
     so a park named otherwise had its directions averaged across the 0/360 wrap.
     """
-    raw_df_dict = _get_raw_df_dict(
-        park_id=park_id,
-        device_id=device_id,
-        start_dt=start_dt - pd.Timedelta(days=1),
-        end_dt_excl=end_dt_excl + pd.Timedelta(hours=1),
-        filestore_dir=filestore_dir,
-        tags=tags,
-        siemens_parks=siemens_parks,
-    )
-    if len(raw_df_dict) == 0:
-        return pd.DataFrame(index=pd.DatetimeIndex([]))
-
     msg = f"Resampling data for {device_id=} {start_dt=}"
     logger.info(msg)
-
-    resampled_df = resample_fastlog_tags(
-        raw_df_dict=raw_df_dict,
+    return _resample_one_chunk(
+        load_raw=_siemens_raw_loader(
+            park_id=park_id,
+            device_id=device_id,
+            filestore_dir=filestore_dir,
+            tags=tags,
+            siemens_parks=siemens_parks,
+        ),
+        start_dt=start_dt,
+        end_dt_excl=end_dt_excl,
         timebase_s=timebase_s,
         busy_tags=busy_tags,
         minmax_tags=minmax_tags,
         min_data_count=min_data_count,
-        **resample_kwargs,  # type: ignore[arg-type]
-    )
-
-    return (
-        resampled_df[(resampled_df.index >= pd.Timestamp(start_dt)) & (resampled_df.index < pd.Timestamp(end_dt_excl))]
-        .resample(f"{timebase_s}s")
-        .last()
+        **resample_kwargs,
     )
 
 

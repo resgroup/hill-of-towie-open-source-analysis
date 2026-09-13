@@ -675,6 +675,80 @@ def _ffill_limit_from_seconds(*, ffill_limit_s: float, subsampling_timebase_ms: 
     return limit
 
 
+# Grids the "auto" rule is allowed to choose, coarsest last. Quantising keeps the choice stable
+# against day-to-day wobble in a tag's logging rate -- 100.0ms and 103.4ms must not produce two
+# different grids for two days of the same signal -- and keeps the value legible in a log line.
+_ALLOWED_SUBSAMPLING_MS = (10, 20, 25, 50, 100, 125, 200, 250, 500, 1000)
+
+# The coarsest grid the auto rule will pick, whatever the logging rate says. A grid slower than 1Hz
+# stops resolving when a value changed, so duration weighting degrades into "whichever sample
+# happened to be latest"; 1Hz is also a common rate for a controller's own periodic statistics, so
+# a product built on it stays comparable with them.
+_MAX_AUTO_SUBSAMPLING_MS = 1000
+
+
+def _median_logging_interval_ms(*, raw_df_dict: dict[str, pd.DataFrame], tags: Sequence[str]) -> float | None:
+    """Return the fastest median inter-sample interval among ``tags``, in ms, or None if unknown.
+
+    The fastest rather than the average: a grid coarser than the quickest tag throws that tag's
+    samples away before anything is aggregated, which is what the rate-aware grid exists to stop.
+    """
+    intervals = []
+    for tag in tags:
+        tag_df = raw_df_dict.get(tag)
+        if tag_df is None or len(tag_df) < 2:  # noqa: PLR2004
+            continue
+        median_s = pd.Series(tag_df.index).diff().dt.total_seconds().median()
+        if pd.notna(median_s) and median_s > 0:
+            intervals.append(median_s * 1000)
+    return min(intervals) if intervals else None
+
+
+def _resolve_subsampling_timebase_ms(
+    *,
+    subsampling_timebase_ms: int | str | None,
+    timebase_s: int,
+    raw_df_dict: dict[str, pd.DataFrame],
+    busy_tags: Sequence[str],
+) -> int:
+    """Decide the sub-sampling grid: the legacy formula, an explicit value, or the measured rate.
+
+    ``None`` keeps ``min(1000, timebase_s * 1000 // 20)``, which is keyed on the output timebase
+    alone and so drifts away from the data in both directions: at ``timebase_s=600`` it samples a
+    100ms tag at 1Hz and discards nine samples in ten, and at ``timebase_s=1`` it builds a 50ms
+    grid for a signal logged every 12s, which is 240x more cells than there is information in them.
+
+    ``"auto"`` measures the busy tags instead and takes the coarsest allowed grid no slower than
+    the quickest of them, capped at 1s and at the output window itself. Only the busy tags are
+    measured, per the design: a non-busy tag logging faster than every busy tag would be sampled
+    down, which is the price of not scanning every tag on every chunk.
+    """
+    legacy = min(1000, timebase_s * 1000 // 20)
+    if subsampling_timebase_ms is None:
+        return legacy
+    if subsampling_timebase_ms == "auto":
+        fastest_ms = _median_logging_interval_ms(raw_df_dict=raw_df_dict, tags=busy_tags)
+        if fastest_ms is None:
+            # Nothing to measure (no busy tag, or a single sample): the timebase is all we know.
+            return legacy
+        ceiling = min(_MAX_AUTO_SUBSAMPLING_MS, timebase_s * 1000)
+        allowed = [x for x in _ALLOWED_SUBSAMPLING_MS if x <= min(fastest_ms, ceiling)]
+        chosen = max(allowed) if allowed else min(_ALLOWED_SUBSAMPLING_MS)
+        msg = f"sub-sampling grid {chosen}ms from a fastest busy-tag interval of {fastest_ms:.0f}ms"
+        logger.info(msg)
+        return chosen
+    if not isinstance(subsampling_timebase_ms, int) or isinstance(subsampling_timebase_ms, bool):
+        msg = f"subsampling_timebase_ms must be an int, 'auto' or None, got {subsampling_timebase_ms!r}"
+        raise TypeError(msg)
+    if not 1 <= subsampling_timebase_ms <= timebase_s * 1000:
+        msg = (
+            f"subsampling_timebase_ms={subsampling_timebase_ms} must be between 1 and the output "
+            f"window itself ({timebase_s * 1000}ms)"
+        )
+        raise ValueError(msg)
+    return subsampling_timebase_ms
+
+
 def _full_resample_grid(*, raw_df_dict: dict[str, pd.DataFrame], timebase_s: int) -> pd.DatetimeIndex:
     """Resample grid spanning every tag, for masks that must cover tags the busy frame lacks."""
     spans = [x.index for x in raw_df_dict.values() if not x.empty]
@@ -752,6 +826,7 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
     min_raw_data_count: float | None = None,
     busy_tag_ffill_limit_s: float | None = None,
     require_all_busy_tags: bool = False,
+    subsampling_timebase_ms: int | str | None = None,
 ) -> pd.DataFrame:
     """Resample all tags to the target timebase.
 
@@ -767,6 +842,11 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
     as the mean so it is duration weighted and consistent with the other aggregates. Tags also in
     ``circular_tags`` get the circular standard deviation, since a plain one is meaningless across
     the 0/360 wrap.
+
+    ``subsampling_timebase_ms`` is the fine grid everything is upsampled onto before aggregation.
+    ``None`` keeps the historical ``min(1000, timebase_s * 1000 // 20)``, which knows the output
+    timebase but not the logging rate. ``"auto"`` measures the busy tags and follows them, capped at
+    1s; an explicit value overrides both. See :func:`_resolve_subsampling_timebase_ms`.
 
     ``min_data_count`` counts non-NaN *sub-grid cells* of the busy tags, so it saturates once
     ``busy_tag_ffill_limit_s`` is set: with a 45s horizon a 60s window starved from 5 raw samples
@@ -791,11 +871,16 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
             x for x in raw_df_dict if x in (siemens_typical_circular_tags | res_typical_circular_tags)
         )
 
-    subsampling_timebase_ms = min(1000, timebase_s * 1000 // 20)
+    resolved_subsampling_ms = _resolve_subsampling_timebase_ms(
+        subsampling_timebase_ms=subsampling_timebase_ms,
+        timebase_s=timebase_s,
+        raw_df_dict=raw_df_dict,
+        busy_tags=busy_tags,
+    )
     if busy_tag_ffill_limit_s is not None:
         _ffill_limit_from_seconds(
             ffill_limit_s=busy_tag_ffill_limit_s,
-            subsampling_timebase_ms=subsampling_timebase_ms,
+            subsampling_timebase_ms=resolved_subsampling_ms,
             arg_name="busy_tag_ffill_limit_s",
         )
     busy_upsampled = pd.DataFrame(index=pd.DatetimeIndex([], name=TIMESTAMP_NAME))
@@ -805,7 +890,7 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
         tag_upsampled = upsample_and_ffill_stopping_at_nans(
             tag_df=tag_df,
             timebase_s=timebase_s,
-            subsampling_timebase_ms=subsampling_timebase_ms,
+            subsampling_timebase_ms=resolved_subsampling_ms,
             only_ffill_one_timebase=True,
             ffill_limit_s=busy_tag_ffill_limit_s,
         )
@@ -838,7 +923,7 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
         tag_upsampled = upsample_and_ffill_stopping_at_nans(
             tag_df=tag_df,
             timebase_s=timebase_s,
-            subsampling_timebase_ms=subsampling_timebase_ms,
+            subsampling_timebase_ms=resolved_subsampling_ms,
             only_ffill_one_timebase=tag not in ffill_tags,
             busy_tag_nan_times=busy_tag_nan_times if len(busy_tag_nan_times) > 0 else None,
             ffill_limit_s=busy_tag_ffill_limit_s if tag in busy_tags else None,
@@ -894,7 +979,7 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
             tag_upsampled = upsample_and_ffill_stopping_at_nans(
                 tag_df=tag_df,
                 timebase_s=timebase_s,
-                subsampling_timebase_ms=subsampling_timebase_ms,
+                subsampling_timebase_ms=resolved_subsampling_ms,
                 only_ffill_one_timebase=min_data_count_tag not in ffill_tags,
                 busy_tag_nan_times=busy_tag_nan_times if len(busy_tag_nan_times) > 0 else None,
                 ffill_limit_s=busy_tag_ffill_limit_s if min_data_count_tag in busy_tags else None,

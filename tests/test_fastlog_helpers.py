@@ -1013,3 +1013,118 @@ class TestSiemensWrapperOverGenericLayer:
             cache_dir=tmp_path,
         )
         assert str(result.index.tz) == "UTC"  # type: ignore[attr-defined]
+
+
+def _tag_at_interval(tag: str, interval_ms: int, *, periods: int = 200, amplitude: float = 0.0) -> pd.DataFrame:
+    """One tag logged at a fixed interval, optionally carrying variation faster than 1Hz."""
+    idx = pd.date_range("2024-03-01", periods=periods, freq=f"{interval_ms}ms", name=TIMESTAMP_NAME)
+    values = amplitude * np.sin(np.arange(periods) * 2 * np.pi / 7) + 1000.0
+    return pd.DataFrame({tag: values}, index=idx)
+
+
+class TestSubsamplingGrid:
+    """The fine grid may follow the measured logging rate instead of only the output timebase.
+
+    The historical rule, ``min(1000, timebase_s * 1000 // 20)``, knows the output timebase but not
+    how fast the data arrives, so it drifts both ways: at 600s it samples a 100ms tag at 1Hz and
+    throws away nine samples in ten, and at 1s it builds a 50ms grid for a signal logged every 12s,
+    which is 240x more cells than there is information in them.
+    """
+
+    @pytest.mark.parametrize(("timebase_s", "expected"), [(1, 50), (60, 1000), (600, 1000)])
+    def test_none_keeps_the_historical_grid(self, timebase_s: int, expected: int) -> None:
+        # Pinned, because this is the default and every cached day in existence was built with it.
+        assert (
+            flh._resolve_subsampling_timebase_ms(  # noqa: SLF001
+                subsampling_timebase_ms=None, timebase_s=timebase_s, raw_df_dict={}, busy_tags=()
+            )
+            == expected
+        )
+
+    def test_auto_follows_the_fastest_busy_tag(self) -> None:
+        raw = {
+            "ActPower_Value": _tag_at_interval("ActPower_Value", 100),
+            "AcWindSp_AcWindSp": _tag_at_interval("AcWindSp_AcWindSp", 1000),
+        }
+        chosen = flh._resolve_subsampling_timebase_ms(  # noqa: SLF001
+            subsampling_timebase_ms="auto",
+            timebase_s=600,
+            raw_df_dict=raw,
+            busy_tags=("ActPower_Value", "AcWindSp_AcWindSp"),
+        )
+        assert chosen == 100  # not 1000: the slower tag must not set the grid for the faster one
+
+    def test_auto_is_capped_at_one_second(self) -> None:
+        # A slowly logged signal, as an OPC-style source can be. The grid stops at 1s rather than
+        # following it out to 12s, so a value's change time is still resolved to within a second.
+        raw = {"WindSpeed": _tag_at_interval("WindSpeed", 12_000)}
+        chosen = flh._resolve_subsampling_timebase_ms(  # noqa: SLF001
+            subsampling_timebase_ms="auto", timebase_s=60, raw_df_dict=raw, busy_tags=("WindSpeed",)
+        )
+        assert chosen == 1000
+
+    def test_auto_is_capped_at_the_output_window(self) -> None:
+        # At timebase_s=1 a 1s grid is already the whole window; nothing coarser can be allowed.
+        raw = {"WindSpeed": _tag_at_interval("WindSpeed", 12_000)}
+        chosen = flh._resolve_subsampling_timebase_ms(  # noqa: SLF001
+            subsampling_timebase_ms="auto", timebase_s=1, raw_df_dict=raw, busy_tags=("WindSpeed",)
+        )
+        assert chosen == 1000
+
+    def test_auto_falls_back_when_there_is_nothing_to_measure(self) -> None:
+        assert (
+            flh._resolve_subsampling_timebase_ms(  # noqa: SLF001
+                subsampling_timebase_ms="auto", timebase_s=600, raw_df_dict={}, busy_tags=("absent",)
+            )
+            == 1000
+        )
+
+    def test_explicit_value_is_used_as_given(self) -> None:
+        assert (
+            flh._resolve_subsampling_timebase_ms(  # noqa: SLF001
+                subsampling_timebase_ms=200, timebase_s=600, raw_df_dict={}, busy_tags=()
+            )
+            == 200
+        )
+
+    @pytest.mark.parametrize("value", [0, -1, 2000])
+    def test_an_impossible_explicit_value_raises(self, value: int) -> None:
+        with pytest.raises(ValueError, match="subsampling_timebase_ms"):
+            flh._resolve_subsampling_timebase_ms(  # noqa: SLF001
+                subsampling_timebase_ms=value, timebase_s=1, raw_df_dict={}, busy_tags=()
+            )
+
+    def test_default_output_is_unchanged(self) -> None:
+        # The parameter must be inert until a caller opts in: None and the legacy value it stands
+        # for have to produce the same frame, or every existing HOT result moves.
+        raw = {"ActPower_Value": _tag_at_interval("ActPower_Value", 100, periods=12_000, amplitude=50.0)}
+        kwargs: dict[str, Any] = {"raw_df_dict": raw, "timebase_s": 60, "std_tags": ("ActPower_Value",)}
+        pd.testing.assert_frame_equal(
+            resample_fastlog_tags(**kwargs), resample_fastlog_tags(**kwargs, subsampling_timebase_ms=1000)
+        )
+
+    def test_a_coarse_grid_clips_the_extremes_a_fine_one_reaches(self) -> None:
+        """Why the rule matters, end to end -- and it is min/max, not std.
+
+        Sub-sampling a 100ms tag onto a 1s grid keeps one sample in ten, which is an unbiased (if
+        noisier) estimator of the window's mean and standard deviation but a systematically
+        *inward* one of its extremes: an excursion shorter than the grid is simply not seen.
+        Measured on a real HOT turbine-day at ``timebase_s=600``, against every raw sample: a 1s
+        grid biases min by +4.5kW and max by -9.0kW while biasing std by only -0.09kW, and both
+        min/max biases reach exactly zero once the grid is at or below the 100ms logging interval.
+        """
+        # A brief excursion between samples, of the kind a 1s grid steps straight over.
+        raw = {"ActPower_Value": _tag_at_interval("ActPower_Value", 100, periods=12_000, amplitude=50.0)}
+        raw["ActPower_Value"].iloc[3::97] = 5000.0
+        kwargs: dict[str, Any] = {"raw_df_dict": raw, "timebase_s": 60, "minmax_tags": ("ActPower_Value",)}
+        coarse = resample_fastlog_tags(**kwargs, subsampling_timebase_ms=1000)["max_ActPower_Value"]
+        fine = resample_fastlog_tags(**kwargs, subsampling_timebase_ms="auto")["max_ActPower_Value"]
+        assert (fine >= coarse).all()  # a finer grid can only reach further out, never less far
+        assert (fine == 5000.0).all()  # every window contains an excursion, and the fine grid sees them all
+        assert (coarse < fine).any()  # the coarse grid steps over some of them entirely
+
+    def test_a_non_default_grid_changes_the_cache_key(self) -> None:
+        assert flh._non_default_resample_kwargs({"subsampling_timebase_ms": None}) == {}  # noqa: SLF001
+        assert flh._non_default_resample_kwargs({"subsampling_timebase_ms": "auto"}) == {  # noqa: SLF001
+            "subsampling_timebase_ms": "auto"
+        }

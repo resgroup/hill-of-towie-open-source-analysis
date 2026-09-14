@@ -1,6 +1,10 @@
 import os
+import subprocess
+import sys
 from pathlib import Path
+from typing import Any, ClassVar
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -9,9 +13,9 @@ from hot_open.fastlog_helpers import (
     SIEMENS_PARKS,
     SIEMENS_TAGS,
     TIMESTAMP_NAME,
-    _get_fl_resampled_one_device_one_day,
     _get_raw_df_dict,
     _get_tag_list_from_park_id,
+    get_fl_resampled_one_device,
     resample_fastlog_tags,
     upsample_and_ffill_stopping_at_nans,
 )
@@ -73,7 +77,8 @@ def _write_source_file(*, filestore: Path, date_str: str, mtime: float) -> Path:
 
 
 def _call(filestore: Path, cache_dir: Path, *, refresh_cache: bool = False) -> pd.DataFrame:
-    return _get_fl_resampled_one_device_one_day(
+    """Resample one day through the production entry point, cache and all."""
+    return get_fl_resampled_one_device(
         park_id=PARK,
         device_id=DEVICE,
         start_dt=DAY,
@@ -99,7 +104,7 @@ class TestCacheSourceFreshness:
             idx = pd.DatetimeIndex([start_dt], name="timestamp")
             return pd.DataFrame({"ActPower_Value": [1.0]}, index=idx)
 
-        monkeypatch.setattr(flh, "make_fl_resampled_one_device", stub)
+        monkeypatch.setattr(flh, "_resample_one_chunk", stub)
         return calls
 
     def test_fresh_cache_is_reused(self, tmp_path: Path, spy_make: list[int]) -> None:
@@ -140,14 +145,12 @@ class TestCacheSourceFreshness:
         filestore, cache = tmp_path / "fs", tmp_path / "cache"
         _write_source_file(filestore=filestore, date_str="2024-01-01", mtime=1000.0)
         idx = pd.DatetimeIndex([pd.Timestamp("2024-01-01")], name="timestamp")
-        monkeypatch.setattr(
-            flh, "make_fl_resampled_one_device", lambda **_: pd.DataFrame({"ActPower_Value": [1.0]}, index=idx)
-        )
+        monkeypatch.setattr(flh, "_resample_one_chunk", lambda **_: pd.DataFrame({"ActPower_Value": [1.0]}, index=idx))
         _call(filestore, cache)
         parquet = next((cache / "fl_resampled" / PARK / DEVICE).glob("*.parquet"))
         # Recompute now yields an empty frame (e.g. source removed/filtered): the stale parquet
         # must not survive, or a later non-refresh run would silently reuse it.
-        monkeypatch.setattr(flh, "make_fl_resampled_one_device", lambda **_: pd.DataFrame())
+        monkeypatch.setattr(flh, "_resample_one_chunk", lambda **_: pd.DataFrame())
         _call(filestore, cache, refresh_cache=True)
         assert not parquet.exists()
 
@@ -491,3 +494,787 @@ class TestBusyTagHorizonIsScopedToBusyTags:
         )
         # busy_a legitimately differs (it *is* busy); status_d and the masking it drives must not.
         pd.testing.assert_series_equal(default["status_d"], widened["status_d"])
+
+
+def _direction_tag_df(
+    tag: str,
+    values: list[float],
+    *,
+    start: str = "2024-03-01 10:00:00",
+    period_s: int = 10,
+) -> pd.DataFrame:
+    """Build a direction tag whose samples are exactly ``values``, one every ``period_s``."""
+    idx = pd.date_range(pd.Timestamp(start), periods=len(values), freq=f"{period_s}s", name=TIMESTAMP_NAME)
+    return pd.DataFrame({tag: values}, index=idx, dtype=float)
+
+
+class TestStdTags:
+    """``std_tags`` emits a per-window standard deviation, circular-aware.
+
+    Callers who want variability alongside the mean had to compute it themselves, and a plain
+    std is wrong for a direction: the spread of 359 and 1 degrees is 1 degree, not 253.
+    """
+
+    def test_non_circular_std_matches_pandas_std_on_the_same_grid(self) -> None:
+        raw = {"linear_a": _slow_scada_tag_df("linear_a", period_s=10, minutes=5)}
+        resampled = resample_fastlog_tags(
+            raw_df_dict=raw, timebase_s=60, busy_tags=("linear_a",), std_tags=("linear_a",)
+        )
+        upsampled = upsample_and_ffill_stopping_at_nans(
+            tag_df=raw["linear_a"], timebase_s=60, subsampling_timebase_ms=1000, only_ffill_one_timebase=True
+        )
+        expected = upsampled["linear_a"].resample("60s").std()
+        pd.testing.assert_series_equal(
+            resampled["std_linear_a"].dropna(), expected.reindex(resampled.index).dropna(), check_names=False
+        )
+
+    def test_std_column_is_named_with_a_prefix(self) -> None:
+        raw = {"linear_a": _slow_scada_tag_df("linear_a")}
+        resampled = resample_fastlog_tags(
+            raw_df_dict=raw, timebase_s=60, busy_tags=("linear_a",), std_tags=("linear_a",)
+        )
+        assert "std_linear_a" in resampled.columns
+        assert "linear_a" in resampled.columns
+
+    def test_no_std_columns_by_default(self) -> None:
+        # The parameter must cost nothing when unused, or it is not safe to add.
+        raw = {"linear_a": _slow_scada_tag_df("linear_a")}
+        default = resample_fastlog_tags(raw_df_dict=raw, timebase_s=60, busy_tags=("linear_a",))
+        assert not [c for c in default.columns if c.startswith("std_")]
+
+    def test_circular_std_is_small_for_a_tight_cluster_and_large_for_a_spread(self) -> None:
+        tight = _direction_tag_df("AcWindDr_Value", [359.0, 0.0, 1.0, 2.0, 358.0, 0.5])
+        spread = _direction_tag_df("AcWindDr_Value", [10.0, 100.0, 190.0, 280.0, 55.0, 145.0])
+        kwargs: dict[str, Any] = {
+            "timebase_s": 60,
+            "busy_tags": ("AcWindDr_Value",),
+            "circular_tags": ("AcWindDr_Value",),
+            "std_tags": ("AcWindDr_Value",),
+        }
+        tight_std = resample_fastlog_tags(raw_df_dict={"AcWindDr_Value": tight}, **kwargs)["std_AcWindDr_Value"]
+        spread_std = resample_fastlog_tags(raw_df_dict={"AcWindDr_Value": spread}, **kwargs)["std_AcWindDr_Value"]
+        # A plain std would call the tight cluster ~180 deg because it straddles 0/360.
+        assert tight_std.dropna().max() < 5
+        assert spread_std.dropna().min() > 40
+
+    @pytest.mark.parametrize("offset", [0.0, 37.0, 180.0, 359.0])
+    def test_circular_std_is_rotation_invariant(self, offset: float) -> None:
+        # The property that distinguishes a circular statistic from a linear one.
+        values = [10.0, 25.0, 3.0, 355.0, 18.0, 340.0]
+        kwargs: dict[str, Any] = {
+            "timebase_s": 60,
+            "busy_tags": ("AcWindDr_Value",),
+            "circular_tags": ("AcWindDr_Value",),
+            "std_tags": ("AcWindDr_Value",),
+        }
+        base = resample_fastlog_tags(
+            raw_df_dict={"AcWindDr_Value": _direction_tag_df("AcWindDr_Value", values)}, **kwargs
+        )["std_AcWindDr_Value"]
+        rotated_values = [(v + offset) % 360 for v in values]
+        rotated = resample_fastlog_tags(
+            raw_df_dict={"AcWindDr_Value": _direction_tag_df("AcWindDr_Value", rotated_values)}, **kwargs
+        )["std_AcWindDr_Value"]
+        pd.testing.assert_series_equal(base, rotated, check_names=False)
+
+
+class TestMinRawDataCount:
+    """``min_raw_data_count`` counts *raw* samples, which ``min_data_count`` cannot.
+
+    ``min_data_count`` counts sub-grid cells, and those saturate once ``busy_tag_ffill_limit_s``
+    is set: a 60s window starved from 5 raw samples to 1-2 still reports 60 filled cells, so it
+    is indistinguishable from a healthy one. That is exactly the case a minimum-coverage rule
+    exists to catch, and the busy-tag fill hides it by design.
+    """
+
+    BUSY = ("busy_a",)
+
+    def _raw(self, *, period_s: int) -> dict[str, pd.DataFrame]:
+        return {"busy_a": _slow_scada_tag_df("busy_a", period_s=period_s, minutes=10)}
+
+    def test_min_data_count_cannot_tell_a_starved_window_from_a_healthy_one(self) -> None:
+        # Guards the limitation this parameter exists for; if this ever fails, re-read the docs.
+        healthy = resample_fastlog_tags(
+            raw_df_dict=self._raw(period_s=12),
+            timebase_s=60,
+            busy_tags=self.BUSY,
+            busy_tag_ffill_limit_s=45,
+            min_data_count=4,
+        )
+        starved = resample_fastlog_tags(
+            raw_df_dict=self._raw(period_s=36),
+            timebase_s=60,
+            busy_tags=self.BUSY,
+            busy_tag_ffill_limit_s=45,
+            min_data_count=4,
+        )
+        # Excluding the trailing partial window, which is legitimately short of samples.
+        assert healthy["busy_a"].iloc[:-1].notna().all()
+        assert starved["busy_a"].iloc[:-1].notna().all()
+
+    def test_masks_a_starved_window(self) -> None:
+        starved = resample_fastlog_tags(
+            raw_df_dict=self._raw(period_s=36),
+            timebase_s=60,
+            busy_tags=self.BUSY,
+            busy_tag_ffill_limit_s=45,
+            min_raw_data_count=4,
+        )
+        assert starved["busy_a"].isna().all()
+
+    def test_keeps_a_window_meeting_the_threshold(self) -> None:
+        healthy = resample_fastlog_tags(
+            raw_df_dict=self._raw(period_s=12),
+            timebase_s=60,
+            busy_tags=self.BUSY,
+            busy_tag_ffill_limit_s=45,
+            min_raw_data_count=4,
+        )
+        # 60s / 12s = 5 raw samples per window, so a threshold of 4 must not bite.
+        assert healthy["busy_a"].iloc[:-1].notna().all()
+
+    def test_none_by_default_changes_nothing(self) -> None:
+        raw = self._raw(period_s=36)
+        kwargs: dict[str, Any] = {"timebase_s": 60, "busy_tags": self.BUSY, "busy_tag_ffill_limit_s": 45}
+        pd.testing.assert_frame_equal(
+            resample_fastlog_tags(raw_df_dict=raw, **kwargs),
+            resample_fastlog_tags(raw_df_dict=raw, min_raw_data_count=None, **kwargs),
+        )
+
+    def test_polarity_follows_require_all_busy_tags(self) -> None:
+        # One busy tag well fed, one starved. require_all -> any tag below threshold masks.
+        raw = {
+            "busy_a": _slow_scada_tag_df("busy_a", period_s=12, minutes=10),
+            "busy_b": _slow_scada_tag_df("busy_b", period_s=60, minutes=10),
+        }
+        kwargs: dict[str, Any] = {
+            "raw_df_dict": raw,
+            "timebase_s": 60,
+            "busy_tags": ("busy_a", "busy_b"),
+            "busy_tag_ffill_limit_s": 45,
+            "min_raw_data_count": 4,
+        }
+        any_below = resample_fastlog_tags(**kwargs, require_all_busy_tags=True)
+        all_below = resample_fastlog_tags(**kwargs, require_all_busy_tags=False)
+        assert any_below["busy_a"].isna().all()
+        assert all_below["busy_a"].iloc[:-1].notna().all()
+
+
+class TestLowCoverageMaskingClearsEveryColumn:
+    """A window masked for low coverage must not keep a standard deviation or a range.
+
+    ``min_data_count`` used to blank only the tag columns, so a masked window reported a NaN mean
+    beside a populated ``std_``/``min_``/``max_`` -- the reading that looks like real data because
+    everything around it is. ``min_raw_data_count`` always blanked everything; now both do.
+    """
+
+    @staticmethod
+    def _starved_raw() -> dict[str, pd.DataFrame]:
+        # One window of dense samples, then one with almost none.
+        dense = pd.date_range("2024-01-01 00:00", periods=60, freq="1s", name=TIMESTAMP_NAME)
+        sparse = pd.DatetimeIndex(["2024-01-01 00:01:05"], name=TIMESTAMP_NAME)
+        idx = dense.append(sparse)
+        return {"ActPower_Value": pd.DataFrame({"ActPower_Value": np.arange(len(idx), dtype=float)}, index=idx)}
+
+    @pytest.mark.parametrize("option", ["min_data_count", "min_raw_data_count"])
+    def test_a_masked_window_keeps_no_aggregate(self, option: str) -> None:
+        threshold: dict[str, Any] = {option: 10}
+        resampled = resample_fastlog_tags(
+            raw_df_dict=self._starved_raw(),
+            timebase_s=60,
+            busy_tags=("ActPower_Value",),
+            minmax_tags=("ActPower_Value",),
+            std_tags=("ActPower_Value",),
+            **threshold,
+        )
+        masked = resampled.loc["2024-01-01 00:01:00"]
+        assert masked.isna().all(), f"{option} left {list(masked.dropna().index)} populated"
+
+
+class TestResampleOptionsReachTheCacheLayer:
+    """Resample options must be settable through the cached, day-chunked entry points.
+
+    ``make_fl_resampled_one_device`` used to enumerate the options it forwarded, and that list
+    went stale as ``resample_fastlog_tags`` gained more: ``circular_tags``, ``ffill_tags``,
+    ``busy_tag_ffill_limit_s`` and ``require_all_busy_tags`` were all unreachable through the
+    cache layer. ``circular_tags`` mattered most, since falling back to its hardcoded default
+    silently averages a differently-named direction tag across the 0/360 wrap.
+    """
+
+    @pytest.fixture
+    def spy_resample(self, monkeypatch: pytest.MonkeyPatch) -> dict:
+        """Capture the kwargs resample_fastlog_tags is called with, and stub out the raw load."""
+        seen: dict = {}
+
+        def fake_resample(**kwargs: object) -> pd.DataFrame:
+            seen.update(kwargs)
+            return pd.DataFrame(
+                {"ActPower_Value": [1.0]}, index=pd.DatetimeIndex([DAY], name=TIMESTAMP_NAME, freq="1s")
+            )
+
+        monkeypatch.setattr(flh, "resample_fastlog_tags", fake_resample)
+        monkeypatch.setattr(
+            flh,
+            "_get_raw_df_dict",
+            lambda **_: {
+                "ActPower_Value": pd.DataFrame(
+                    {"ActPower_Value": [1.0]}, index=pd.DatetimeIndex([DAY], name=TIMESTAMP_NAME)
+                )
+            },
+        )
+        return seen
+
+    @pytest.mark.parametrize(
+        ("option", "value"),
+        [
+            ("circular_tags", ("AcWindDr_Value",)),
+            ("ffill_tags", ()),
+            ("std_tags", ("ActPower_Value",)),
+            ("min_raw_data_count", 3),
+            ("busy_tag_ffill_limit_s", 45),
+            ("require_all_busy_tags", True),
+        ],
+    )
+    def test_option_reaches_resample_fastlog_tags(self, spy_resample: dict, option: str, value: object) -> None:
+        flh.make_fl_resampled_one_device(
+            park_id=PARK,
+            device_id=DEVICE,
+            start_dt=DAY,
+            end_dt_excl=DAY_END,
+            siemens_parks={PARK},
+            **{option: value},  # type: ignore[arg-type]
+        )
+        assert spy_resample[option] == value
+
+    def test_option_reaches_through_the_day_chunking_and_cache(
+        self, spy_resample: dict, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # tz-aware, because this entry point coerces its result index to UTC before trimming it.
+        monkeypatch.setattr(flh, "_max_source_mtime", lambda **_: None)
+        flh.get_fl_resampled_one_device(
+            park_id=PARK,
+            device_id=DEVICE,
+            start_dt=pd.Timestamp(DAY, tz="UTC"),
+            end_dt_excl=pd.Timestamp(DAY_END, tz="UTC"),
+            cache_dir=tmp_path,
+            siemens_parks={PARK},
+            require_all_busy_tags=True,
+            busy_tag_ffill_limit_s=45,
+        )
+        assert spy_resample["require_all_busy_tags"] is True
+        assert spy_resample["busy_tag_ffill_limit_s"] == 45
+
+
+class TestCacheKeyStability:
+    """Adding resample options must not orphan days cached before those options existed.
+
+    The key is built by introspection over the named arguments, so a defaulted option has to be
+    left out of it: hashing every option would mean merely widening the signature invalidated
+    every cached day, over parameters whose defaults reproduce the previous behaviour exactly.
+    """
+
+    LEGACY_PARAMS: ClassVar[dict[str, Any]] = {
+        "park_id": "HOT",
+        "device_id": "2304512",
+        "start_dt": pd.Timestamp("2024-01-01"),
+        "end_dt_excl": pd.Timestamp("2024-01-02"),
+        "timebase_s": 1,
+        "tags": None,
+        "busy_tags": None,
+        "minmax_tags": None,
+        "min_data_count": None,
+    }
+    # Measured on the commit before std_tags/min_raw_data_count were added. A change here means
+    # every existing user's cache silently stops being found.
+    LEGACY_KEY = "IZfqhKlUtfd8GBnRSyEDIWIdDgeRGuVH"
+
+    def test_legacy_default_key_is_unchanged(self) -> None:
+        assert flh.create_consistent_hash(**self.LEGACY_PARAMS) == self.LEGACY_KEY
+
+    def test_defaulted_options_are_omitted_from_the_key(self) -> None:
+        assert flh._non_default_resample_kwargs({}) == {}  # noqa: SLF001
+        # Explicitly passing a default is indistinguishable from not passing it, by design.
+        assert flh._non_default_resample_kwargs({"std_tags": None, "require_all_busy_tags": False}) == {}  # noqa: SLF001
+
+    def test_non_default_options_are_kept_in_the_key(self) -> None:
+        kept = flh._non_default_resample_kwargs(  # noqa: SLF001
+            {"require_all_busy_tags": True, "min_raw_data_count": 3, "std_tags": None}
+        )
+        assert kept == {"require_all_busy_tags": True, "min_raw_data_count": 3}
+
+    def test_an_unknown_option_is_kept_rather_than_silently_dropped(self) -> None:
+        # A typo must not be swallowed; resample_fastlog_tags will raise on it anyway.
+        assert flh._non_default_resample_kwargs({"not_a_real_option": 1}) == {"not_a_real_option": 1}  # noqa: SLF001
+
+    def test_a_non_default_option_changes_the_key(self) -> None:
+        with_option = dict(self.LEGACY_PARAMS) | {"require_all_busy_tags": True}
+        assert flh.create_consistent_hash(**with_option) != self.LEGACY_KEY
+
+
+CHUNK_START = pd.Timestamp("2024-03-01")
+CHUNK_END = pd.Timestamp("2024-03-04")
+CHUNK_KW: dict[str, Any] = {
+    "busy_tags": ("ActPower_Value", "AcWindSp_AcWindSp"),
+    "require_all_busy_tags": True,
+    "busy_tag_ffill_limit_s": 45,
+    "minmax_tags": ("ActPower_Value",),
+    "std_tags": ("ActPower_Value",),
+}
+
+
+def _synthetic_raw() -> dict[str, pd.DataFrame]:
+    """Three days of 10s data holding both outage shapes the chunked path has to survive.
+
+    A row-arrival gap stops every tag at once (day 2); a dead busy tag stops the vane while power
+    keeps logging (day 3), which no row-arrival check can see. Neither sits on a chunk boundary,
+    so a chunk that lost its lead-in would mask differently from an unchunked run rather than
+    failing outright.
+    """
+    idx = pd.date_range(CHUNK_START, CHUNK_END, freq="10s", inclusive="left", name=TIMESTAMP_NAME)
+    counter = np.arange(len(idx))
+    power = pd.Series(np.sin(counter / 97) * 1000 + 1500, index=idx)
+    wind = pd.Series(np.cos(counter / 53) * 3 + 8, index=idx)
+    gap = (idx >= pd.Timestamp("2024-03-02 04:00")) & (idx < pd.Timestamp("2024-03-02 04:20"))
+    dead = (idx >= pd.Timestamp("2024-03-03 09:00")) & (idx < pd.Timestamp("2024-03-03 09:30"))
+    return {
+        "ActPower_Value": power[~gap].to_frame("ActPower_Value"),
+        "AcWindSp_AcWindSp": wind[~gap & ~dead].to_frame("AcWindSp_AcWindSp"),
+    }
+
+
+def _slice_loader(raw: dict[str, pd.DataFrame]) -> flh.RawLoader:
+    """Return a RawLoader serving a prepared raw dict, the way a real source serves a date range."""
+
+    def load_raw(start_dt: pd.Timestamp, end_dt_excl: pd.Timestamp) -> dict[str, pd.DataFrame]:
+        return {tag: df[(df.index >= start_dt) & (df.index < end_dt_excl)] for tag, df in raw.items()}
+
+    return load_raw
+
+
+def _counting_stub(calls: list[int]) -> "object":
+    """Return a _resample_one_chunk stand-in that records that it was called."""
+
+    def stub(**_: object) -> pd.DataFrame:
+        calls.append(1)
+        return pd.DataFrame()
+
+    return stub
+
+
+class TestGetResampledChunkedCached:
+    """The chunk/cache layer driven by an injected raw source rather than the Siemens filestore."""
+
+    def _chunked(self, raw: dict[str, pd.DataFrame], **kwargs: Any) -> pd.DataFrame:  # noqa: ANN401
+        return flh.get_resampled_chunked_cached(
+            load_raw=_slice_loader(raw),
+            start_dt=CHUNK_START,
+            end_dt_excl=CHUNK_END,
+            timebase_s=60,
+            cache_key_extra={"source": "synthetic"},
+            **(CHUNK_KW | kwargs),
+        )
+
+    def test_chunked_matches_unchunked(self) -> None:
+        # What the lead-in is for: resampling three days one day at a time must give the same
+        # answer, masking included, as resampling them together.
+        raw = _synthetic_raw()
+        whole = resample_fastlog_tags(raw_df_dict=raw, timebase_s=60, **CHUNK_KW)
+        expected = whole[(whole.index >= CHUNK_START) & (whole.index < CHUNK_END)].resample("60s").last()
+
+        actual = self._chunked(raw)
+
+        pd.testing.assert_frame_equal(actual, expected, check_freq=False)
+
+    def test_both_outages_are_masked(self) -> None:
+        # Keeps the test above from passing vacuously: with nothing masked, chunked and unchunked
+        # would agree trivially and the lead-in would not be under test at all. It also pins the
+        # two masks' different reach -- a row-arrival gap voids the window, a dead busy tag voids
+        # only itself, since the tags still reporting are still reporting the truth.
+        actual = self._chunked(_synthetic_raw())
+        assert actual.loc["2024-03-02 04:05":"2024-03-02 04:15"].isna().all().all()
+        dead = slice("2024-03-03 09:05", "2024-03-03 09:25")
+        assert actual.loc[dead, "AcWindSp_AcWindSp"].isna().all()
+        assert actual.loc[dead, "ActPower_Value"].notna().all()
+        assert actual["ActPower_Value"].notna().sum() > 4000  # and the rest of the three days survives
+
+    def test_cache_hit_on_second_call(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        raw = _synthetic_raw()
+        first = self._chunked(raw, cache_dir=tmp_path)
+        calls: list[int] = []
+        monkeypatch.setattr(flh, "_resample_one_chunk", _counting_stub(calls))
+        second = self._chunked(raw, cache_dir=tmp_path)
+        assert calls == []
+        pd.testing.assert_frame_equal(first, second, check_freq=False)
+
+    def test_changed_resample_option_misses_the_cache(self, tmp_path: Path) -> None:
+        raw = _synthetic_raw()
+        self._chunked(raw, cache_dir=tmp_path)
+        self._chunked(raw, cache_dir=tmp_path, min_raw_data_count=3)
+        assert len(list(tmp_path.glob("*.parquet"))) == 2 * 3  # two settings x three days
+
+    def test_cache_key_extra_separates_sources(self, tmp_path: Path) -> None:
+        # Two sources with identical resample options must not read each other's chunks.
+        raw = _synthetic_raw()
+        self._chunked(raw, cache_dir=tmp_path)
+        flh.get_resampled_chunked_cached(
+            load_raw=_slice_loader(raw),
+            start_dt=CHUNK_START,
+            end_dt_excl=CHUNK_END,
+            timebase_s=60,
+            cache_key_extra={"source": "other"},
+            cache_dir=tmp_path,
+            **CHUNK_KW,
+        )
+        assert len(list(tmp_path.glob("*.parquet"))) == 2 * 3
+
+    def test_cache_subdir_is_used(self, tmp_path: Path) -> None:
+        self._chunked(_synthetic_raw(), cache_dir=tmp_path, cache_subdir=("resampled", "synthetic"))
+        assert len(list((tmp_path / "resampled" / "synthetic").glob("*.parquet"))) == 3
+
+    def test_cache_key_is_stable_across_processes(self, tmp_path: Path) -> None:
+        """A key built by introspecting an injected callable would move every run.
+
+        ``create_consistent_hash`` falls back to ``str(obj)`` for anything it does not recognise,
+        and a function or ``functools.partial`` stringifies with its memory address. The failure
+        mode is a silent permanent cache miss, never an error, so it has to be checked across real
+        processes rather than within one.
+        """
+        script = tmp_path / "run_once.py"
+        script.write_text(
+            "from functools import partial\n"
+            "from pathlib import Path\n"
+            "import sys\n"
+            "import pandas as pd\n"
+            "from hot_open.fastlog_helpers import get_resampled_chunked_cached\n"
+            "def load_raw(start_dt, end_dt_excl, unused=None):\n"
+            "    idx = pd.date_range('2024-03-01', periods=60, freq='10s', name='timestamp')\n"
+            "    df = pd.DataFrame({'ActPower_Value': range(60)}, index=idx, dtype=float)\n"
+            "    return {'ActPower_Value': df[(df.index >= start_dt) & (df.index < end_dt_excl)]}\n"
+            "get_resampled_chunked_cached(\n"
+            "    load_raw=partial(load_raw, unused=1),\n"
+            "    start_dt=pd.Timestamp('2024-03-01'),\n"
+            "    end_dt_excl=pd.Timestamp('2024-03-02'),\n"
+            "    timebase_s=60,\n"
+            "    cache_key_extra={'source': 'synthetic'},\n"
+            "    cache_dir=Path(sys.argv[1]),\n"
+            ")\n",
+            encoding="utf-8",
+        )
+        cache = tmp_path / "cache"
+        for _ in range(2):
+            subprocess.run([sys.executable, str(script), str(cache)], check=True)  # noqa: S603
+        assert len(list(cache.glob("*.parquet"))) == 1
+
+    def test_source_mtime_none_keeps_a_cached_chunk(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        # An immutable source (a parquet datapack) must keep its chunks however old they look.
+        raw = _synthetic_raw()
+        self._chunked(raw, cache_dir=tmp_path)
+        for parquet in tmp_path.glob("*.parquet"):
+            os.utime(parquet, (0.0, 0.0))
+        calls: list[int] = []
+        monkeypatch.setattr(flh, "_resample_one_chunk", _counting_stub(calls))
+        self._chunked(raw, cache_dir=tmp_path)
+        assert calls == []
+
+    def test_newer_source_mtime_invalidates_a_cached_chunk(self, tmp_path: Path) -> None:
+        raw = _synthetic_raw()
+        self._chunked(raw, cache_dir=tmp_path)
+        newest = max(x.stat().st_mtime for x in tmp_path.glob("*.parquet"))
+        asked: list[int] = []
+
+        def source_mtime_fn(start_dt: pd.Timestamp, end_dt_excl: pd.Timestamp) -> float:  # noqa: ARG001
+            asked.append(1)
+            return newest + 1000
+
+        before = len(list(tmp_path.glob("*.parquet")))
+        self._chunked(raw, cache_dir=tmp_path, source_mtime_fn=source_mtime_fn)
+        assert len(asked) == 3  # every chunk checked
+        assert len(list(tmp_path.glob("*.parquet"))) == before  # recomputed in place, same key
+
+    def test_source_mtime_fn_sees_the_range_actually_read(self, tmp_path: Path) -> None:
+        # Not the chunk's own bounds: a backfill into the lead-in day changes this chunk's output,
+        # so a source implementing the documented range has to be told about it.
+        raw = _synthetic_raw()
+        self._chunked(raw, cache_dir=tmp_path)
+        seen: list[tuple[pd.Timestamp, pd.Timestamp]] = []
+
+        def source_mtime_fn(start_dt: pd.Timestamp, end_dt_excl: pd.Timestamp) -> None:
+            seen.append((start_dt, end_dt_excl))
+
+        self._chunked(raw, cache_dir=tmp_path, source_mtime_fn=source_mtime_fn)
+        first_chunk_start, first_chunk_end = seen[0]
+        assert first_chunk_start == CHUNK_START - pd.Timedelta(days=1)
+        assert first_chunk_end == CHUNK_START + pd.Timedelta(days=1, hours=1)
+
+    @pytest.mark.parametrize(
+        ("tz", "start", "end"),
+        [
+            # Spans the spring transition: one of these calendar days is 23 hours, not 24.
+            ("Europe/London", "2024-03-29", "2024-04-02"),
+            # Sits at a non-zero offset, so every chunk boundary is off the source's own midnight.
+            ("US/Eastern", "2024-03-01", "2024-03-04"),
+        ],
+    )
+    def test_a_range_whose_days_are_not_24_hours_is_refused(self, tz: str, start: str, end: str) -> None:
+        with pytest.raises(ValueError, match=r"zero offset|naive"):
+            flh.get_resampled_chunked_cached(
+                load_raw=_slice_loader(_synthetic_raw()),
+                start_dt=pd.Timestamp(start, tz=tz),
+                end_dt_excl=pd.Timestamp(end, tz=tz),
+                timebase_s=60,
+                cache_key_extra={"source": "synthetic"},
+            )
+
+    def test_a_zone_at_zero_offset_throughout_is_allowed(self) -> None:
+        # Merely being capable of DST is not a problem: in winter this zone is UTC, and its calendar
+        # days are a flat 24 hours, so refusing it would be over-strict.
+        result = flh.get_resampled_chunked_cached(
+            load_raw=_slice_loader(_synthetic_raw()),
+            start_dt=pd.Timestamp(CHUNK_START, tz="Europe/London"),
+            end_dt_excl=pd.Timestamp(CHUNK_END, tz="Europe/London"),
+            timebase_s=60,
+            cache_key_extra={"source": "synthetic"},
+            **CHUNK_KW,
+        )
+        assert not result.empty
+
+    def test_a_utc_range_is_accepted(self) -> None:
+        result = flh.get_resampled_chunked_cached(
+            load_raw=_slice_loader(_synthetic_raw()),
+            start_dt=pd.Timestamp(CHUNK_START, tz="UTC"),
+            end_dt_excl=pd.Timestamp(CHUNK_END, tz="UTC"),
+            timebase_s=60,
+            cache_key_extra={"source": "synthetic"},
+            **CHUNK_KW,
+        )
+        # Localised once, at the end, rather than per chunk.
+        assert str(result.index.tz) == "UTC"  # type: ignore[attr-defined]
+
+    def test_no_cache_dir_still_works(self) -> None:
+        # Caching is optional; the chunking is not.
+        assert not self._chunked(_synthetic_raw()).empty
+
+    def test_empty_source_returns_an_empty_frame(self, tmp_path: Path) -> None:
+        empty = flh.get_resampled_chunked_cached(
+            load_raw=lambda *_: {},
+            start_dt=CHUNK_START,
+            end_dt_excl=CHUNK_END,
+            timebase_s=60,
+            cache_key_extra={"source": "synthetic"},
+            cache_dir=tmp_path,
+        )
+        assert empty.empty
+        assert list(tmp_path.glob("*.parquet")) == []  # nothing cached, so a later real load recomputes
+
+
+class TestSiemensWrapperOverGenericLayer:
+    """``get_fl_resampled_one_device`` is a caller of the generic layer, not its own copy of it."""
+
+    @pytest.fixture
+    def stub_chunk(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Stand in for the resample, so these tests are about the wrapper and nothing else."""
+        idx = pd.DatetimeIndex([pd.Timestamp("2024-01-01")], name=TIMESTAMP_NAME)
+        monkeypatch.setattr(flh, "_resample_one_chunk", lambda **_: pd.DataFrame({"ActPower_Value": [1.0]}, index=idx))
+        monkeypatch.setattr(flh, "_max_source_mtime", lambda **_: None)
+
+    @pytest.mark.usefixtures("stub_chunk")
+    def test_end_to_end_cache_key_is_unchanged(self, tmp_path: Path) -> None:
+        # The strongest form of the pin below: not just that the hash function is stable, but that
+        # the wrapper still feeds it the same parameter set. A change orphans every cached day.
+        get_fl_resampled_one_device(
+            park_id="HOT",
+            device_id="2304512",
+            start_dt=pd.Timestamp("2024-01-01", tz="UTC"),
+            end_dt_excl=pd.Timestamp("2024-01-02", tz="UTC"),
+            timebase_s=1,
+            cache_dir=tmp_path,
+        )
+        cached = list((tmp_path / "fl_resampled" / "HOT" / "2304512").glob("*.parquet"))
+        assert [x.name for x in cached] == [f"20240101_{TestCacheKeyStability.LEGACY_KEY}.parquet"]
+
+    @pytest.mark.usefixtures("stub_chunk")
+    def test_naive_chunks_are_localised_for_a_tz_aware_range(self, tmp_path: Path) -> None:
+        # Chunks are cut on naive calendar dates and HOT fastlog files carry naive timestamps, but
+        # every HOT caller asks in UTC -- so the result has to come back tz-aware.
+        result = get_fl_resampled_one_device(
+            park_id="HOT",
+            device_id="2304512",
+            start_dt=pd.Timestamp("2024-01-01", tz="UTC"),
+            end_dt_excl=pd.Timestamp("2024-01-02", tz="UTC"),
+            cache_dir=tmp_path,
+        )
+        assert str(result.index.tz) == "UTC"  # type: ignore[attr-defined]
+
+
+def _tag_at_interval(tag: str, interval_ms: int, *, periods: int = 200, amplitude: float = 0.0) -> pd.DataFrame:
+    """One tag logged at a fixed interval, optionally carrying variation faster than 1Hz."""
+    idx = pd.date_range("2024-03-01", periods=periods, freq=f"{interval_ms}ms", name=TIMESTAMP_NAME)
+    values = amplitude * np.sin(np.arange(periods) * 2 * np.pi / 7) + 1000.0
+    return pd.DataFrame({tag: values}, index=idx)
+
+
+class TestSubsamplingGrid:
+    """The fine grid may follow the measured logging rate instead of only the output timebase.
+
+    The historical rule, ``min(1000, timebase_s * 1000 // 20)``, knows the output timebase but not
+    how fast the data arrives, so it drifts both ways: at 600s it samples a 100ms tag at 1Hz and
+    throws away nine samples in ten, and at 1s it builds a 50ms grid for a signal logged every 12s,
+    which is 240x more cells than there is information in them.
+    """
+
+    @pytest.mark.parametrize(("timebase_s", "expected"), [(1, 50), (60, 1000), (600, 1000)])
+    def test_none_keeps_the_historical_grid(self, timebase_s: int, expected: int) -> None:
+        # Pinned, because this is the default and every cached day in existence was built with it.
+        assert (
+            flh._resolve_subsampling_timebase_ms(  # noqa: SLF001
+                subsampling_timebase_ms=None, timebase_s=timebase_s, raw_df_dict={}, busy_tags=()
+            )
+            == expected
+        )
+
+    def test_auto_follows_the_fastest_busy_tag(self) -> None:
+        raw = {
+            "ActPower_Value": _tag_at_interval("ActPower_Value", 100),
+            "AcWindSp_AcWindSp": _tag_at_interval("AcWindSp_AcWindSp", 1000),
+        }
+        chosen = flh._resolve_subsampling_timebase_ms(  # noqa: SLF001
+            subsampling_timebase_ms="auto",
+            timebase_s=600,
+            raw_df_dict=raw,
+            busy_tags=("ActPower_Value", "AcWindSp_AcWindSp"),
+        )
+        assert chosen == 100  # not 1000: the slower tag must not set the grid for the faster one
+
+    def test_auto_is_capped_at_one_second(self) -> None:
+        # A slowly logged signal, as an OPC-style source can be. The grid stops at 1s rather than
+        # following it out to 12s, so a value's change time is still resolved to within a second.
+        raw = {"WindSpeed": _tag_at_interval("WindSpeed", 12_000)}
+        chosen = flh._resolve_subsampling_timebase_ms(  # noqa: SLF001
+            subsampling_timebase_ms="auto", timebase_s=60, raw_df_dict=raw, busy_tags=("WindSpeed",)
+        )
+        assert chosen == 1000
+
+    def test_auto_stays_at_least_twice_as_fine_as_the_output_window(self) -> None:
+        """At timebase_s=1 the 1s cap would make the grid the whole window, which cannot work.
+
+        A limited forward fill is "at most upsampling_factor - 1 cells", so a grid equal to the
+        window leaves a limit of zero: pandas rejects it, and it could not mean "hold for one
+        window" anyway, since aligning an irregular sample onto the grid is itself the first fill
+        step. Both routes into that -- a busy tag without busy_tag_ffill_limit_s, and any tag left
+        out of ffill_tags -- raised ValueError("Limit must be greater than 0") before this floor.
+        """
+        raw = {"WindSpeed": _tag_at_interval("WindSpeed", 12_000)}
+        chosen = flh._resolve_subsampling_timebase_ms(  # noqa: SLF001
+            subsampling_timebase_ms="auto", timebase_s=1, raw_df_dict=raw, busy_tags=("WindSpeed",)
+        )
+        assert chosen == 500
+
+    @pytest.mark.parametrize("ffill_tags", [None, ()])
+    def test_a_slow_source_resamples_to_one_second(self, ffill_tags: tuple | None) -> None:
+        # The regression the floor above exists for, through the public function rather than the
+        # rule: a source logged every 12s, asked for a 1s product, with nothing to widen the fill.
+        idx = pd.date_range("2024-01-01", periods=50, freq="12s", name=TIMESTAMP_NAME)
+        raw = {
+            "WindSpeed": pd.DataFrame({"WindSpeed": np.arange(50.0)}, index=idx),
+            "NacDir": pd.DataFrame({"NacDir": np.arange(50.0)}, index=idx),
+        }
+        resampled = resample_fastlog_tags(
+            raw_df_dict=raw,
+            timebase_s=1,
+            busy_tags=("WindSpeed",),
+            ffill_tags=ffill_tags,
+            subsampling_timebase_ms="auto",
+        )
+        assert not resampled.empty
+        assert resampled["WindSpeed"].notna().any()
+
+    def test_an_explicit_grid_as_coarse_as_the_window_is_refused(self) -> None:
+        # Refused with an explanation rather than surfacing as pandas' "Limit must be greater than 0"
+        # from three layers down.
+        with pytest.raises(ValueError, match="finer than"):
+            flh._resolve_subsampling_timebase_ms(  # noqa: SLF001
+                subsampling_timebase_ms=1000, timebase_s=1, raw_df_dict={}, busy_tags=()
+            )
+
+    def test_auto_follows_the_quick_end_not_the_middle(self) -> None:
+        # A tag whose samples alternate 100ms/20ms: a grid on the median still steps over half of
+        # them, so the rule takes the tag's quick end instead.
+        idx = pd.DatetimeIndex(
+            pd.Timestamp("2024-03-01") + pd.to_timedelta(np.cumsum([100, 20] * 300), unit="ms"), name=TIMESTAMP_NAME
+        )
+        raw = {"ActPower_Value": pd.DataFrame({"ActPower_Value": np.arange(600.0)}, index=idx)}
+        chosen = flh._resolve_subsampling_timebase_ms(  # noqa: SLF001
+            subsampling_timebase_ms="auto", timebase_s=600, raw_df_dict=raw, busy_tags=("ActPower_Value",)
+        )
+        assert chosen == 20
+
+    def test_auto_ignores_a_burst_the_median_contradicts(self) -> None:
+        # An event-logged tag: a sample a second, plus an occasional extra 1ms behind one. Its 10th
+        # percentile is that 1ms burst, which would demand a grid the data does not justify, so the
+        # interval is floored at a tenth of the median -- 100ms here, where the unfloored rule
+        # would have taken the finest grid allowed.
+        base = np.arange(300) * 1000.0
+        offsets = np.sort(np.concatenate([base, base[::5] + 1.0]))
+        idx = pd.DatetimeIndex(pd.Timestamp("2024-03-01") + pd.to_timedelta(offsets, unit="ms"), name=TIMESTAMP_NAME)
+        raw = {"ActPower_Value": pd.DataFrame({"ActPower_Value": np.arange(len(idx), dtype=float)}, index=idx)}
+        chosen = flh._resolve_subsampling_timebase_ms(  # noqa: SLF001
+            subsampling_timebase_ms="auto", timebase_s=600, raw_df_dict=raw, busy_tags=("ActPower_Value",)
+        )
+        assert chosen == 100
+
+    def test_auto_falls_back_when_there_is_nothing_to_measure(self) -> None:
+        assert (
+            flh._resolve_subsampling_timebase_ms(  # noqa: SLF001
+                subsampling_timebase_ms="auto", timebase_s=600, raw_df_dict={}, busy_tags=("absent",)
+            )
+            == 1000
+        )
+
+    def test_explicit_value_is_used_as_given(self) -> None:
+        assert (
+            flh._resolve_subsampling_timebase_ms(  # noqa: SLF001
+                subsampling_timebase_ms=200, timebase_s=600, raw_df_dict={}, busy_tags=()
+            )
+            == 200
+        )
+
+    @pytest.mark.parametrize("value", [0, -1, 2000])
+    def test_an_impossible_explicit_value_raises(self, value: int) -> None:
+        with pytest.raises(ValueError, match="subsampling_timebase_ms"):
+            flh._resolve_subsampling_timebase_ms(  # noqa: SLF001
+                subsampling_timebase_ms=value, timebase_s=1, raw_df_dict={}, busy_tags=()
+            )
+
+    def test_default_output_is_unchanged(self) -> None:
+        # The parameter must be inert until a caller opts in: None and the legacy value it stands
+        # for have to produce the same frame, or every existing HOT result moves.
+        raw = {"ActPower_Value": _tag_at_interval("ActPower_Value", 100, periods=12_000, amplitude=50.0)}
+        kwargs: dict[str, Any] = {"raw_df_dict": raw, "timebase_s": 60, "std_tags": ("ActPower_Value",)}
+        pd.testing.assert_frame_equal(
+            resample_fastlog_tags(**kwargs), resample_fastlog_tags(**kwargs, subsampling_timebase_ms=1000)
+        )
+
+    def test_a_coarse_grid_clips_the_extremes_a_fine_one_reaches(self) -> None:
+        """Why the rule matters, end to end -- and it is min/max, not std.
+
+        Sub-sampling a 100ms tag onto a 1s grid keeps one sample in ten, which is an unbiased (if
+        noisier) estimator of the window's mean and standard deviation but a systematically
+        *inward* one of its extremes: an excursion shorter than the grid is simply not seen.
+        Measured on a real HOT turbine-day at ``timebase_s=600``, against every raw sample: a 1s
+        grid biases min by +4.5kW and max by -9.0kW while biasing std by only -0.09kW, and both
+        min/max biases reach exactly zero once the grid is at or below the 100ms logging interval.
+        """
+        # A brief excursion between samples, of the kind a 1s grid steps straight over.
+        raw = {"ActPower_Value": _tag_at_interval("ActPower_Value", 100, periods=12_000, amplitude=50.0)}
+        raw["ActPower_Value"].iloc[3::97] = 5000.0
+        kwargs: dict[str, Any] = {"raw_df_dict": raw, "timebase_s": 60, "minmax_tags": ("ActPower_Value",)}
+        coarse = resample_fastlog_tags(**kwargs, subsampling_timebase_ms=1000)["max_ActPower_Value"]
+        fine = resample_fastlog_tags(**kwargs, subsampling_timebase_ms="auto")["max_ActPower_Value"]
+        assert (fine >= coarse).all()  # a finer grid can only reach further out, never less far
+        assert (fine == 5000.0).all()  # every window contains an excursion, and the fine grid sees them all
+        assert (coarse < fine).any()  # the coarse grid steps over some of them entirely
+
+    def test_a_non_default_grid_changes_the_cache_key(self) -> None:
+        assert flh._non_default_resample_kwargs({"subsampling_timebase_ms": None}) == {}  # noqa: SLF001
+        assert flh._non_default_resample_kwargs({"subsampling_timebase_ms": "auto"}) == {  # noqa: SLF001
+            "subsampling_timebase_ms": "auto"
+        }

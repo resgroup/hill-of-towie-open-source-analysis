@@ -7,6 +7,14 @@ on:
   push:
     branches: [ main ]
 
+env:
+  # The Zenodo record test fixtures are fetched from; keep in step with _HOT_V2_RECORD_ID in
+  # src/hot_open/sourcing_data.py.
+  HOT_V2_RECORD_ID: "22662930"
+  # Bump to rebuild the fixture cache from scratch -- needed when a test starts using a day or tag
+  # the cached run never fetched, since a cache is only written on a miss of the exact key.
+  ZENODO_CACHE_VERSION: v1
+
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
@@ -24,6 +32,22 @@ jobs:
       - name: Install project
         run: |
           uv sync --frozen
+
+      # tests/test_fl_reproduces_10min.py needs two turbine-days of fastlog. Those are not
+      # committed: they are fetched from the Zenodo record by range request, which pulls ~8.6 MB of
+      # members out of an 11.9 GB archive rather than the archive itself -- too large for a 10 GB
+      # Actions cache, let alone a runner's disk. Caching the data directory keeps even that off
+      # the wire on a hit. Keyed on the record id, so publishing a new datapack misses rather than
+      # serving the old data; restore-keys lets a partial cache seed the next run.
+      - name: Restore the Zenodo fixture cache
+        uses: actions/cache@v4
+        with:
+          # hot_open's own default data location, outside the workspace so pytest collection, ruff
+          # and mypy do not walk it.
+          path: ~/temp/hill-of-towie-open-source-analysis/data
+          key: zenodo-hot-${{ env.HOT_V2_RECORD_ID }}-${{ env.ZENODO_CACHE_VERSION }}-${{ runner.os }}
+          restore-keys: |
+            zenodo-hot-${{ env.HOT_V2_RECORD_ID }}-${{ env.ZENODO_CACHE_VERSION }}-
 
       - name: Lint
         run: |

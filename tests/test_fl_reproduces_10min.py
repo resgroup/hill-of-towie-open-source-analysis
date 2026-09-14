@@ -10,8 +10,12 @@ Two turbine-days, because neither can do the job alone:
 * **2026-03-17** carries all four compared signals and a mixture of operating states -- 25 periods
   not generating, 75 in region 2 and 43 at rated -- but its yaw never crosses the 0/360 wrap, so it
   cannot test circular averaging at all.
-* **2026-04-25** has 23 wrap-crossing periods. It carries only the direction and one busy tag to
-  drive the resample, which keeps the committed fixture small.
+* **2026-04-25** has 23 wrap-crossing periods. Only the direction and one busy tag to drive the
+  resample are fetched for it, which keeps the download small.
+
+Neither day is committed. Both are fetched from the Zenodo record on first run and cached under
+the data directory -- see ``tests/zenodo_fastlog.py`` for how, and why the 11.9 GB archive is not
+downloaded whole.
 
 The tolerances below are frozen from measurement, not chosen: each is the worst case observed over
 the day, rounded up. They are tight enough that a regression in any part of the aggregation path
@@ -27,9 +31,9 @@ import pytest
 
 from hot_open.fastlog_helpers import get_fl_resampled
 from hot_open.scada_helpers import WPSBackupFileField, load_hot_10min_data
+from tests.zenodo_fastlog import ensure_fastlog_days
 
 TEST_DATA_DIR = Path(__file__).parent / "test_data"
-FL_SAMPLE_DIR = TEST_DATA_DIR / "fl_sample"
 DEVICE_ID = "2304510"
 WTG_NUMBER = 1
 TIMEBASE_S = 600
@@ -114,7 +118,9 @@ def _difference(joined: pd.DataFrame, field: str, stat: str) -> pd.Series:
     return pair[fl_col] - pair[scada_col]
 
 
-def _resample(day: pd.Timestamp, tags: list[str], cache_dir: Path, grid: object = "auto") -> tuple[pd.DataFrame, float]:
+def _resample(
+    day: pd.Timestamp, tags: list[str], cache_dir: Path, filestore_dir: Path, grid: object = "auto"
+) -> tuple[pd.DataFrame, float]:
     start_time = time.perf_counter()
     fl = get_fl_resampled(
         park_id="HOT",
@@ -127,7 +133,7 @@ def _resample(day: pd.Timestamp, tags: list[str], cache_dir: Path, grid: object 
         std_tags=tags,
         subsampling_timebase_ms=grid,
         cache_dir=cache_dir,
-        filestore_dir=FL_SAMPLE_DIR,
+        filestore_dir=filestore_dir,
     )
     elapsed = time.perf_counter() - start_time
     fl.columns = fl.columns.droplevel(0)
@@ -157,17 +163,34 @@ def _join(scada: pd.DataFrame, fl: pd.DataFrame) -> pd.DataFrame:
     return scada.join(fl, how="inner").iloc[:-1]
 
 
+@pytest.fixture(scope="session")
+def filestore_dir() -> Path:
+    """Fetch the two fixture days from Zenodo, or reuse them if already local.
+
+    Only the tags these tests compare are fetched, by range request into the 11.9 GB archive --
+    see tests/zenodo_fastlog.py for why the whole archive is not downloaded and why none of this
+    is committed.
+    """
+    return ensure_fastlog_days(
+        device_id=DEVICE_ID,
+        days={
+            DAY_ONE.strftime("%Y-%m-%d"): DAY_ONE_TAGS,
+            DAY_TWO.strftime("%Y-%m-%d"): DAY_TWO_TAGS,
+        },
+    )
+
+
 @pytest.fixture(scope="module")
-def day_one(tmp_path_factory: pytest.TempPathFactory) -> pd.DataFrame:
+def day_one(tmp_path_factory: pytest.TempPathFactory, filestore_dir: Path) -> pd.DataFrame:
     """Resample the four-signal, mixed-operating-state day, once for every comparison below."""
-    fl, _ = _resample(DAY_ONE, DAY_ONE_TAGS, tmp_path_factory.mktemp("cache_day_one"))
+    fl, _ = _resample(DAY_ONE, DAY_ONE_TAGS, tmp_path_factory.mktemp("cache_day_one"), filestore_dir)
     return _join(_scada(DAY_ONE, DAY_ONE_TAGS), fl)
 
 
 @pytest.fixture(scope="module")
-def day_two(tmp_path_factory: pytest.TempPathFactory) -> pd.DataFrame:
+def day_two(tmp_path_factory: pytest.TempPathFactory, filestore_dir: Path) -> pd.DataFrame:
     """Resample the wrap-crossing day, the only one that can test circular averaging."""
-    fl, _ = _resample(DAY_TWO, DAY_TWO_TAGS, tmp_path_factory.mktemp("cache_day_two"))
+    fl, _ = _resample(DAY_TWO, DAY_TWO_TAGS, tmp_path_factory.mktemp("cache_day_two"), filestore_dir)
     return _join(_scada(DAY_TWO, DAY_TWO_TAGS), fl)
 
 
@@ -241,8 +264,8 @@ class TestTheGridMustFollowTheLoggingRate:
     """
 
     @pytest.fixture(scope="class")
-    def one_second_grid(self, tmp_path_factory: pytest.TempPathFactory) -> pd.DataFrame:
-        fl, _ = _resample(DAY_ONE, DAY_ONE_TAGS, tmp_path_factory.mktemp("cache_1s_grid"), grid=1000)
+    def one_second_grid(self, tmp_path_factory: pytest.TempPathFactory, filestore_dir: Path) -> pd.DataFrame:
+        fl, _ = _resample(DAY_ONE, DAY_ONE_TAGS, tmp_path_factory.mktemp("cache_1s_grid"), filestore_dir, grid=1000)
         return _join(_scada(DAY_ONE, DAY_ONE_TAGS), fl)
 
     def test_a_one_second_grid_clips_the_extremes(self, one_second_grid: pd.DataFrame) -> None:
@@ -266,13 +289,15 @@ class TestTheGridMustFollowTheLoggingRate:
 
 
 class TestTrailingWindow:
-    def test_only_the_trailing_window_is_edge_affected(self, tmp_path_factory: pytest.TempPathFactory) -> None:
+    def test_only_the_trailing_window_is_edge_affected(
+        self, tmp_path_factory: pytest.TempPathFactory, filestore_dir: Path
+    ) -> None:
         """The final period of a day that has no successor is the one the comparisons exclude.
 
         Pinned rather than quietly dropped: if a change ever made the edge effect reach further back
         than one window, the tolerances above would keep passing and the cause would be invisible.
         """
-        fl, _ = _resample(DAY_ONE, DAY_ONE_TAGS, tmp_path_factory.mktemp("cache_trailing"))
+        fl, _ = _resample(DAY_ONE, DAY_ONE_TAGS, tmp_path_factory.mktemp("cache_trailing"), filestore_dir)
         untrimmed = _scada(DAY_ONE, DAY_ONE_TAGS).join(fl, how="inner")
         difference = _difference(untrimmed, "wtc_PitcPosA", "mean").abs()
         assert difference.idxmax() == untrimmed.index[-1]
@@ -280,11 +305,11 @@ class TestTrailingWindow:
 
 
 class TestBenchmark:
-    def test_resample_throughput(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    def test_resample_throughput(self, tmp_path: Path, caplog: pytest.LogCaptureFixture, filestore_dir: Path) -> None:
         """Record what a turbine-day costs, cold and warm, and fail only on a gross regression."""
         with caplog.at_level(logging.CRITICAL):  # the timing is the point, not the log volume
-            _, cold_seconds = _resample(DAY_ONE, DAY_ONE_TAGS, tmp_path)
-            _, warm_seconds = _resample(DAY_ONE, DAY_ONE_TAGS, tmp_path)
+            _, cold_seconds = _resample(DAY_ONE, DAY_ONE_TAGS, tmp_path, filestore_dir)
+            _, warm_seconds = _resample(DAY_ONE, DAY_ONE_TAGS, tmp_path, filestore_dir)
         raw_rows = 958_202  # the fixture's four tags for this day
         print(  # noqa: T201  -- the measurement is what this test is for
             f"\n600s resample of one turbine-day ({raw_rows:,} raw rows): "

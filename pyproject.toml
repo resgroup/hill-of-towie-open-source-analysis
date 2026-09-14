@@ -36,6 +36,9 @@ dev = [
     "types-tqdm>=4.68.0.20260608",
     "responses>=0.26.1",
     "polars>=1.41.2",
+    # Range-request access into the 11.9 GB Zenodo fastlog archive, so test fixture days are
+    # fetched rather than committed. See tests/zenodo_fastlog.py.
+    "remotezip>=0.12.3",
 ]
 wedowind = [
     "autogluon>=1.4.0",
@@ -115,6 +118,7 @@ module = [
     "kagglehub.*",
     "autogluon.*",
     "pyarrow.*",
+    "remotezip.*",
 ]
 ignore_missing_imports = true
 

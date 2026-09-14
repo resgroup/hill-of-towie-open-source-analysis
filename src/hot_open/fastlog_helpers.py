@@ -16,6 +16,7 @@ import pandas as pd
 from pyarrow.lib import ArrowInvalid
 
 from hot_open.circular_math import circ_mean_resample_degrees, circ_std_resample_degrees
+from hot_open.parquet_io import write_parquet_atomic
 from hot_open.settings import get_cache_dir, get_data_dir, get_filestore_dir
 from hot_open.sourcing_data import ensure_extracted
 
@@ -286,10 +287,9 @@ def _get_resampled_one_chunk_cached(  # noqa: PLR0913
         **resample_kwargs,
     )
     if cache_dir is not None and not result_df.empty:
-        cache_path.parent.mkdir(exist_ok=True, parents=True)
         try:
             logger.info("Writing: %s", cache_path)
-            result_df.to_parquet(cache_path)
+            write_parquet_atomic(result_df, cache_path)
         except ArrowInvalid as e:
             msg = f"Error saving resampled data to cache at {cache_path}: {e}"
             logger.exception(msg)

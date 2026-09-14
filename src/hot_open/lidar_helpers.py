@@ -12,6 +12,7 @@ from tqdm import tqdm
 from wind_up.reanalysis_data import MastOrLiDARDataset
 
 from hot_open.fastlog_helpers import _generate_dates_in_range
+from hot_open.parquet_io import write_parquet_atomic
 from hot_open.settings import get_cache_dir, get_data_dir
 from hot_open.sourcing_data import ensure_extracted
 
@@ -251,7 +252,7 @@ def load_zx_lidar_fl_data(  # noqa: C901, PLR0912, PLR0913, PLR0915
         (cache_dir / "lidar_raw").mkdir(exist_ok=True, parents=True)
         raw_cache_path = cache_dir / "lidar_raw" / cache_fname
         logger.info("Writing: %s", raw_cache_path)
-        return_df.to_parquet(raw_cache_path)
+        write_parquet_atomic(return_df, raw_cache_path)
         logger.info("Reading: %s", raw_cache_path)
         return pd.read_parquet(raw_cache_path)
     return return_df

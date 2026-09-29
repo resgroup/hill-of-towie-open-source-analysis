@@ -185,23 +185,51 @@ _CHUNK_TRAIL = pd.Timedelta(hours=1)
 def _check_range_timezone(start_dt: dt.datetime, end_dt_excl: dt.datetime) -> None:
     """Refuse a range whose calendar days are not a flat 24 hours.
 
-    Both ends are checked together, because neither alone is enough. A zone sitting at a non-zero
-    offset shifts every chunk boundary off the source's own midnight; a zone whose offset *changes*
-    between the two ends has a daylight-saving transition inside the range, so one of its calendar
-    days is 23 or 25 hours and cutting it as 24 would silently drop or double an hour. A zone that
-    is merely capable of DST but sits at zero throughout the range -- Europe/London in winter, say
-    -- is fine, and is allowed.
+    A naive range is fine, as is a zone at a zero offset throughout. Anything else is refused: a
+    non-zero offset shifts every chunk boundary off the source's own midnight, and an offset that
+    moves within the range makes one calendar day 23 or 25 hours.
+
+    Every calendar-day boundary is sampled, not just the two ends, since a range spanning an even
+    number of DST transitions has matching endpoints.
     """
     offsets = [pd.Timestamp(x).utcoffset() for x in (start_dt, end_dt_excl)]
     if all(x is None for x in offsets):
         return
-    if any(x != dt.timedelta(0) for x in offsets) or offsets[0] != offsets[1]:
+    msg = (
+        f"start_dt/end_dt_excl must be naive, or in a timezone at a zero offset throughout the "
+        f"range; got {start_dt!r} to {end_dt_excl!r}. Chunks are cut on calendar dates, which "
+        "are only an unambiguous 24 hours when the offset does not move."
+    )
+    # Before normalize(), which fails in a zone whose midnight is the hour DST skips.
+    if any(x != dt.timedelta(0) for x in offsets):
+        raise ValueError(msg)
+    boundaries = pd.date_range(pd.Timestamp(start_dt).normalize(), pd.Timestamp(end_dt_excl).normalize(), freq="D")
+    if any(x.utcoffset() != dt.timedelta(0) for x in boundaries):
+        raise ValueError(msg)
+
+
+_SECONDS_PER_DAY = 24 * 60 * 60
+
+
+def _check_timebase_divides_day(timebase_s: int) -> None:
+    """Refuse a timebase that does not divide a day exactly.
+
+    Chunks are cut on calendar days and pandas anchors each one's resample grid to midnight, so a
+    timebase that does not divide 86,400 restarts the grid every chunk and leaves partial windows
+    either side of each boundary that the final ``.resample().last()`` cannot reassemble.
+    """
+    if timebase_s <= 0 or _SECONDS_PER_DAY % timebase_s != 0:
         msg = (
-            f"start_dt/end_dt_excl must be naive, or in a timezone at a zero offset throughout the "
-            f"range; got {start_dt!r} to {end_dt_excl!r}. Chunks are cut on calendar dates, which "
-            "are only an unambiguous 24 hours when the offset does not move."
+            f"timebase_s must be a positive divisor of {_SECONDS_PER_DAY} (one day); got {timebase_s}. "
+            "Chunks are cut on calendar days, so any other timebase restarts the resample grid every "
+            "chunk and the windows either side of each boundary cannot be reassembled."
         )
         raise ValueError(msg)
+
+
+def _source_clock_shift(resample_kwargs: dict[str, object]) -> pd.Timedelta:
+    """How far to move a true-time bound to express it in the source's own clock."""
+    return pd.Timedelta(seconds=float(resample_kwargs.get("source_clock_offset_s", 0.0)))  # type: ignore[arg-type]
 
 
 def _resample_one_chunk(
@@ -212,8 +240,16 @@ def _resample_one_chunk(
     timebase_s: int,
     **resample_kwargs: object,
 ) -> pd.DataFrame:
-    """Load one chunk with context either side, resample it, then trim back to the chunk."""
-    raw_df_dict = load_raw(pd.Timestamp(start_dt) - _CHUNK_LEAD_IN, pd.Timestamp(end_dt_excl) + _CHUNK_TRAIL)
+    """Load one chunk with context either side, resample it, then trim back to the chunk.
+
+    The chunk bounds are true time; ``load_raw`` is asked for them in the source's own clock, which
+    ``resample_fastlog_tags`` then corrects back.
+    """
+    to_source_clock = _source_clock_shift(resample_kwargs)
+    raw_df_dict = load_raw(
+        pd.Timestamp(start_dt) - _CHUNK_LEAD_IN + to_source_clock,
+        pd.Timestamp(end_dt_excl) + _CHUNK_TRAIL + to_source_clock,
+    )
     if len(raw_df_dict) == 0:
         return pd.DataFrame(index=pd.DatetimeIndex([]))
 
@@ -266,10 +302,14 @@ def _get_resampled_one_chunk_cached(  # noqa: PLR0913
             # backfill into the neighbouring day changes this chunk's output, so it has to
             # invalidate it. Expanding here rather than inside each callback keeps the contract
             # honest -- a source implementing the documented range would otherwise miss it.
+            to_source_clock = _source_clock_shift(resample_kwargs)
             source_mtime = (
                 None
                 if source_mtime_fn is None
-                else source_mtime_fn(pd.Timestamp(start_dt) - _CHUNK_LEAD_IN, pd.Timestamp(end_dt_excl) + _CHUNK_TRAIL)
+                else source_mtime_fn(
+                    pd.Timestamp(start_dt) - _CHUNK_LEAD_IN + to_source_clock,
+                    pd.Timestamp(end_dt_excl) + _CHUNK_TRAIL + to_source_clock,
+                )
             )
             # A freshly written parquet's mtime is later than every source file read to build it,
             # so an unchanged chunk stays a hit; a backfilled one (newer source mtime) recomputes.
@@ -335,9 +375,13 @@ def get_resampled_chunked_cached(  # noqa: PLR0913
     cut on calendar dates, and a date is only an unambiguous 24 hours when the offset does not move.
     ``load_raw`` always receives naive bounds regardless; see :data:`RawLoader`.
 
+    ``timebase_s`` must divide a day exactly, for the same day-chunking reason; see
+    :func:`_check_timebase_divides_day`.
+
     Extra keyword arguments are forwarded to :func:`resample_fastlog_tags`.
     """
     _check_range_timezone(start_dt, end_dt_excl)
+    _check_timebase_divides_day(timebase_s)
     chunk_dfs = []
     for day in _generate_dates_in_range(start_dt, end_dt_excl):
         day_df = _get_resampled_one_chunk_cached(
@@ -370,7 +414,7 @@ def get_resampled_chunked_cached(  # noqa: PLR0913
     )
 
 
-def _siemens_raw_loader(
+def siemens_raw_loader(
     *,
     park_id: str,
     device_id: str,
@@ -378,7 +422,11 @@ def _siemens_raw_loader(
     tags: Sequence[str] | None = None,
     siemens_parks: set[str] | None = None,
 ) -> RawLoader:
-    """Return a :data:`RawLoader` reading one device out of the Siemens fastlog filestore."""
+    """Return a :data:`RawLoader` reading one device out of the Siemens fastlog filestore.
+
+    Public so a caller can wrap it -- to derive a tag from the raw signal, say -- and still hand the
+    result to :func:`get_resampled_chunked_cached` for chunking, caching and clock correction.
+    """
 
     def load_raw(start_dt: pd.Timestamp, end_dt_excl: pd.Timestamp) -> dict[str, pd.DataFrame]:
         return _get_raw_df_dict(
@@ -394,7 +442,7 @@ def _siemens_raw_loader(
     return load_raw
 
 
-def _siemens_source_mtime_fn(
+def siemens_source_mtime_fn(
     *, park_id: str, device_id: str, filestore_dir: Path | None = None
 ) -> Callable[[pd.Timestamp, pd.Timestamp], float | None]:
     """Return the source-freshness callback for one device's Siemens fastlog files."""
@@ -473,7 +521,7 @@ def get_fl_resampled_one_device(  # noqa: PLR0913
     cache key when they differ from its defaults.
     """
     result_df = get_resampled_chunked_cached(
-        load_raw=_siemens_raw_loader(
+        load_raw=siemens_raw_loader(
             park_id=park_id,
             device_id=device_id,
             filestore_dir=filestore_dir,
@@ -496,7 +544,7 @@ def get_fl_resampled_one_device(  # noqa: PLR0913
             "min_data_count": min_data_count,
         },
         cache_subdir=("fl_resampled", park_id, device_id),
-        source_mtime_fn=_siemens_source_mtime_fn(park_id=park_id, device_id=device_id, filestore_dir=filestore_dir),
+        source_mtime_fn=siemens_source_mtime_fn(park_id=park_id, device_id=device_id, filestore_dir=filestore_dir),
         cache_dir=cache_dir,
         refresh_cache=refresh_cache,
         busy_tags=busy_tags,
@@ -682,7 +730,7 @@ def make_fl_resampled_one_device(  # noqa: PLR0913
     msg = f"Resampling data for {device_id=} {start_dt=}"
     logger.info(msg)
     return _resample_one_chunk(
-        load_raw=_siemens_raw_loader(
+        load_raw=siemens_raw_loader(
             park_id=park_id,
             device_id=device_id,
             filestore_dir=filestore_dir,
@@ -888,8 +936,14 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
     busy_tag_ffill_limit_s: float | None = None,
     require_all_busy_tags: bool = False,
     subsampling_timebase_ms: int | str | None = None,
+    source_clock_offset_s: float = 0.0,
 ) -> pd.DataFrame:
     """Resample all tags to the target timebase.
+
+    ``source_clock_offset_s`` is how many seconds ahead of true time the source's clock reads. It is
+    subtracted from every raw index before aggregating, so the output grid and labels are true time.
+    Use it where the logger's clock is known to be wrong and periods would otherwise straddle events
+    timed on an accurate clock.
 
     ``busy_tag_ffill_limit_s`` is how long a busy tag's value stays representative, in seconds.
     It defaults to one timebase, which suits fastlog but not slower logging such as OPC: 10s data
@@ -917,6 +971,9 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
     follows ``require_all_busy_tags``: with that set, any busy tag below the threshold masks the
     window, otherwise all of them must be.
     """
+    if source_clock_offset_s:
+        shift = pd.Timedelta(seconds=source_clock_offset_s)
+        raw_df_dict = {tag: df.set_axis(df.index - shift) for tag, df in raw_df_dict.items()}
     if busy_tags is None:
         siemens_typical_busy_tags = {"ActPower_Value", "AcWindSp_AcWindSp", "GenRpm_Value"}
         busy_tags = tuple(x for x in raw_df_dict if x in siemens_typical_busy_tags)
@@ -927,6 +984,8 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
         res_typical_circular_tags = {
             "computed_driver_pre_processed_yaw_direction_true_degrees",
             "computed_core_post_processed_direction_for_wake_steering",
+            "computed_core_post_processed_consensus_wind_direction_true_degrees",
+            "computed_driver_post_processed_yaw_target_degrees",
         }
         circular_tags = tuple(
             x for x in raw_df_dict if x in (siemens_typical_circular_tags | res_typical_circular_tags)

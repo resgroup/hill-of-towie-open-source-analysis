@@ -542,6 +542,31 @@ class TestStdTags:
         default = resample_fastlog_tags(raw_df_dict=raw, timebase_s=60, busy_tags=("linear_a",))
         assert not [c for c in default.columns if c.startswith("std_")]
 
+    @pytest.mark.parametrize(
+        "tag",
+        [
+            "YawPos_Value",
+            "AcWindDr_Value",
+            "computed_driver_pre_processed_yaw_direction_true_degrees",
+            "computed_core_post_processed_direction_for_wake_steering",
+            "computed_core_post_processed_consensus_wind_direction_true_degrees",
+            "computed_driver_post_processed_yaw_target_degrees",
+        ],
+    )
+    def test_a_known_direction_tag_defaults_to_a_circular_mean(self, tag: str) -> None:
+        """Every direction tag has to be in the default set, or it gets an arithmetic mean.
+
+        A tag missing from it averages 359 and 1 to 180 -- the opposite direction -- with nothing
+        downstream to reveal it. The last two were absent until issue #86.
+        """
+        raw = {tag: _direction_tag_df(tag, [359.0, 0.0, 1.0, 358.0, 2.0, 0.5])}
+        result = resample_fastlog_tags(raw_df_dict=raw, timebase_s=60, busy_tags=(tag,))
+        mean = result[tag].dropna()
+
+        assert not mean.empty
+        # Circular: near 0/360. Arithmetic would land near 180.
+        assert (np.minimum(mean % 360, 360 - (mean % 360)) < 5).all(), f"{tag} got an arithmetic mean: {mean.tolist()}"
+
     def test_circular_std_is_small_for_a_tight_cluster_and_large_for_a_spread(self) -> None:
         tight = _direction_tag_df("AcWindDr_Value", [359.0, 0.0, 1.0, 2.0, 358.0, 0.5])
         spread = _direction_tag_df("AcWindDr_Value", [10.0, 100.0, 190.0, 280.0, 55.0, 145.0])
@@ -1012,6 +1037,12 @@ class TestGetResampledChunkedCached:
             ("Europe/London", "2024-03-29", "2024-04-02"),
             # Sits at a non-zero offset, so every chunk boundary is off the source's own midnight.
             ("US/Eastern", "2024-03-01", "2024-03-04"),
+            # Both endpoints sit at +00:00, and all of BST lies between them. Checking the ends
+            # alone admits this and cuts every summer chunk an hour out.
+            ("Europe/London", "2024-01-01", "2025-01-01"),
+            # The autumn transition alone, so the even-number-of-transitions case above is not the
+            # only thing keeping this honest.
+            ("Europe/London", "2024-10-25", "2024-10-29"),
         ],
     )
     def test_a_range_whose_days_are_not_24_hours_is_refused(self, tz: str, start: str, end: str) -> None:
@@ -1023,6 +1054,24 @@ class TestGetResampledChunkedCached:
                 timebase_s=60,
                 cache_key_extra={"source": "synthetic"},
             )
+
+    @pytest.mark.parametrize("timebase_s", [7, 11, 500, 3500, 7000, 0, -60])
+    def test_a_timebase_that_does_not_divide_a_day_is_refused(self, timebase_s: int) -> None:
+        # Each day-chunk's grid is anchored to its own midnight, so a timebase that does not divide
+        # 86400 restarts the grid every chunk and the final .resample().last() silently re-bins the
+        # partial windows either side of each boundary.
+        with pytest.raises(ValueError, match="divisor"):
+            flh.get_resampled_chunked_cached(
+                load_raw=_slice_loader(_synthetic_raw()),
+                start_dt=CHUNK_START,
+                end_dt_excl=CHUNK_END,
+                timebase_s=timebase_s,
+                cache_key_extra={"source": "synthetic"},
+            )
+
+    @pytest.mark.parametrize("timebase_s", [1, 45, 60, 600, 900, 2400, 3600, 86400])
+    def test_a_timebase_that_divides_a_day_is_allowed(self, timebase_s: int) -> None:
+        flh._check_timebase_divides_day(timebase_s)  # noqa: SLF001 -- does not raise
 
     def test_a_zone_at_zero_offset_throughout_is_allowed(self) -> None:
         # Merely being capable of DST is not a problem: in winter this zone is UTC, and its calendar
@@ -1064,6 +1113,148 @@ class TestGetResampledChunkedCached:
         )
         assert empty.empty
         assert list(tmp_path.glob("*.parquet")) == []  # nothing cached, so a later real load recomputes
+
+
+_TOGGLE_OFFSET_S = 510.0  # 8.5 min, the LASAL turbine-clock error
+
+
+def _square_wave_on_true_boundaries(offset_s: float, tag: str = "ActPower_Value") -> dict[str, pd.DataFrame]:
+    """One tag switching level on *true* 10-min boundaries, timestamped in a clock ``offset_s`` fast.
+
+    The shape of the real problem: a controller commanding on an accurate clock, logged against a
+    turbine clock that runs ahead, so every switch lands ``offset_s`` inside a logged period.
+    """
+    idx = pd.date_range(CHUNK_START, CHUNK_START + pd.Timedelta(hours=2), freq="1s", name=TIMESTAMP_NAME)
+    true_seconds = (idx - idx[0]).total_seconds() - offset_s
+    values = np.where((true_seconds // 600) % 2 == 0, 0.0, 1.0)
+    return {tag: pd.DataFrame({tag: values}, index=idx)}
+
+
+class TestSourceClockOffset:
+    """Correcting a source whose clock runs ahead, so periods are not mixtures either side of an event."""
+
+    def test_an_uncorrected_offset_leaves_every_period_a_mixture(self) -> None:
+        """The failure being fixed, pinned so the corrected result below means something."""
+        raw = _square_wave_on_true_boundaries(_TOGGLE_OFFSET_S)
+        result = resample_fastlog_tags(raw_df_dict=raw, timebase_s=600, busy_tags=("ActPower_Value",))
+        means = result["ActPower_Value"].dropna()
+
+        mixed = means[(means > 0.01) & (means < 0.99)]
+        assert len(mixed) > 0, "expected mixtures without the correction"
+        # 510s of one level and 90s of the other.
+        assert mixed.round(2).isin([0.15, 0.85]).all(), mixed.tolist()
+
+    def test_the_offset_makes_every_period_a_single_state(self) -> None:
+        raw = _square_wave_on_true_boundaries(_TOGGLE_OFFSET_S)
+        result = resample_fastlog_tags(
+            raw_df_dict=raw,
+            timebase_s=600,
+            busy_tags=("ActPower_Value",),
+            source_clock_offset_s=_TOGGLE_OFFSET_S,
+        )
+        means = result["ActPower_Value"].dropna()
+
+        assert len(means) > 0
+        assert means.isin([0.0, 1.0]).all(), f"periods still mixed: {means.tolist()}"
+
+    def test_period_labels_move_by_the_offset(self) -> None:
+        raw = _square_wave_on_true_boundaries(0.0)
+        kwargs: dict[str, Any] = {"timebase_s": 600, "busy_tags": ("ActPower_Value",)}
+        uncorrected = resample_fastlog_tags(raw_df_dict=raw, **kwargs)
+        corrected = resample_fastlog_tags(raw_df_dict=raw, source_clock_offset_s=600.0, **kwargs)
+
+        # A whole-window offset relabels rather than re-bins, so the values are the same data one
+        # window earlier -- the cleanest statement of which direction the correction goes.
+        assert corrected.index[0] == uncorrected.index[0] - pd.Timedelta(seconds=600)
+
+    def test_a_zero_offset_changes_nothing(self) -> None:
+        raw = _square_wave_on_true_boundaries(_TOGGLE_OFFSET_S)
+        kwargs: dict[str, Any] = {"timebase_s": 600, "busy_tags": ("ActPower_Value",)}
+
+        pd.testing.assert_frame_equal(
+            resample_fastlog_tags(raw_df_dict=raw, **kwargs),
+            resample_fastlog_tags(raw_df_dict=raw, source_clock_offset_s=0.0, **kwargs),
+        )
+
+    def test_the_caller_s_raw_frames_are_not_mutated(self) -> None:
+        raw = _square_wave_on_true_boundaries(_TOGGLE_OFFSET_S)
+        before = raw["ActPower_Value"].index.copy()
+
+        resample_fastlog_tags(
+            raw_df_dict=raw,
+            timebase_s=600,
+            busy_tags=("ActPower_Value",),
+            source_clock_offset_s=_TOGGLE_OFFSET_S,
+        )
+
+        pd.testing.assert_index_equal(raw["ActPower_Value"].index, before)
+
+
+class TestSourceClockOffsetThroughTheChunkLayer:
+    """The offset has to survive chunking, the cache key and the bounds handed to ``load_raw``."""
+
+    def _chunked(self, raw: dict[str, pd.DataFrame], **kwargs: Any) -> pd.DataFrame:  # noqa: ANN401
+        return flh.get_resampled_chunked_cached(
+            load_raw=_slice_loader(raw),
+            start_dt=CHUNK_START,
+            end_dt_excl=CHUNK_END,
+            timebase_s=60,
+            cache_key_extra={"source": "synthetic"},
+            **(CHUNK_KW | kwargs),
+        )
+
+    def test_load_raw_is_asked_for_the_window_in_the_source_s_own_clock(self) -> None:
+        """Otherwise the shifted grid reads past the end of what was fetched."""
+        seen: list[tuple[pd.Timestamp, pd.Timestamp]] = []
+        raw = _synthetic_raw()
+
+        def recording_loader(start_dt: pd.Timestamp, end_dt_excl: pd.Timestamp) -> dict[str, pd.DataFrame]:
+            seen.append((start_dt, end_dt_excl))
+            return _slice_loader(raw)(start_dt, end_dt_excl)
+
+        flh.get_resampled_chunked_cached(
+            load_raw=recording_loader,
+            start_dt=CHUNK_START,
+            end_dt_excl=CHUNK_END,
+            timebase_s=60,
+            cache_key_extra={"source": "synthetic"},
+            source_clock_offset_s=_TOGGLE_OFFSET_S,
+            **CHUNK_KW,
+        )
+
+        shift = pd.Timedelta(seconds=_TOGGLE_OFFSET_S)
+        first_start, first_end = seen[0]
+        assert first_start == CHUNK_START - pd.Timedelta(days=1) + shift
+        assert first_end == CHUNK_START + pd.Timedelta(days=1, hours=1) + shift
+
+    def test_consecutive_chunks_stay_contiguous_on_the_shifted_grid(self) -> None:
+        """A per-chunk shift that drifted would show up as a gap or overlap at a day boundary."""
+        result = self._chunked(_synthetic_raw(), source_clock_offset_s=_TOGGLE_OFFSET_S)
+
+        deltas = result.index.to_series().diff().dropna().unique()
+        assert list(deltas) == [pd.Timedelta(seconds=60)]
+
+    def test_the_offset_is_part_of_the_cache_key(self, tmp_path: Path) -> None:
+        raw = _synthetic_raw()
+        self._chunked(raw, cache_dir=tmp_path)
+        self._chunked(raw, cache_dir=tmp_path, source_clock_offset_s=_TOGGLE_OFFSET_S)
+
+        assert len(list(tmp_path.glob("*.parquet"))) == 2 * 3  # two offsets x three days
+
+    def test_an_explicit_zero_offset_reuses_the_uncorrected_cache(self, tmp_path: Path) -> None:
+        """Only options differing from the signature defaults are hashed, so no cached day is orphaned."""
+        raw = _synthetic_raw()
+        self._chunked(raw, cache_dir=tmp_path)
+        self._chunked(raw, cache_dir=tmp_path, source_clock_offset_s=0.0)
+
+        assert len(list(tmp_path.glob("*.parquet"))) == 3
+
+    def test_a_cached_offset_chunk_round_trips(self, tmp_path: Path) -> None:
+        raw = _synthetic_raw()
+        first = self._chunked(raw, cache_dir=tmp_path, source_clock_offset_s=_TOGGLE_OFFSET_S)
+        second = self._chunked(raw, cache_dir=tmp_path, source_clock_offset_s=_TOGGLE_OFFSET_S)
+
+        pd.testing.assert_frame_equal(first, second, check_freq=False)
 
 
 class TestSiemensWrapperOverGenericLayer:

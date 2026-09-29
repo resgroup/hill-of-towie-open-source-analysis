@@ -1,11 +1,15 @@
 """Tests for writing a parquet file without ever exposing a half-written one."""
 
+import os
+import threading
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
 from pyarrow.lib import ArrowInvalid
 
+from hot_open import parquet_io
 from hot_open.parquet_io import write_parquet_atomic
 
 
@@ -100,3 +104,90 @@ class TestWriteParquetAtomic:
 
         pd.testing.assert_frame_equal(pd.read_parquet(path), df * 2, check_freq=False)
         assert list(tmp_path.iterdir()) == [path]
+
+    def test_concurrent_threads_writing_one_path_each_get_their_own_temp(
+        self, tmp_path: Path, df: pd.DataFrame, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Threads share a pid, so the temp name needs more than the pid to stay unique.
+
+        Both writers are held inside ``to_parquet`` at once, which is the window that matters: with
+        a pid-only temp name they write the same file, interleaving into a corrupt parquet, and the
+        first to finish deletes the second's temp in its ``finally``.
+        """
+        path = tmp_path / "chunk.parquet"
+        both_inside = threading.Barrier(2, timeout=10)
+        real_to_parquet = pd.DataFrame.to_parquet
+        temp_names: list[str] = []
+
+        def slow(self: pd.DataFrame, where: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+            temp_names.append(Path(where).name)
+            both_inside.wait()  # neither returns until the other has also claimed its temp path
+            return real_to_parquet(self, where, **kwargs)
+
+        monkeypatch.setattr(pd.DataFrame, "to_parquet", slow)
+        errors: list[BaseException] = []
+
+        def write(frame: pd.DataFrame) -> None:
+            try:
+                write_parquet_atomic(frame, path)
+            except BaseException as e:  # noqa: BLE001 -- re-raised in the main thread below
+                errors.append(e)
+
+        threads = [threading.Thread(target=write, args=(x,)) for x in (df, df * 2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        assert errors == []
+        assert len(set(temp_names)) == 2, f"threads shared a temp path: {temp_names}"
+        # Whichever renamed last wins, but it must be one complete frame and no temp left behind.
+        written = pd.read_parquet(path)
+        assert any(written.equals(x) for x in (df, df * 2))
+        assert list(tmp_path.iterdir()) == [path]
+
+
+class TestReplaceWithRetry:
+    """Windows' rename is atomic but not concurrent, so contention has to be waited out.
+
+    The threaded test above exercises this for real but only when the timing lands; these pin the
+    behaviour deterministically.
+    """
+
+    def test_a_contended_replace_is_retried(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        src, dst = tmp_path / "a.tmp", tmp_path / "a"
+        src.write_text("payload")
+        calls = []
+        real_replace = os.replace
+
+        def flaky(a: Any, b: Any) -> None:  # noqa: ANN401
+            calls.append(a)
+            if len(calls) < 3:
+                msg = "Access is denied"
+                raise PermissionError(13, msg)
+            real_replace(a, b)
+
+        monkeypatch.setattr(os, "replace", flaky)
+        monkeypatch.setattr(parquet_io, "_REPLACE_BACKOFF_S", 0)
+
+        parquet_io._replace_with_retry(src, dst)  # noqa: SLF001
+
+        assert len(calls) == 3
+        assert dst.read_text() == "payload"
+
+    def test_a_permission_error_that_never_clears_is_raised(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A locked file or a real permissions problem is not contention; it must not be swallowed."""
+        src, dst = tmp_path / "a.tmp", tmp_path / "a"
+        src.write_text("payload")
+
+        def always_denied(*_: Any) -> None:  # noqa: ANN401
+            msg = "Access is denied"
+            raise PermissionError(13, msg)
+
+        monkeypatch.setattr(os, "replace", always_denied)
+        monkeypatch.setattr(parquet_io, "_REPLACE_BACKOFF_S", 0)
+
+        with pytest.raises(PermissionError):
+            parquet_io._replace_with_retry(src, dst)  # noqa: SLF001

@@ -567,6 +567,25 @@ class TestStdTags:
         # Circular: near 0/360. Arithmetic would land near 180.
         assert (np.minimum(mean % 360, 360 - (mean % 360)) < 5).all(), f"{tag} got an arithmetic mean: {mean.tolist()}"
 
+    @pytest.mark.parametrize("offset", [0.0, 37.0, 180.0, 359.0])
+    def test_circular_mean_rotates_with_its_inputs(self, offset: float) -> None:
+        """Rotating every input by an offset must rotate the mean by the same offset, across the wrap."""
+        values = [10.0, 25.0, 3.0, 355.0, 18.0, 340.0]
+        kwargs: dict[str, Any] = {
+            "timebase_s": 60,
+            "busy_tags": ("AcWindDr_Value",),
+            "circular_tags": ("AcWindDr_Value",),
+        }
+        base = resample_fastlog_tags(
+            raw_df_dict={"AcWindDr_Value": _direction_tag_df("AcWindDr_Value", values)}, **kwargs
+        )["AcWindDr_Value"]
+        rotated = resample_fastlog_tags(
+            raw_df_dict={"AcWindDr_Value": _direction_tag_df("AcWindDr_Value", [(v + offset) % 360 for v in values])},
+            **kwargs,
+        )["AcWindDr_Value"]
+        wrapped_difference = (rotated - base - offset + 180.0) % 360.0 - 180.0
+        assert wrapped_difference.dropna().abs().max() < 1e-9
+
     def test_circular_std_is_small_for_a_tight_cluster_and_large_for_a_spread(self) -> None:
         tight = _direction_tag_df("AcWindDr_Value", [359.0, 0.0, 1.0, 2.0, 358.0, 0.5])
         spread = _direction_tag_df("AcWindDr_Value", [10.0, 100.0, 190.0, 280.0, 55.0, 145.0])

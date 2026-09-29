@@ -11,6 +11,10 @@ This repo contains analysis and helper functions to:
 documented in `Hill_of_Towie_data_dictionary.md` in the
 [Zenodo data pack](https://zenodo.org/records/22662930).
 
+**Working with the fastlog?** How it is resampled to a regular timebase, which aggregates are
+available, and how to reuse the chunked cache on your own data source is described in
+[docs/fastlog_resampling.md](docs/fastlog_resampling.md).
+
 The repository currently covers three upgrade validation campaigns:
 - the [Dynamic Yaw](https://www.res-group.com/digital-solutions/dynamic-yaw/) wake steering and collective yaw control trial, analysis first published in 2026 (`scripts/wfc_analysis_2026`)
 - the earlier [AeroUp](https://www.res-group.com/digital-solutions/aeroup/) and [TuneUp](https://www.res-group.com/digital-solutions/tuneup/) turbine upgrades, analysis first published in 2025 (`scripts/uplift_analysis_2025`)

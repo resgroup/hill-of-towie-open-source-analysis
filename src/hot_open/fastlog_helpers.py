@@ -972,8 +972,10 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
     window, otherwise all of them must be.
     """
     if source_clock_offset_s:
+        # A tag with no files over the chunk arrives as a bare frame carrying a RangeIndex, which
+        # every other loop here skips as empty.
         shift = pd.Timedelta(seconds=source_clock_offset_s)
-        raw_df_dict = {tag: df.set_axis(df.index - shift) for tag, df in raw_df_dict.items()}
+        raw_df_dict = {tag: df if df.empty else df.set_axis(df.index - shift) for tag, df in raw_df_dict.items()}
     if busy_tags is None:
         siemens_typical_busy_tags = {"ActPower_Value", "AcWindSp_AcWindSp", "GenRpm_Value"}
         busy_tags = tuple(x for x in raw_df_dict if x in siemens_typical_busy_tags)

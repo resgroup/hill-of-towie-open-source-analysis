@@ -866,11 +866,20 @@ def _synthetic_raw() -> dict[str, pd.DataFrame]:
     }
 
 
-def _slice_loader(raw: dict[str, pd.DataFrame]) -> flh.RawLoader:
-    """Return a RawLoader serving a prepared raw dict, the way a real source serves a date range."""
+def _slice_loader(raw: dict[str, pd.DataFrame], *, bare_frame_when_empty: bool = False) -> flh.RawLoader:
+    """Return a RawLoader serving a prepared raw dict, the way a real source serves a date range.
+
+    ``bare_frame_when_empty`` reproduces ``_get_raw_df_dict``: a tag it found no files for comes
+    back as ``pd.DataFrame()``, carrying a RangeIndex rather than an empty DatetimeIndex. Slicing a
+    prepared frame keeps the DatetimeIndex, so without this a test double is kinder than the real
+    source and hides anything that assumes the index is temporal.
+    """
 
     def load_raw(start_dt: pd.Timestamp, end_dt_excl: pd.Timestamp) -> dict[str, pd.DataFrame]:
-        return {tag: df[(df.index >= start_dt) & (df.index < end_dt_excl)] for tag, df in raw.items()}
+        sliced = {tag: df[(df.index >= start_dt) & (df.index < end_dt_excl)] for tag, df in raw.items()}
+        if bare_frame_when_empty:
+            sliced = {tag: pd.DataFrame() if df.empty else df for tag, df in sliced.items()}
+        return sliced
 
     return load_raw
 
@@ -1176,6 +1185,35 @@ class TestSourceClockOffset:
             resample_fastlog_tags(raw_df_dict=raw, source_clock_offset_s=0.0, **kwargs),
         )
 
+    def test_a_tag_with_no_data_survives_the_shift(self) -> None:
+        """A tag absent over the whole chunk arrives as a bare frame with a RangeIndex.
+
+        ``_get_raw_df_dict`` returns ``pd.DataFrame()`` for a tag it found no files for, and every
+        other loop in the resampler skips it as empty. Subtracting a Timedelta from a RangeIndex
+        raises, so a multi-day gap in the source took the whole run down -- and only at a non-zero
+        offset, so a zero-offset reproduction run never reached it.
+        """
+        raw = _square_wave_on_true_boundaries(_TOGGLE_OFFSET_S)
+        raw["AcWindSp_AcWindSp"] = pd.DataFrame()
+
+        result = resample_fastlog_tags(
+            raw_df_dict=raw,
+            timebase_s=600,
+            busy_tags=("ActPower_Value",),
+            source_clock_offset_s=_TOGGLE_OFFSET_S,
+        )
+
+        assert not result.empty
+        assert result["ActPower_Value"].dropna().isin([0.0, 1.0]).all()
+
+    def test_every_tag_empty_returns_an_empty_frame(self) -> None:
+        """A chunk falling wholly inside a source outage, which is what actually crashed."""
+        raw = {"ActPower_Value": pd.DataFrame(), "AcWindSp_AcWindSp": pd.DataFrame()}
+
+        result = resample_fastlog_tags(raw_df_dict=raw, timebase_s=600, source_clock_offset_s=_TOGGLE_OFFSET_S)
+
+        assert result.empty
+
     def test_the_caller_s_raw_frames_are_not_mutated(self) -> None:
         raw = _square_wave_on_true_boundaries(_TOGGLE_OFFSET_S)
         before = raw["ActPower_Value"].index.copy()
@@ -1248,6 +1286,31 @@ class TestSourceClockOffsetThroughTheChunkLayer:
         self._chunked(raw, cache_dir=tmp_path, source_clock_offset_s=0.0)
 
         assert len(list(tmp_path.glob("*.parquet"))) == 3
+
+    def test_a_multi_day_source_gap_does_not_take_the_run_down(self) -> None:
+        """A chunk whose lead-in, body and trail all fall inside a gap sees every tag empty.
+
+        A one-day hole is survivable -- the neighbouring days come in with the lead-in -- so it
+        takes a gap of two days or more to produce a wholly empty chunk. That is what the real
+        fastlog record had, and what the resampler must ride over.
+        """
+        raw = _synthetic_raw()
+        gap = slice(pd.Timestamp("2024-03-02"), pd.Timestamp("2024-03-03 23:59:59"))
+        holed = {tag: df.drop(df.loc[gap].index) for tag, df in raw.items()}
+
+        result = flh.get_resampled_chunked_cached(
+            load_raw=_slice_loader(holed, bare_frame_when_empty=True),
+            start_dt=CHUNK_START,
+            end_dt_excl=CHUNK_END,
+            timebase_s=60,
+            cache_key_extra={"source": "synthetic"},
+            source_clock_offset_s=_TOGGLE_OFFSET_S,
+            **CHUNK_KW,
+        )
+
+        assert not result.empty
+        # The days either side of the gap still come through.
+        assert result.index.min() < pd.Timestamp("2024-03-02")
 
     def test_a_cached_offset_chunk_round_trips(self, tmp_path: Path) -> None:
         raw = _synthetic_raw()

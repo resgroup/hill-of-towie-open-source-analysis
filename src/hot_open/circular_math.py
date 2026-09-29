@@ -68,12 +68,8 @@ def circ_mean_resample_degrees(df: pd.DataFrame, *, resample_timedelta: pd.Timed
 def circ_std_resample_degrees(df: pd.DataFrame, *, resample_timedelta: pd.Timedelta) -> pd.DataFrame:
     """Apply resample and circular standard deviation to a DataFrame efficiently.
 
-    A plain standard deviation is wrong for a direction: the spread of 359 and 1 degrees is
-    1 degree, not 253. This uses the mean resultant length R of the unit vectors, then
-    sqrt(-2 * ln(R)) -- the standard circular deviation, which is rotation invariant.
-
-    R is clipped at 1 so floating-point overshoot on a perfectly tight window yields 0 rather
-    than NaN from the log of a number just above 1.
+    Uses the mean resultant length R of the unit vectors and sqrt(-2 ln R), with R clipped at 1
+    so floating-point overshoot on a tight window gives 0 rather than NaN.
 
     Args:
     ----

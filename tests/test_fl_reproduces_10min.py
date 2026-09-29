@@ -28,6 +28,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+import requests
 
 from hot_open.fastlog_helpers import get_fl_resampled
 from hot_open.scada_helpers import WPSBackupFileField, load_hot_10min_data
@@ -165,19 +166,17 @@ def _join(scada: pd.DataFrame, fl: pd.DataFrame) -> pd.DataFrame:
 
 @pytest.fixture(scope="session")
 def filestore_dir() -> Path:
-    """Fetch the two fixture days from Zenodo, or reuse them if already local.
-
-    Only the tags these tests compare are fetched, by range request into the 11.9 GB archive --
-    see tests/zenodo_fastlog.py for why the whole archive is not downloaded and why none of this
-    is committed.
-    """
-    return ensure_fastlog_days(
-        device_id=DEVICE_ID,
-        days={
-            DAY_ONE.strftime("%Y-%m-%d"): DAY_ONE_TAGS,
-            DAY_TWO.strftime("%Y-%m-%d"): DAY_TWO_TAGS,
-        },
-    )
+    """Fetch the two fixture days from Zenodo, or reuse them if already local; skip when offline."""
+    try:
+        return ensure_fastlog_days(
+            device_id=DEVICE_ID,
+            days={
+                DAY_ONE.strftime("%Y-%m-%d"): DAY_ONE_TAGS,
+                DAY_TWO.strftime("%Y-%m-%d"): DAY_TWO_TAGS,
+            },
+        )
+    except requests.ConnectionError as e:
+        pytest.skip(f"fastlog fixture days are not local and Zenodo is unreachable: {e}")
 
 
 @pytest.fixture(scope="module")

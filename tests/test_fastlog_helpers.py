@@ -683,6 +683,19 @@ class TestMinRawDataCount:
         assert any_below["busy_a"].isna().all()
         assert all_below["busy_a"].iloc[:-1].notna().all()
 
+    def test_needs_a_busy_tag_to_count(self) -> None:
+        """With no busy tag there is nothing to count; this used to blank every window instead of raising."""
+        with pytest.raises(ValueError, match="busy tag"):
+            resample_fastlog_tags(raw_df_dict=self._raw(period_s=12), timebase_s=60, busy_tags=(), min_raw_data_count=4)
+
+    def test_counts_rows_whatever_the_column_is_called(self) -> None:
+        """A generic loader need not name the column after the tag."""
+        raw = {"busy_a": _slow_scada_tag_df("busy_a", period_s=12, minutes=10).rename(columns={"busy_a": "value"})}
+        healthy = resample_fastlog_tags(
+            raw_df_dict=raw, timebase_s=60, busy_tags=self.BUSY, busy_tag_ffill_limit_s=45, min_raw_data_count=4
+        )
+        assert healthy["value"].iloc[:-1].notna().all()
+
 
 class TestLowCoverageMaskingClearsEveryColumn:
     """A window masked for low coverage must not keep a standard deviation or a range.
@@ -829,6 +842,11 @@ class TestCacheKeyStability:
     def test_an_unknown_option_is_kept_rather_than_silently_dropped(self) -> None:
         # A typo must not be swallowed; resample_fastlog_tags will raise on it anyway.
         assert flh._non_default_resample_kwargs({"not_a_real_option": 1}) == {"not_a_real_option": 1}  # noqa: SLF001
+
+    def test_an_array_like_option_is_compared_without_error(self) -> None:
+        """``!=`` on a numpy array is element-wise and raised inside the comprehension."""
+        kept = flh._non_default_resample_kwargs({"busy_tags": np.array(["a", "b"])})  # noqa: SLF001
+        assert list(kept) == ["busy_tags"]
 
     def test_a_non_default_option_changes_the_key(self) -> None:
         with_option = dict(self.LEGACY_PARAMS) | {"require_all_busy_tags": True}
@@ -1496,6 +1514,13 @@ class TestSubsamplingGrid:
         with pytest.raises(ValueError, match="subsampling_timebase_ms"):
             flh._resolve_subsampling_timebase_ms(  # noqa: SLF001
                 subsampling_timebase_ms=value, timebase_s=1, raw_df_dict={}, busy_tags=()
+            )
+
+    def test_an_explicit_grid_that_does_not_divide_the_window_is_refused(self) -> None:
+        """300ms bins straddle 1s windows, so every aggregate would be unevenly weighted."""
+        with pytest.raises(ValueError, match="divide"):
+            flh._resolve_subsampling_timebase_ms(  # noqa: SLF001
+                subsampling_timebase_ms=300, timebase_s=1, raw_df_dict={}, busy_tags=()
             )
 
     def test_default_output_is_unchanged(self) -> None:

@@ -44,6 +44,16 @@ SIEMENS_TAGS = [
 
 SIEMENS_PARKS = {"HOT"}
 
+_SECONDS_PER_DAY = 24 * 60 * 60
+_CHUNK_LEAD_IN = pd.Timedelta(days=1)
+_CHUNK_TRAIL = pd.Timedelta(hours=1)
+
+_ALLOWED_SUBSAMPLING_MS = (10, 20, 25, 50, 100, 125, 200, 250, 500, 1000)
+_MAX_AUTO_SUBSAMPLING_MS = 1000
+_MIN_UPSAMPLING_FACTOR = 2
+_LOGGING_INTERVAL_QUANTILE = 0.1
+_MIN_INTERVAL_FRACTION_OF_MEDIAN = 0.1
+
 
 def load_hot_fl_data(  # noqa: PLR0913
     *,
@@ -161,44 +171,21 @@ def get_fl_resampled(  # noqa: PLR0913
 
 
 RawLoader = Callable[[pd.Timestamp, pd.Timestamp], dict[str, pd.DataFrame]]
-"""Load raw per-tag frames covering ``[start, end)``, keyed by tag, nulls dropped.
+"""Load raw per-tag frames covering ``[start, end)``, keyed by tag, nulls dropped, on a DatetimeIndex.
 
-The one thing the chunk/cache orchestration needs from a data source. Anything satisfying it
--- a filestore tree, a parquet file, a database -- can reuse that orchestration.
-
-**The bounds are naive, and the frames returned must be too.** Chunks are cut on calendar dates
-and carry no timezone, whatever the caller asked the range in: they name a wall clock in the
-source's own terms, and the returned index has to match them or the trim inside each chunk cannot
-compare. ``get_resampled_chunked_cached`` localises the finished product to the caller's timezone
-once, at the end. A source stored tz-aware should convert to UTC on the way out.
+Bounds are naive and the returned index must be too: chunks are cut on calendar dates in the
+source's own clock, and the finished product is localised to the caller's timezone once, at the end.
 """
-
-# A chunk is loaded with context either side before being trimmed back, so a value carried in
-# from before the chunk is available and nothing is bridged across its edges. The lead-in must
-# exceed one output window, not merely a gap cutoff: resample_fastlog_tags disregards the first
-# NaN in a run of busy-tag NaNs, so without a spare window the first window of every chunk that
-# falls inside a long outage would escape being masked.
-_CHUNK_LEAD_IN = pd.Timedelta(days=1)
-_CHUNK_TRAIL = pd.Timedelta(hours=1)
 
 
 def _check_range_timezone(start_dt: dt.datetime, end_dt_excl: dt.datetime) -> None:
-    """Refuse a range whose calendar days are not a flat 24 hours.
-
-    A naive range is fine, as is a zone at a zero offset throughout. Anything else is refused: a
-    non-zero offset shifts every chunk boundary off the source's own midnight, and an offset that
-    moves within the range makes one calendar day 23 or 25 hours.
-
-    Every calendar-day boundary is sampled, not just the two ends, since a range spanning an even
-    number of DST transitions has matching endpoints.
-    """
+    """Refuse a tz-aware range unless its UTC offset is zero at every calendar-day boundary."""
     offsets = [pd.Timestamp(x).utcoffset() for x in (start_dt, end_dt_excl)]
     if all(x is None for x in offsets):
         return
     msg = (
-        f"start_dt/end_dt_excl must be naive, or in a timezone at a zero offset throughout the "
-        f"range; got {start_dt!r} to {end_dt_excl!r}. Chunks are cut on calendar dates, which "
-        "are only an unambiguous 24 hours when the offset does not move."
+        f"start_dt/end_dt_excl must be naive, or in a timezone at a zero offset throughout the range "
+        f"(chunks are cut on calendar dates); got {start_dt!r} to {end_dt_excl!r}"
     )
     # Before normalize(), which fails in a zone whose midnight is the hour DST skips.
     if any(x != dt.timedelta(0) for x in offsets):
@@ -208,28 +195,24 @@ def _check_range_timezone(start_dt: dt.datetime, end_dt_excl: dt.datetime) -> No
         raise ValueError(msg)
 
 
-_SECONDS_PER_DAY = 24 * 60 * 60
-
-
 def _check_timebase_divides_day(timebase_s: int) -> None:
-    """Refuse a timebase that does not divide a day exactly.
-
-    Chunks are cut on calendar days and pandas anchors each one's resample grid to midnight, so a
-    timebase that does not divide 86,400 restarts the grid every chunk and leaves partial windows
-    either side of each boundary that the final ``.resample().last()`` cannot reassemble.
-    """
+    """Refuse a timebase that does not divide a day: each day-chunk's resample grid is anchored to its midnight."""
     if timebase_s <= 0 or _SECONDS_PER_DAY % timebase_s != 0:
-        msg = (
-            f"timebase_s must be a positive divisor of {_SECONDS_PER_DAY} (one day); got {timebase_s}. "
-            "Chunks are cut on calendar days, so any other timebase restarts the resample grid every "
-            "chunk and the windows either side of each boundary cannot be reassembled."
-        )
+        msg = f"timebase_s must be a positive divisor of {_SECONDS_PER_DAY} (one day); got {timebase_s}"
         raise ValueError(msg)
 
 
 def _source_clock_shift(resample_kwargs: dict[str, object]) -> pd.Timedelta:
     """How far to move a true-time bound to express it in the source's own clock."""
     return pd.Timedelta(seconds=float(resample_kwargs.get("source_clock_offset_s", 0.0)))  # type: ignore[arg-type]
+
+
+def _trim_to_grid(
+    df: pd.DataFrame, *, start_dt: dt.datetime, end_dt_excl: dt.datetime, timebase_s: int
+) -> pd.DataFrame:
+    """Keep ``[start_dt, end_dt_excl)`` and re-bin it, so the result is a complete regular grid."""
+    kept = df[(df.index >= pd.Timestamp(start_dt)) & (df.index < pd.Timestamp(end_dt_excl))]
+    return kept.resample(f"{timebase_s}s").last()
 
 
 def _resample_one_chunk(
@@ -242,9 +225,10 @@ def _resample_one_chunk(
 ) -> pd.DataFrame:
     """Load one chunk with context either side, resample it, then trim back to the chunk.
 
-    The chunk bounds are true time; ``load_raw`` is asked for them in the source's own clock, which
-    ``resample_fastlog_tags`` then corrects back.
+    The bounds are true time; ``load_raw`` is asked for them in the source's own clock.
     """
+    # A day of lead-in is more than one output window, so a chunk starting inside a long outage
+    # still has its first window masked (the first NaN in a run of busy-tag NaNs is disregarded).
     to_source_clock = _source_clock_shift(resample_kwargs)
     raw_df_dict = load_raw(
         pd.Timestamp(start_dt) - _CHUNK_LEAD_IN + to_source_clock,
@@ -254,15 +238,11 @@ def _resample_one_chunk(
         return pd.DataFrame(index=pd.DatetimeIndex([]))
 
     resampled_df = resample_fastlog_tags(
-        raw_df_dict=raw_df_dict,
+        raw_df_dict={tag: df.rename_axis(TIMESTAMP_NAME) for tag, df in raw_df_dict.items()},
         timebase_s=timebase_s,
         **resample_kwargs,  # type: ignore[arg-type]
     )
-    return (
-        resampled_df[(resampled_df.index >= pd.Timestamp(start_dt)) & (resampled_df.index < pd.Timestamp(end_dt_excl))]
-        .resample(f"{timebase_s}s")
-        .last()
-    )
+    return _trim_to_grid(resampled_df, start_dt=start_dt, end_dt_excl=end_dt_excl, timebase_s=timebase_s)
 
 
 def _get_resampled_one_chunk_cached(  # noqa: PLR0913
@@ -280,10 +260,7 @@ def _get_resampled_one_chunk_cached(  # noqa: PLR0913
 ) -> pd.DataFrame:
     """Resample one chunk, reading from and writing to a per-chunk parquet cache."""
     if cache_dir is not None:
-        # An explicit dict, not argument introspection: a RawLoader is a callable, and
-        # create_consistent_hash falls back to str() for one, which embeds its memory address
-        # and so changes every process. That would be a silent permanent cache miss. Only the
-        # caller knows what identifies its source, hence cache_key_extra.
+        # Not built by introspecting load_raw: str() of a callable embeds its memory address.
         key_params = {
             **cache_key_extra,
             "start_dt": start_dt,
@@ -298,10 +275,7 @@ def _get_resampled_one_chunk_cached(  # noqa: PLR0913
             # (non-refresh) runs would silently reuse, undermining the intent of refresh_cache.
             cache_path.unlink(missing_ok=True)
         elif cache_path.exists():
-            # The range actually read, lead-in and trail included, not the chunk's own bounds: a
-            # backfill into the neighbouring day changes this chunk's output, so it has to
-            # invalidate it. Expanding here rather than inside each callback keeps the contract
-            # honest -- a source implementing the documented range would otherwise miss it.
+            # Freshness is judged over the range actually read, lead-in and trail included.
             to_source_clock = _source_clock_shift(resample_kwargs)
             source_mtime = (
                 None
@@ -313,7 +287,6 @@ def _get_resampled_one_chunk_cached(  # noqa: PLR0913
             )
             # A freshly written parquet's mtime is later than every source file read to build it,
             # so an unchanged chunk stays a hit; a backfilled one (newer source mtime) recomputes.
-            # source_mtime_fn=None means never invalidate, which is right for an immutable source.
             if source_mtime is None or cache_path.stat().st_mtime >= source_mtime:
                 logger.info("Reading: %s", cache_path)
                 return pd.read_parquet(cache_path)
@@ -359,26 +332,14 @@ def get_resampled_chunked_cached(  # noqa: PLR0913
 ) -> pd.DataFrame:
     """Resample a date range from any raw source, chunked by day with a per-day parquet cache.
 
-    ``load_raw`` supplies the data, so this orchestration is not tied to any one source; see
-    :data:`RawLoader`. ``get_fl_resampled_one_device`` is the Siemens filestore caller of it.
+    ``load_raw`` supplies the data; see :data:`RawLoader`. ``cache_key_extra`` must carry whatever
+    identifies the source, e.g. a park and device. ``source_mtime_fn`` is given the range actually
+    read (chunk plus lead-in and trail) and returns the newest source mtime over it; ``None`` never
+    invalidates, which suits an immutable source.
 
-    ``cache_key_extra`` must carry whatever identifies the source, since only the caller knows
-    it -- e.g. a park and device, or a file and turbine id. The date range and ``timebase_s`` are
-    added here, and any ``resample_kwargs`` differing from ``resample_fastlog_tags``' defaults.
-
-    ``source_mtime_fn`` is given the range actually read -- the chunk plus its lead-in and trail --
-    and returns the newest source mtime over it, so a chunk whose source has been rewritten
-    recomputes. Leave it ``None`` for an immutable source, which keeps cached chunks indefinitely.
-
-    ``start_dt``/``end_dt_excl`` must be naive, or at a zero UTC offset throughout the range. A
-    range that sits at another offset, or crosses a daylight-saving change, is refused: chunks are
-    cut on calendar dates, and a date is only an unambiguous 24 hours when the offset does not move.
-    ``load_raw`` always receives naive bounds regardless; see :data:`RawLoader`.
-
-    ``timebase_s`` must divide a day exactly, for the same day-chunking reason; see
-    :func:`_check_timebase_divides_day`.
-
-    Extra keyword arguments are forwarded to :func:`resample_fastlog_tags`.
+    Chunks are cut on calendar dates, so ``start_dt``/``end_dt_excl`` must be naive or at a zero UTC
+    offset throughout, and ``timebase_s`` must divide a day. Extra keyword arguments are forwarded
+    to :func:`resample_fastlog_tags` and join the cache key when they differ from its defaults.
     """
     _check_range_timezone(start_dt, end_dt_excl)
     _check_timebase_divides_day(timebase_s)
@@ -403,15 +364,9 @@ def get_resampled_chunked_cached(  # noqa: PLR0913
     result_df = pd.concat(chunk_dfs)
     range_tz = pd.Timestamp(start_dt).tz
     if result_df.index.tzinfo is None and range_tz is not None:  # type: ignore[attr-defined]
-        # Chunks are cut on naive calendar dates, so they come back naive however the caller asked.
-        # Localise rather than convert: a source's timestamps are in the clock its caller asks in
-        # (HOT fastlog files carry naive UTC, and every HOT caller asks in UTC).
+        # Localise rather than convert: the source's clock is the one the caller asks in.
         result_df.index = result_df.index.tz_localize(range_tz)  # type: ignore[attr-defined]
-    return (
-        result_df[(result_df.index >= pd.Timestamp(start_dt)) & (result_df.index < pd.Timestamp(end_dt_excl))]
-        .resample(f"{timebase_s}s")
-        .last()
-    )
+    return _trim_to_grid(result_df, start_dt=start_dt, end_dt_excl=end_dt_excl, timebase_s=timebase_s)
 
 
 def siemens_raw_loader(
@@ -422,11 +377,7 @@ def siemens_raw_loader(
     tags: Sequence[str] | None = None,
     siemens_parks: set[str] | None = None,
 ) -> RawLoader:
-    """Return a :data:`RawLoader` reading one device out of the Siemens fastlog filestore.
-
-    Public so a caller can wrap it -- to derive a tag from the raw signal, say -- and still hand the
-    result to :func:`get_resampled_chunked_cached` for chunking, caching and clock correction.
-    """
+    """Return a :data:`RawLoader` reading one device out of the Siemens fastlog filestore."""
 
     def load_raw(start_dt: pd.Timestamp, end_dt_excl: pd.Timestamp) -> dict[str, pd.DataFrame]:
         return _get_raw_df_dict(
@@ -475,16 +426,10 @@ def _max_source_mtime(
     end_dt_excl: dt.datetime,
     filestore_dir: Path | None = None,
 ) -> float | None:
-    """Return the newest mtime among the raw FL files covering a range, or None.
-
-    The range given is the one actually read, lead-in and trail included -- the chunk layer expands
-    it before calling, so this does not. ``None`` means no source files were found, which is
-    treated as "cannot be stale".
-    """
+    """Return the newest mtime among the raw FL files covering the range as given, or None if there are none."""
     filestore_dir = get_filestore_dir() if filestore_dir is None else filestore_dir
-    raw_start, raw_end_excl = start_dt, end_dt_excl
     mtimes: list[float] = []
-    for date in _generate_dates_in_range(raw_start, raw_end_excl):
+    for date in _generate_dates_in_range(start_dt, end_dt_excl):
         day_dir = filestore_dir / "FL" / park_id / device_id / str(date)
         if not day_dir.is_dir():
             continue
@@ -531,10 +476,7 @@ def get_fl_resampled_one_device(  # noqa: PLR0913
         start_dt=start_dt,
         end_dt_excl=end_dt_excl,
         timebase_s=timebase_s,
-        # Reproduces, exactly, the parameter set the per-day key used to be built from by argument
-        # introspection. Every entry is hashed whatever its value, including None, because that is
-        # what the introspected version did: adding or dropping one here silently orphans every day
-        # every HOT user has cached. TestSiemensWrapperOverGenericLayer pins the resulting key.
+        # Hashed as-is, None values included: changing this set orphans every cached day.
         cache_key_extra={
             "park_id": park_id,
             "device_id": device_id,
@@ -716,16 +658,7 @@ def make_fl_resampled_one_device(  # noqa: PLR0913
     """Load raw fastlog data and resample it to the target timebase for a single device.
 
     The uncached single-range Siemens entry point; :func:`get_fl_resampled_one_device` is the
-    chunked, cached one. Both read with the same lead-in, since both go through
-    :func:`_resample_one_chunk`.
-
-    Extra keyword arguments are forwarded to :func:`resample_fastlog_tags`, so options such as
-    ``circular_tags``, ``ffill_tags``, ``std_tags``, ``min_raw_data_count``,
-    ``busy_tag_ffill_limit_s`` and ``require_all_busy_tags`` are reachable from here. They are
-    forwarded rather than enumerated deliberately: an enumerated list silently went stale as
-    ``resample_fastlog_tags`` gained options, leaving several of them unreachable through the
-    cache layer, and ``circular_tags`` in particular then fell back to a hardcoded tag-name set
-    so a park named otherwise had its directions averaged across the 0/360 wrap.
+    chunked, cached one. Extra keyword arguments are forwarded to :func:`resample_fastlog_tags`.
     """
     msg = f"Resampling data for {device_id=} {start_dt=}"
     logger.info(msg)
@@ -762,46 +695,17 @@ def _ffill_limit_from_seconds(*, ffill_limit_s: float, subsampling_timebase_ms: 
     return limit
 
 
-# Grids the "auto" rule is allowed to choose, coarsest last. Quantising keeps the choice stable
-# against day-to-day wobble in a tag's logging rate -- 100.0ms and 103.4ms must not produce two
-# different grids for two days of the same signal -- and keeps the value legible in a log line.
-_ALLOWED_SUBSAMPLING_MS = (10, 20, 25, 50, 100, 125, 200, 250, 500, 1000)
-
-# The coarsest grid the auto rule will pick, whatever the logging rate says. A grid slower than 1Hz
-# stops resolving when a value changed, so duration weighting degrades into "whichever sample
-# happened to be latest"; 1Hz is also a common rate for a controller's own periodic statistics, so
-# a product built on it stays comparable with them.
-_MAX_AUTO_SUBSAMPLING_MS = 1000
-
-# The grid has to be at least this much finer than the output window. A limited forward fill is
-# expressed as "fill at most upsampling_factor - 1 cells", so a grid equal to the window leaves a
-# limit of zero -- which pandas rejects, and which could not mean "hold for one window" anyway,
-# since the as-of alignment onto the grid is itself the first fill step.
-_MIN_UPSAMPLING_FACTOR = 2
-
-
-# A tag's own quick end, not its middle: a grid on the median still steps over the faster half of
-# its samples. Tuned against a controller's own 10-minute statistics, where dropping from the
-# median (100ms for a 10Hz power tag) to its 10th percentile (50ms) cut the worst-case min/max
-# disagreement from 13-17kW to 1-2kW. Floored at a tenth of the median so a tag that logs in bursts
-# -- a p10 of a millisecond, a median of a second -- cannot demand a grid its data does not justify.
-_LOGGING_INTERVAL_QUANTILE = 0.1
-_MIN_INTERVAL_FRACTION_OF_MEDIAN = 0.1
-
-
 def _fastest_logging_interval_ms(*, raw_df_dict: dict[str, pd.DataFrame], tags: Sequence[str]) -> float | None:
-    """Return the quickest of ``tags``' logging intervals, in ms, or None if there is none to measure.
+    """Return the quickest of ``tags``' logging intervals in ms, or None if there is nothing to measure.
 
-    The quickest rather than the average: a grid coarser than the fastest tag throws that tag's
-    samples away before anything is aggregated, which is what the rate-aware grid exists to stop.
+    A tag's interval is a low quantile of its sample spacing (its quick end, which is what sets the
+    grid it needs), floored at a fraction of its median so a burst cannot demand a finer one.
     """
     intervals: list[float] = []
     for tag in tags:
         tag_df = raw_df_dict.get(tag)
         if tag_df is None or len(tag_df) < 2:  # noqa: PLR2004
             continue
-        # Differenced in numpy rather than through .diff().dt, whose element type the pandas stubs
-        # cannot follow on an index built at runtime.
         deltas_s = np.diff(tag_df.index.to_numpy(dtype="datetime64[ns]")) / np.timedelta64(1, "s")
         quick_s, median_s = np.quantile(deltas_s, _LOGGING_INTERVAL_QUANTILE), np.median(deltas_s)
         if pd.isna(quick_s) or pd.isna(median_s) or median_s <= 0:
@@ -821,15 +725,10 @@ def _resolve_subsampling_timebase_ms(
 ) -> int:
     """Decide the sub-sampling grid: the legacy formula, an explicit value, or the measured rate.
 
-    ``None`` keeps ``min(1000, timebase_s * 1000 // 20)``, which is keyed on the output timebase
-    alone and so drifts away from the data in both directions: at ``timebase_s=600`` it samples a
-    100ms tag at 1Hz and discards nine samples in ten, and at ``timebase_s=1`` it builds a 50ms
-    grid for a signal logged every 12s, which is 240x more cells than there is information in them.
-
-    ``"auto"`` measures the busy tags instead and takes the coarsest allowed grid no slower than
-    the quickest of them, capped at 1s and at the output window itself. Only the busy tags are
-    measured, per the design: a non-busy tag logging faster than every busy tag would be sampled
-    down, which is the price of not scanning every tag on every chunk.
+    ``None`` keeps ``min(1000, timebase_s * 1000 // 20)``, which knows the output timebase but not
+    the logging rate. ``"auto"`` measures the busy tags (only those) and takes the coarsest allowed
+    grid no slower than the quickest of them, capped at 1s and at half the output window. An
+    explicit value must divide the output window.
     """
     legacy = min(1000, timebase_s * 1000 // 20)
     if subsampling_timebase_ms is None:
@@ -837,7 +736,6 @@ def _resolve_subsampling_timebase_ms(
     if subsampling_timebase_ms == "auto":
         fastest_ms = _fastest_logging_interval_ms(raw_df_dict=raw_df_dict, tags=busy_tags)
         if fastest_ms is None:
-            # Nothing to measure (no busy tag, or a single sample): the timebase is all we know.
             return legacy
         ceiling = min(_MAX_AUTO_SUBSAMPLING_MS, timebase_s * 1000 // _MIN_UPSAMPLING_FACTOR)
         allowed = [x for x in _ALLOWED_SUBSAMPLING_MS if x <= min(fastest_ms, ceiling)]
@@ -848,11 +746,12 @@ def _resolve_subsampling_timebase_ms(
     if not isinstance(subsampling_timebase_ms, int) or isinstance(subsampling_timebase_ms, bool):
         msg = f"subsampling_timebase_ms must be an int, 'auto' or None, got {subsampling_timebase_ms!r}"
         raise TypeError(msg)
-    coarsest = timebase_s * 1000 // _MIN_UPSAMPLING_FACTOR
-    if not 1 <= subsampling_timebase_ms <= coarsest:
+    window_ms = timebase_s * 1000
+    coarsest = window_ms // _MIN_UPSAMPLING_FACTOR
+    if not 1 <= subsampling_timebase_ms <= coarsest or window_ms % subsampling_timebase_ms != 0:
         msg = (
-            f"subsampling_timebase_ms={subsampling_timebase_ms} must be between 1 and {coarsest}ms, "
-            f"i.e. at least {_MIN_UPSAMPLING_FACTOR}x finer than the {timebase_s}s output window"
+            f"subsampling_timebase_ms={subsampling_timebase_ms} must divide the {timebase_s}s output window "
+            f"and be at most {coarsest}ms, i.e. at least {_MIN_UPSAMPLING_FACTOR}x finer than it"
         )
         raise ValueError(msg)
     return subsampling_timebase_ms
@@ -867,6 +766,12 @@ def _full_resample_grid(*, raw_df_dict: dict[str, pd.DataFrame], timebase_s: int
     start = min(x[0] for x in spans).floor(freq)
     end = max(x[-1] for x in spans).floor(freq)
     return pd.date_range(start, end, freq=freq, name=TIMESTAMP_NAME)
+
+
+def _blank_windows(df: pd.DataFrame, times: pd.Index) -> None:
+    """Set every column of ``df`` to missing at ``times``, in place."""
+    df.loc[times, df.select_dtypes(include="number").columns] = np.nan
+    df.loc[times, df.select_dtypes(exclude="number").columns] = pd.NA
 
 
 def upsample_and_ffill_stopping_at_nans(  # noqa: PLR0913
@@ -940,11 +845,6 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
 ) -> pd.DataFrame:
     """Resample all tags to the target timebase.
 
-    ``source_clock_offset_s`` is how many seconds ahead of true time the source's clock reads. It is
-    subtracted from every raw index before aggregating, so the output grid and labels are true time.
-    Use it where the logger's clock is known to be wrong and periods would otherwise straddle events
-    timed on an accurate clock.
-
     ``busy_tag_ffill_limit_s`` is how long a busy tag's value stays representative, in seconds.
     It defaults to one timebase, which suits fastlog but not slower logging such as OPC: 10s data
     on a 1s grid leaves a busy tag absent from 9 cells in 10, so every window reads as an outage.
@@ -953,32 +853,30 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
     only when all are. Use it where busy tags fail independently -- a vane channel dying while
     power keeps logging, which the default would forward-fill every other tag across.
 
-    ``std_tags`` emits a ``std_<tag>`` column per named tag, computed on the same upsampled grid
-    as the mean so it is duration weighted and consistent with the other aggregates. Tags also in
-    ``circular_tags`` get the circular standard deviation, since a plain one is meaningless across
-    the 0/360 wrap.
+    ``std_tags`` emits ``std_<tag>`` on the same upsampled grid as the mean, so it is duration
+    weighted; tags also in ``circular_tags`` get the circular standard deviation.
 
-    ``subsampling_timebase_ms`` is the fine grid everything is upsampled onto before aggregation.
-    ``None`` keeps the historical ``min(1000, timebase_s * 1000 // 20)``, which knows the output
-    timebase but not the logging rate. ``"auto"`` measures the busy tags and follows them, capped at
-    1s; an explicit value overrides both. See :func:`_resolve_subsampling_timebase_ms`.
+    ``subsampling_timebase_ms`` is the fine grid everything is upsampled onto before aggregation;
+    see :func:`_resolve_subsampling_timebase_ms`.
 
-    ``min_data_count`` counts non-NaN *sub-grid cells* of the busy tags, so it saturates once
-    ``busy_tag_ffill_limit_s`` is set: with a 45s horizon a 60s window starved from 5 raw samples
-    to 2 still reports 60 filled cells, indistinguishable from a healthy one. Use
-    ``min_raw_data_count`` to require a minimum number of *raw* samples per window instead, which
-    is what catches a run of short gaps that never individually trip the outage check. Its polarity
-    follows ``require_all_busy_tags``: with that set, any busy tag below the threshold masks the
-    window, otherwise all of them must be.
+    ``min_data_count`` counts non-NaN sub-grid cells of the busy tags, which saturate once
+    ``busy_tag_ffill_limit_s`` is set; ``min_raw_data_count`` counts raw samples per window
+    instead, with polarity following ``require_all_busy_tags``. Both blank every output column of
+    a window below the threshold.
+
+    ``source_clock_offset_s`` is how many seconds ahead of true time the source's clock reads; it
+    is subtracted from every raw index so the output grid and labels are true time.
     """
     if source_clock_offset_s:
-        # A tag with no files over the chunk arrives as a bare frame carrying a RangeIndex, which
-        # every other loop here skips as empty.
+        # An absent tag arrives as an empty frame with a RangeIndex, which cannot be shifted.
         shift = pd.Timedelta(seconds=source_clock_offset_s)
-        raw_df_dict = {tag: df if df.empty else df.set_axis(df.index - shift) for tag, df in raw_df_dict.items()}
+        raw_df_dict = {tag: df if df.empty else df.shift(freq=-shift) for tag, df in raw_df_dict.items()}
     if busy_tags is None:
         siemens_typical_busy_tags = {"ActPower_Value", "AcWindSp_AcWindSp", "GenRpm_Value"}
         busy_tags = tuple(x for x in raw_df_dict if x in siemens_typical_busy_tags)
+    if min_raw_data_count is not None and len(busy_tags) == 0:
+        msg = "min_raw_data_count counts busy-tag samples, but there is no busy tag to count"
+        raise ValueError(msg)
     if ffill_tags is None:
         ffill_tags = tuple(x for x in raw_df_dict if x not in busy_tags)
     if circular_tags is None:
@@ -1080,7 +978,6 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
             resampled_df = pd.merge_ordered(resampled_df, min_df, on=TIMESTAMP_NAME).set_index(TIMESTAMP_NAME)
     if std_tags is not None:
         std_tags_in_upsampled = [x for x in std_tags if x in upsampled.columns]
-        # Circular tags need the resultant-length formula; a plain std is meaningless across 0/360.
         circ_std_tags = [x for x in std_tags_in_upsampled if x in circ_cols]
         linear_std_tags = [x for x in std_tags_in_upsampled if x not in circ_cols]
         std_frames = []
@@ -1110,49 +1007,44 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
         else:
             count_df = busy_upsampled.resample(f"{timebase_s}s").count()
         low_count_times = count_df.index[count_df.lt(min_data_count).all(axis=1)]  # type:ignore[call-overload,arg-type]
-        # Every output column, not just the tag columns: this used to leave the derived std_/min_/
-        # max_ columns populated, so a window masked for low coverage still reported a standard
-        # deviation and a range beside its blanked mean. min_raw_data_count below does the same.
-        resampled_df.loc[low_count_times, resampled_df.select_dtypes(include="number").columns] = np.nan
-        resampled_df.loc[low_count_times, resampled_df.select_dtypes(exclude="number").columns] = pd.NA
+        _blank_windows(resampled_df, low_count_times)
 
     if min_raw_data_count is not None:
-        # Raw samples per window, not sub-grid cells: see this function's docstring for why the
-        # cell count cannot express this once busy_tag_ffill_limit_s is set.
         raw_counts = pd.DataFrame(index=resampled_df.index)
         for tag in busy_tags:
             raw_tag_df = raw_df_dict.get(tag)
             if raw_tag_df is None or raw_tag_df.empty:
-                # An absent or empty busy tag has no samples, so it fails the threshold. Matches
-                # require_all_busy_tags, which also treats such a tag as missing rather than absent.
                 raw_counts[tag] = 0
             else:
-                counts = raw_tag_df[tag].resample(f"{timebase_s}s").count()
+                counts = raw_tag_df.resample(f"{timebase_s}s").size()
                 raw_counts[tag] = counts.reindex(resampled_df.index, fill_value=0)
         below = raw_counts.lt(min_raw_data_count)
         low_raw_times = raw_counts.index[below.any(axis=1) if require_all_busy_tags else below.all(axis=1)]
-        # Blanks the derived std_/min_/max_ columns too, so a masked window keeps no aggregate.
-        numeric_all = resampled_df.select_dtypes(include="number").columns
-        nonnumeric_all = resampled_df.select_dtypes(exclude="number").columns
-        resampled_df.loc[low_raw_times, numeric_all] = np.nan
-        resampled_df.loc[low_raw_times, nonnumeric_all] = pd.NA
+        _blank_windows(resampled_df, low_raw_times)
     return resampled_df
 
 
 def _non_default_resample_kwargs(resample_kwargs: dict) -> dict:
     """Return only the resample options that differ from ``resample_fastlog_tags``' defaults.
 
-    Cache keys must change when aggregation settings change, but omitting defaulted options is
-    what keeps keys written before an option existed valid. Hashing every option instead would
-    mean that merely widening ``resample_fastlog_tags``' signature orphaned every cached day,
-    over parameters whose defaults reproduce the previous behaviour exactly.
+    Omitting defaulted options keeps cache keys written before an option existed valid.
     """
     defaults = {
         name: param.default
         for name, param in inspect.signature(resample_fastlog_tags).parameters.items()
         if param.default is not inspect.Parameter.empty
     }
-    return {k: v for k, v in resample_kwargs.items() if k not in defaults or v != defaults[k]}
+    return {k: v for k, v in resample_kwargs.items() if k not in defaults or _serialize(v) != _serialize(defaults[k])}
+
+
+def _serialize(obj: object) -> object:
+    if isinstance(obj, int | float | str | bool | type(None)):
+        return obj
+    if isinstance(obj, list | tuple):
+        return [_serialize(item) for item in obj]
+    if isinstance(obj, dict):
+        return {str(key): _serialize(value) for key, value in obj.items()}
+    return str(obj)
 
 
 def create_consistent_hash(**kwargs) -> str:  # noqa: ANN003
@@ -1161,17 +1053,6 @@ def create_consistent_hash(**kwargs) -> str:  # noqa: ANN003
     Uses SHA-256 but encodes the result in base64 instead of hexadecimal.
     This produces a 44-character string, which we then truncate to 32 characters for brevity.
     """
-    all_args = [kwargs]
-
-    def serialize(obj):  # noqa: ANN001 ANN202
-        if isinstance(obj, int | float | str | bool | type(None)):
-            return obj
-        if isinstance(obj, list | tuple):
-            return [serialize(item) for item in obj]
-        if isinstance(obj, dict):
-            return {str(key): serialize(value) for key, value in obj.items()}
-        return str(obj)
-
-    serialized = json.dumps(serialize(all_args), sort_keys=True)
+    serialized = json.dumps(_serialize([kwargs]), sort_keys=True)
     hash_bytes = hashlib.sha256(serialized.encode("utf-8")).digest()
     return base64.urlsafe_b64encode(hash_bytes).decode("utf-8")[:32]

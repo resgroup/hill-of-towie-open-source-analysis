@@ -15,31 +15,12 @@ REPO_NAME = REPO_ROOT.stem
 
 @cache
 def _load_env() -> None:
-    """Populate os.environ from .env files. Runs once per process.
+    """Populate os.environ from .env files, once per process.
 
-    Precedence, highest first:
-
-    1. variables already set in the real environment
-    2. ``HOT_OPEN_DOTENV``, if set, naming an explicit .env file
-    3. the nearest .env walking up from the current working directory, i.e. the .env of the
-       *application* using hot_open
-    4. ``REPO_ROOT/.env``, i.e. this repo's own .env, so scripts run inside this repo keep
-       working exactly as before
-
-    Step 3 is the fix. A bare ``load_dotenv()`` resolves through ``find_dotenv()``, which
-    walks up from the *calling* file -- this one -- not from the application. So a project
-    that installed hot_open and wrote its own .env was ignored with no warning: an editable
-    install silently picked up the hot_open checkout's .env instead, and a wheel install
-    found no .env at all, having walked site-packages up to the filesystem root.
-
-    Step 4 is an explicit path rather than ``find_dotenv()`` on purpose. ``find_dotenv``
-    abandons its frame walk and uses the cwd whenever ``__main__`` has no ``__file__`` --
-    ``python -c``, a REPL, or a Jupyter notebook -- so a frame-based fallback would quietly
-    stop working in notebooks. ``REPO_ROOT`` is already known here.
-
-    Every load passes ``override=False``, so a real environment variable beats every file and
-    an earlier file beats a later one. Tests that write a .env and expect it to be picked up
-    must call ``_load_env.cache_clear()`` first.
+    Precedence, highest first: the real environment, ``HOT_OPEN_DOTENV``, the nearest .env above
+    the current working directory (the application's), then ``REPO_ROOT/.env``. The last is an
+    explicit path because ``find_dotenv()`` falls back to the cwd when ``__main__`` has no
+    ``__file__`` (REPL, Jupyter). Tests that write a .env must call ``_load_env.cache_clear()``.
     """
     explicit = os.getenv("HOT_OPEN_DOTENV")
     if explicit:

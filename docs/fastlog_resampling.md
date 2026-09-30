@@ -39,7 +39,7 @@ A fine grid costs time: on one turbine-day resampled to 600 s, the auto grid (25
 about 16x as long as a 1 s grid. Pass `subsampling_timebase_ms=1000` for a coarse, fast grid when
 only means matter. On the validation day below, a 1 s grid moves the median `ActPower_Value` mean
 by under 0.05 kW, but it misses excursions shorter than a second, so extremes read inward: the
-median minimum ~4 kW too high and the median maximum ~8 kW too low.
+median minimum at least 4 kW too high and the median maximum at least 8 kW too low.
 
 `source_clock_offset_s` corrects a source whose clock is known to be wrong: it is how many seconds
 the source's clock reads ahead of true time, negative for one running behind. The raw index is

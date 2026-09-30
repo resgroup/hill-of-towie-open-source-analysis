@@ -35,11 +35,12 @@ measured per chunk: the coarsest grid that still resolves them, capped at 1 s an
 output window. With no busy tag to measure it falls back to `min(1000, timebase_s * 1000 // 20)`.
 An explicit value must divide the output window; the grid is part of the cache key either way.
 
-A fine grid costs time: on one turbine-day resampled to 600 s, the auto grid (25 ms there) took
-about 16x as long as a 1 s grid. Pass `subsampling_timebase_ms=1000` for a coarse, fast grid when
-only means matter. On the validation day below, a 1 s grid moves the median `ActPower_Value` mean
-by under 0.05 kW, but it misses excursions shorter than a second, so extremes read inward: the
-median minimum at least 4 kW too high and the median maximum at least 8 kW too low.
+A fine grid costs time: on the validation day below, resampled to 600 s, the auto grid (50 ms
+there) took about 6x as long as a 1 s grid, and faster logging costs more. Pass
+`subsampling_timebase_ms=1000` for a coarse, fast grid when only means matter. On that day a 1 s
+grid moves the median `ActPower_Value` mean by under 0.05 kW, but it misses excursions shorter than
+a second, so extremes read inward: the median minimum at least 4 kW too high and the median maximum
+at least 8 kW too low.
 
 `source_clock_offset_s` corrects a source whose clock is known to be wrong: it is how many seconds
 the source's clock reads ahead of true time, negative for one running behind. The raw index is
@@ -99,7 +100,8 @@ Rules the chunking imposes:
   result is localised to the caller's timezone at the end.
 - `timebase_s` must divide a day.
 - `cache_key_extra` must identify the source: it is hashed into every per-day cache file name,
-  along with the date, the timebase and every resample option that differs from its default.
+  along with the date, the timebase, the sub-grid and every other resample option that differs
+  from its default.
 - Pass `source_mtime_fn` to invalidate cached days when the source is rewritten (backfills). It
   is given the range actually read, which includes a day of lead-in and an hour of trail. Leave
   it `None` for an immutable source.

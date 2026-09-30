@@ -1178,7 +1178,7 @@ class TestGetResampledChunkedCached:
         assert list(tmp_path.glob("*.parquet")) == []  # nothing cached, so a later real load recomputes
 
 
-_TOGGLE_OFFSET_S = 510.0  # 8.5 min, the LASAL turbine-clock error
+_CLOCK_OFFSET_S = 510.0  # 8.5 min, a realistic turbine-clock error
 
 
 def _square_wave_on_true_boundaries(offset_s: float, tag: str = "ActPower_Value") -> dict[str, pd.DataFrame]:
@@ -1198,7 +1198,7 @@ class TestSourceClockOffset:
 
     def test_an_uncorrected_offset_leaves_every_period_a_mixture(self) -> None:
         """The failure being fixed, pinned so the corrected result below means something."""
-        raw = _square_wave_on_true_boundaries(_TOGGLE_OFFSET_S)
+        raw = _square_wave_on_true_boundaries(_CLOCK_OFFSET_S)
         result = resample_fastlog_tags(raw_df_dict=raw, timebase_s=600, busy_tags=("ActPower_Value",))
         means = result["ActPower_Value"].dropna()
 
@@ -1207,7 +1207,7 @@ class TestSourceClockOffset:
         # 510s of one level and 90s of the other.
         assert mixed.round(2).isin([0.15, 0.85]).all(), mixed.tolist()
 
-    @pytest.mark.parametrize("offset_s", [_TOGGLE_OFFSET_S, -_TOGGLE_OFFSET_S], ids=["ahead", "behind"])
+    @pytest.mark.parametrize("offset_s", [_CLOCK_OFFSET_S, -_CLOCK_OFFSET_S], ids=["ahead", "behind"])
     def test_the_offset_makes_every_period_a_single_state(self, offset_s: float) -> None:
         raw = _square_wave_on_true_boundaries(offset_s)
         result = resample_fastlog_tags(
@@ -1232,7 +1232,7 @@ class TestSourceClockOffset:
         assert corrected.index[0] == uncorrected.index[0] - pd.Timedelta(seconds=600)
 
     def test_a_zero_offset_changes_nothing(self) -> None:
-        raw = _square_wave_on_true_boundaries(_TOGGLE_OFFSET_S)
+        raw = _square_wave_on_true_boundaries(_CLOCK_OFFSET_S)
         kwargs: dict[str, Any] = {"timebase_s": 600, "busy_tags": ("ActPower_Value",)}
 
         pd.testing.assert_frame_equal(
@@ -1248,14 +1248,14 @@ class TestSourceClockOffset:
         raises, so a multi-day gap in the source took the whole run down -- and only at a non-zero
         offset, so a zero-offset reproduction run never reached it.
         """
-        raw = _square_wave_on_true_boundaries(_TOGGLE_OFFSET_S)
+        raw = _square_wave_on_true_boundaries(_CLOCK_OFFSET_S)
         raw["AcWindSp_AcWindSp"] = pd.DataFrame()
 
         result = resample_fastlog_tags(
             raw_df_dict=raw,
             timebase_s=600,
             busy_tags=("ActPower_Value",),
-            source_clock_offset_s=_TOGGLE_OFFSET_S,
+            source_clock_offset_s=_CLOCK_OFFSET_S,
         )
 
         assert not result.empty
@@ -1265,19 +1265,19 @@ class TestSourceClockOffset:
         """A chunk falling wholly inside a source outage, which is what actually crashed."""
         raw = {"ActPower_Value": pd.DataFrame(), "AcWindSp_AcWindSp": pd.DataFrame()}
 
-        result = resample_fastlog_tags(raw_df_dict=raw, timebase_s=600, source_clock_offset_s=_TOGGLE_OFFSET_S)
+        result = resample_fastlog_tags(raw_df_dict=raw, timebase_s=600, source_clock_offset_s=_CLOCK_OFFSET_S)
 
         assert result.empty
 
     def test_the_caller_s_raw_frames_are_not_mutated(self) -> None:
-        raw = _square_wave_on_true_boundaries(_TOGGLE_OFFSET_S)
+        raw = _square_wave_on_true_boundaries(_CLOCK_OFFSET_S)
         before = raw["ActPower_Value"].index.copy()
 
         resample_fastlog_tags(
             raw_df_dict=raw,
             timebase_s=600,
             busy_tags=("ActPower_Value",),
-            source_clock_offset_s=_TOGGLE_OFFSET_S,
+            source_clock_offset_s=_CLOCK_OFFSET_S,
         )
 
         pd.testing.assert_index_equal(raw["ActPower_Value"].index, before)
@@ -1311,16 +1311,16 @@ class TestSourceClockOffsetThroughTheChunkLayer:
             end_dt_excl=CHUNK_END,
             timebase_s=60,
             cache_key_extra={"source": "synthetic"},
-            source_clock_offset_s=_TOGGLE_OFFSET_S,
+            source_clock_offset_s=_CLOCK_OFFSET_S,
             **CHUNK_KW,
         )
 
-        shift = pd.Timedelta(seconds=_TOGGLE_OFFSET_S)
+        shift = pd.Timedelta(seconds=_CLOCK_OFFSET_S)
         first_start, first_end = seen[0]
         assert first_start == CHUNK_START - pd.Timedelta(days=1) + shift
         assert first_end == CHUNK_START + pd.Timedelta(days=1, hours=1) + shift
 
-    @pytest.mark.parametrize("offset_s", [_TOGGLE_OFFSET_S, -_TOGGLE_OFFSET_S], ids=["ahead", "behind"])
+    @pytest.mark.parametrize("offset_s", [_CLOCK_OFFSET_S, -_CLOCK_OFFSET_S], ids=["ahead", "behind"])
     def test_consecutive_chunks_stay_contiguous_on_the_shifted_grid(self, offset_s: float) -> None:
         """A per-chunk shift that drifted would show up as a gap or overlap at a day boundary."""
         result = self._chunked(_synthetic_raw(), source_clock_offset_s=offset_s)
@@ -1331,7 +1331,7 @@ class TestSourceClockOffsetThroughTheChunkLayer:
     def test_the_offset_is_part_of_the_cache_key(self, tmp_path: Path) -> None:
         raw = _synthetic_raw()
         self._chunked(raw, cache_dir=tmp_path)
-        self._chunked(raw, cache_dir=tmp_path, source_clock_offset_s=_TOGGLE_OFFSET_S)
+        self._chunked(raw, cache_dir=tmp_path, source_clock_offset_s=_CLOCK_OFFSET_S)
 
         assert len(list(tmp_path.glob("*.parquet"))) == 2 * 3  # two offsets x three days
 
@@ -1360,7 +1360,7 @@ class TestSourceClockOffsetThroughTheChunkLayer:
             end_dt_excl=CHUNK_END,
             timebase_s=60,
             cache_key_extra={"source": "synthetic"},
-            source_clock_offset_s=_TOGGLE_OFFSET_S,
+            source_clock_offset_s=_CLOCK_OFFSET_S,
             **CHUNK_KW,
         )
 
@@ -1370,8 +1370,8 @@ class TestSourceClockOffsetThroughTheChunkLayer:
 
     def test_a_cached_offset_chunk_round_trips(self, tmp_path: Path) -> None:
         raw = _synthetic_raw()
-        first = self._chunked(raw, cache_dir=tmp_path, source_clock_offset_s=_TOGGLE_OFFSET_S)
-        second = self._chunked(raw, cache_dir=tmp_path, source_clock_offset_s=_TOGGLE_OFFSET_S)
+        first = self._chunked(raw, cache_dir=tmp_path, source_clock_offset_s=_CLOCK_OFFSET_S)
+        second = self._chunked(raw, cache_dir=tmp_path, source_clock_offset_s=_CLOCK_OFFSET_S)
 
         pd.testing.assert_frame_equal(first, second, check_freq=False)
 

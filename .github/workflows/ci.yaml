@@ -7,6 +7,12 @@ on:
   push:
     branches: [ main ]
 
+env:
+  # Keep in step with _HOT_V2_RECORD_ID in src/hot_open/sourcing_data.py.
+  HOT_V2_RECORD_ID: "22662930"
+  # Bump when a test starts needing a fixture day or tag the cached run never fetched.
+  ZENODO_CACHE_VERSION: v1
+
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
@@ -24,6 +30,16 @@ jobs:
       - name: Install project
         run: |
           uv sync --frozen
+
+      # Fixture days fetched from Zenodo by tests/zenodo_fastlog.py land in hot_open's default data
+      # directory, outside the workspace so pytest collection, ruff and mypy do not walk them.
+      - name: Restore the Zenodo fixture cache
+        uses: actions/cache@v4
+        with:
+          path: ~/temp/hill-of-towie-open-source-analysis/data
+          key: zenodo-hot-${{ env.HOT_V2_RECORD_ID }}-${{ env.ZENODO_CACHE_VERSION }}-${{ runner.os }}
+          restore-keys: |
+            zenodo-hot-${{ env.HOT_V2_RECORD_ID }}-${{ env.ZENODO_CACHE_VERSION }}-
 
       - name: Lint
         run: |

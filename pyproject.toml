@@ -36,6 +36,7 @@ dev = [
     "types-tqdm>=4.68.0.20260608",
     "responses>=0.26.1",
     "polars>=1.41.2",
+    "remotezip>=0.12.3",
 ]
 wedowind = [
     "autogluon>=1.4.0",
@@ -115,6 +116,7 @@ module = [
     "kagglehub.*",
     "autogluon.*",
     "pyarrow.*",
+    "remotezip.*",
 ]
 ignore_missing_imports = true
 

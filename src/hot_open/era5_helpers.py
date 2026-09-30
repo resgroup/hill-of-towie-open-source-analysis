@@ -11,6 +11,7 @@ import requests_cache
 from retry_requests import retry
 from wind_up.reanalysis_data import ReanalysisDataset
 
+from .parquet_io import write_parquet_atomic
 from .settings import get_cache_dir
 
 logger = logging.getLogger(__name__)
@@ -117,7 +118,7 @@ def get_era5_hourly_df(
     )
     df = _build_era5_df(responses[0], fields)
     logger.info("Writing: %s", cache_path)
-    df.to_parquet(cache_path)
+    write_parquet_atomic(df, cache_path)
     return df
 
 

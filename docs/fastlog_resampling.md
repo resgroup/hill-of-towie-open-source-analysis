@@ -1,6 +1,6 @@
 # Resampling fastlog data
 
-The fastlog in the Hill of Towie datapack is logged on change, at up to 10 Hz, one file per
+The fastlog in the Hill of Towie datapack is logged on change, at up to 30 Hz, one file per
 turbine, tag and day. `hot_open.fastlog_helpers` turns it into a regular timebase (1 s, 60 s,
 600 s, ...) with the same aggregates a controller's own periodic statistics carry. This page
 describes how that resampling works and how to use it on data that is not in the Siemens filestore.
@@ -30,12 +30,14 @@ describes how that resampling works and how to use it on data that is not in the
    blank every column of a window with too little data behind it. Prefer the raw count once a
    fill limit is set, because filled cells saturate.
 
-`subsampling_timebase_ms="auto"` measures the busy tags' logging rate per chunk and picks the
-coarsest grid that still resolves it, capped at 1 s. The default (`None`) keeps the historical
-`min(1000, timebase_s * 1000 // 20)`. An explicit value must divide the output window.
+By default (`subsampling_timebase_ms="auto"`) the sub-grid follows the busy tags' logging rate,
+measured per chunk: the coarsest grid that still resolves them, capped at 1 s and at half the
+output window. With no busy tag to measure it falls back to `min(1000, timebase_s * 1000 // 20)`.
+An explicit value must divide the output window; the grid is part of the cache key either way.
 
-`source_clock_offset_s` corrects a source whose clock is known to run ahead of true time: the raw
-index is shifted before aggregating, so the output windows are labelled in true time.
+`source_clock_offset_s` corrects a source whose clock is known to be wrong: it is how many seconds
+the source's clock reads ahead of true time, negative for one running behind. The raw index is
+shifted before aggregating, so the output windows are labelled in true time.
 
 ## Validation against the turbine's own 10-minute statistics
 
@@ -43,12 +45,12 @@ index is shifted before aggregating, so the output windows are labelled in true 
 with the mean, min, max and standard deviation the controller computed at the time from the same
 signal. Worst absolute difference over the day:
 
-| | mean | min | max | stddev |
-| --- | ---: | ---: | ---: | ---: |
-| Active power (kW) | 0.09 | 1.0 | 2.0 | 0.09 |
-| Wind speed (m/s) | 0.003 | 0.0 | 0.0 | 0.002 |
-| Nacelle position (°) | 0.005 | 0.0 | 0.0 | 0.03 |
-| Pitch angle (°) | 0.001 | 0.0 | 0.0 | 0.001 |
+| 10-min field | fastlog tag | mean | min | max | stddev |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `wtc_ActPower` (kW) | `ActPower_Value` | 0.09 | 1.0 | 2.0 | 0.09 |
+| `wtc_AcWindSp` (m/s) | `AcWindSp_AcWindSp` | 0.003 | 0.0 | 0.0 | 0.002 |
+| `wtc_NacelPos` (°) | `YawPos_Value` | 0.005 | 0.0 | 0.0 | 0.03 |
+| `wtc_PitcPosA` (°) | `PitcPosA_Value` | 0.001 | 0.0 | 0.0 | 0.001 |
 
 A second day with 23 periods crossing the 0/360° wrap agrees to 0.01° on the circular mean and
 0.03° on the circular standard deviation, so both sides average angles circularly. Power is
@@ -80,7 +82,6 @@ df = get_resampled_chunked_cached(
     busy_tags=("power",),
     circular_tags=("wind_direction",),
     std_tags=("power", "wind_direction"),
-    subsampling_timebase_ms="auto",
 )
 ```
 

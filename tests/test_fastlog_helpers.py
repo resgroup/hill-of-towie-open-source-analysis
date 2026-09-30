@@ -241,7 +241,8 @@ class TestResampleRealHotSample:
             filestore_dir=FL_SAMPLE_DIR,
             tags=FL_SAMPLE_TAGS,
         )
-        return resample_fastlog_tags(raw_df_dict=raw, timebase_s=60)
+        # The committed characterization was built on a 1s grid.
+        return resample_fastlog_tags(raw_df_dict=raw, timebase_s=60, subsampling_timebase_ms=1000)
 
     def test_sparse_tag_final_observation_survives(self) -> None:
         # The generator returned (LargeOnGrd) at 08:07:40.640, the last GenState row in the window.
@@ -856,6 +857,9 @@ class TestCacheKeyStability:
     # Measured on the commit before std_tags/min_raw_data_count were added. A change here means
     # every existing user's cache silently stops being found.
     LEGACY_KEY = "IZfqhKlUtfd8GBnRSyEDIWIdDgeRGuVH"
+    # The same day once the grid follows the logging rate. Its output differs from LEGACY_KEY's, so
+    # the grid is always keyed and days cached on the old grid are not reused.
+    AUTO_GRID_KEY = "ZXgLojnZogJW3KNnZxH888SYLPkAFCne"
 
     def test_legacy_default_key_is_unchanged(self) -> None:
         assert flh.create_consistent_hash(**self.LEGACY_PARAMS) == self.LEGACY_KEY
@@ -1190,7 +1194,7 @@ def _square_wave_on_true_boundaries(offset_s: float, tag: str = "ActPower_Value"
 
 
 class TestSourceClockOffset:
-    """Correcting a source whose clock runs ahead, so periods are not mixtures either side of an event."""
+    """Correcting a source whose clock is wrong, so periods are not mixtures either side of an event."""
 
     def test_an_uncorrected_offset_leaves_every_period_a_mixture(self) -> None:
         """The failure being fixed, pinned so the corrected result below means something."""
@@ -1203,13 +1207,14 @@ class TestSourceClockOffset:
         # 510s of one level and 90s of the other.
         assert mixed.round(2).isin([0.15, 0.85]).all(), mixed.tolist()
 
-    def test_the_offset_makes_every_period_a_single_state(self) -> None:
-        raw = _square_wave_on_true_boundaries(_TOGGLE_OFFSET_S)
+    @pytest.mark.parametrize("offset_s", [_TOGGLE_OFFSET_S, -_TOGGLE_OFFSET_S], ids=["ahead", "behind"])
+    def test_the_offset_makes_every_period_a_single_state(self, offset_s: float) -> None:
+        raw = _square_wave_on_true_boundaries(offset_s)
         result = resample_fastlog_tags(
             raw_df_dict=raw,
             timebase_s=600,
             busy_tags=("ActPower_Value",),
-            source_clock_offset_s=_TOGGLE_OFFSET_S,
+            source_clock_offset_s=offset_s,
         )
         means = result["ActPower_Value"].dropna()
 
@@ -1315,9 +1320,10 @@ class TestSourceClockOffsetThroughTheChunkLayer:
         assert first_start == CHUNK_START - pd.Timedelta(days=1) + shift
         assert first_end == CHUNK_START + pd.Timedelta(days=1, hours=1) + shift
 
-    def test_consecutive_chunks_stay_contiguous_on_the_shifted_grid(self) -> None:
+    @pytest.mark.parametrize("offset_s", [_TOGGLE_OFFSET_S, -_TOGGLE_OFFSET_S], ids=["ahead", "behind"])
+    def test_consecutive_chunks_stay_contiguous_on_the_shifted_grid(self, offset_s: float) -> None:
         """A per-chunk shift that drifted would show up as a gap or overlap at a day boundary."""
-        result = self._chunked(_synthetic_raw(), source_clock_offset_s=_TOGGLE_OFFSET_S)
+        result = self._chunked(_synthetic_raw(), source_clock_offset_s=offset_s)
 
         deltas = result.index.to_series().diff().dropna().unique()
         assert list(deltas) == [pd.Timedelta(seconds=60)]
@@ -1381,7 +1387,7 @@ class TestSiemensWrapperOverGenericLayer:
         monkeypatch.setattr(flh, "_max_source_mtime", lambda **_: None)
 
     @pytest.mark.usefixtures("stub_chunk")
-    def test_end_to_end_cache_key_is_unchanged(self, tmp_path: Path) -> None:
+    def test_end_to_end_cache_key_is_pinned(self, tmp_path: Path) -> None:
         # The strongest form of the pin below: not just that the hash function is stable, but that
         # the wrapper still feeds it the same parameter set. A change orphans every cached day.
         get_fl_resampled_one_device(
@@ -1393,7 +1399,7 @@ class TestSiemensWrapperOverGenericLayer:
             cache_dir=tmp_path,
         )
         cached = list((tmp_path / "fl_resampled" / "HOT" / "2304512").glob("*.parquet"))
-        assert [x.name for x in cached] == [f"20240101_{TestCacheKeyStability.LEGACY_KEY}.parquet"]
+        assert [x.name for x in cached] == [f"20240101_{TestCacheKeyStability.AUTO_GRID_KEY}.parquet"]
 
     @pytest.mark.usefixtures("stub_chunk")
     def test_naive_chunks_are_localised_for_a_tz_aware_range(self, tmp_path: Path) -> None:
@@ -1426,11 +1432,11 @@ class TestSubsamplingGrid:
     """
 
     @pytest.mark.parametrize(("timebase_s", "expected"), [(1, 50), (60, 1000), (600, 1000)])
-    def test_none_keeps_the_historical_grid(self, timebase_s: int, expected: int) -> None:
-        # Pinned, because this is the default and every cached day in existence was built with it.
+    def test_auto_with_no_busy_tag_to_measure_follows_the_timebase(self, timebase_s: int, expected: int) -> None:
+        """Tags logged only on change carry no rate to follow, so the grid comes from the timebase."""
         assert (
             flh._resolve_subsampling_timebase_ms(  # noqa: SLF001
-                subsampling_timebase_ms=None, timebase_s=timebase_s, raw_df_dict={}, busy_tags=()
+                subsampling_timebase_ms="auto", timebase_s=timebase_s, raw_df_dict={}, busy_tags=()
             )
             == expected
         )
@@ -1555,14 +1561,20 @@ class TestSubsamplingGrid:
                 subsampling_timebase_ms=300, timebase_s=1, raw_df_dict={}, busy_tags=()
             )
 
-    def test_default_output_is_unchanged(self) -> None:
-        # The parameter must be inert until a caller opts in: None and the legacy value it stands
-        # for have to produce the same frame, or every existing HOT result moves.
+    def test_the_default_grid_follows_the_logging_rate(self) -> None:
         raw = {"ActPower_Value": _tag_at_interval("ActPower_Value", 100, periods=12_000, amplitude=50.0)}
         kwargs: dict[str, Any] = {"raw_df_dict": raw, "timebase_s": 60, "std_tags": ("ActPower_Value",)}
         pd.testing.assert_frame_equal(
-            resample_fastlog_tags(**kwargs), resample_fastlog_tags(**kwargs, subsampling_timebase_ms=1000)
+            resample_fastlog_tags(**kwargs), resample_fastlog_tags(**kwargs, subsampling_timebase_ms="auto")
         )
+
+    def test_none_is_refused(self) -> None:
+        with pytest.raises(TypeError, match="subsampling_timebase_ms"):
+            resample_fastlog_tags(
+                raw_df_dict={"ActPower_Value": _tag_at_interval("ActPower_Value", 100)},
+                timebase_s=60,
+                subsampling_timebase_ms=None,  # type: ignore[arg-type]
+            )
 
     def test_a_coarse_grid_clips_the_extremes_a_fine_one_reaches(self) -> None:
         """Why the rule matters, end to end -- and it is min/max, not std.
@@ -1584,8 +1596,18 @@ class TestSubsamplingGrid:
         assert (fine == 5000.0).all()  # every window contains an excursion, and the fine grid sees them all
         assert (coarse < fine).any()  # the coarse grid steps over some of them entirely
 
-    def test_a_non_default_grid_changes_the_cache_key(self) -> None:
-        assert flh._non_default_resample_kwargs({"subsampling_timebase_ms": None}) == {}  # noqa: SLF001
-        assert flh._non_default_resample_kwargs({"subsampling_timebase_ms": "auto"}) == {  # noqa: SLF001
-            "subsampling_timebase_ms": "auto"
-        }
+    def test_the_grid_is_always_part_of_the_cache_key(self, tmp_path: Path) -> None:
+        """An explicit "auto" shares the default's day files; an explicit grid gets its own."""
+        raw = _synthetic_raw()
+        for grid in (None, "auto", 1000):
+            extra = {} if grid is None else {"subsampling_timebase_ms": grid}
+            flh.get_resampled_chunked_cached(
+                load_raw=_slice_loader(raw),
+                start_dt=CHUNK_START,
+                end_dt_excl=CHUNK_START + pd.Timedelta(days=1),
+                timebase_s=60,
+                cache_key_extra={"source": "synthetic"},
+                cache_dir=tmp_path,
+                **(CHUNK_KW | extra),
+            )
+        assert len(list(tmp_path.glob("*.parquet"))) == 2

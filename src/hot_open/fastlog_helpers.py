@@ -53,6 +53,7 @@ _MAX_AUTO_SUBSAMPLING_MS = 1000
 _MIN_UPSAMPLING_FACTOR = 2
 _LOGGING_INTERVAL_QUANTILE = 0.1
 _MIN_INTERVAL_FRACTION_OF_MEDIAN = 0.1
+_DEFAULT_SUBSAMPLING = "auto"
 
 
 def load_hot_fl_data(  # noqa: PLR0913
@@ -266,6 +267,7 @@ def _get_resampled_one_chunk_cached(  # noqa: PLR0913
             "start_dt": start_dt,
             "end_dt_excl": end_dt_excl,
             "timebase_s": timebase_s,
+            "subsampling_timebase_ms": resample_kwargs.get("subsampling_timebase_ms", _DEFAULT_SUBSAMPLING),
             **_non_default_resample_kwargs(resample_kwargs),
         }
         cache_key = create_consistent_hash(**key_params)
@@ -718,25 +720,22 @@ def _fastest_logging_interval_ms(*, raw_df_dict: dict[str, pd.DataFrame], tags: 
 
 def _resolve_subsampling_timebase_ms(
     *,
-    subsampling_timebase_ms: int | str | None,
+    subsampling_timebase_ms: int | str,
     timebase_s: int,
     raw_df_dict: dict[str, pd.DataFrame],
     busy_tags: Sequence[str],
 ) -> int:
-    """Decide the sub-sampling grid: the legacy formula, an explicit value, or the measured rate.
+    """Decide the sub-sampling grid: the measured rate, or an explicit value.
 
-    ``None`` keeps ``min(1000, timebase_s * 1000 // 20)``, which knows the output timebase but not
-    the logging rate. ``"auto"`` measures the busy tags (only those) and takes the coarsest allowed
-    grid no slower than the quickest of them, capped at 1s and at half the output window. An
-    explicit value must divide the output window.
+    ``"auto"`` measures the busy tags (only those) and takes the coarsest allowed grid no slower
+    than the quickest of them, capped at 1s and at half the output window. With no busy tag to
+    measure it falls back to ``min(1000, timebase_s * 1000 // 20)``. An explicit value must divide
+    the output window.
     """
-    legacy = min(1000, timebase_s * 1000 // 20)
-    if subsampling_timebase_ms is None:
-        return legacy
     if subsampling_timebase_ms == "auto":
         fastest_ms = _fastest_logging_interval_ms(raw_df_dict=raw_df_dict, tags=busy_tags)
         if fastest_ms is None:
-            return legacy
+            return min(1000, timebase_s * 1000 // 20)
         ceiling = min(_MAX_AUTO_SUBSAMPLING_MS, timebase_s * 1000 // _MIN_UPSAMPLING_FACTOR)
         allowed = [x for x in _ALLOWED_SUBSAMPLING_MS if x <= min(fastest_ms, ceiling)]
         chosen = max(allowed) if allowed else min(_ALLOWED_SUBSAMPLING_MS)
@@ -744,7 +743,7 @@ def _resolve_subsampling_timebase_ms(
         logger.info(msg)
         return chosen
     if not isinstance(subsampling_timebase_ms, int) or isinstance(subsampling_timebase_ms, bool):
-        msg = f"subsampling_timebase_ms must be an int, 'auto' or None, got {subsampling_timebase_ms!r}"
+        msg = f"subsampling_timebase_ms must be an int or 'auto', got {subsampling_timebase_ms!r}"
         raise TypeError(msg)
     window_ms = timebase_s * 1000
     coarsest = window_ms // _MIN_UPSAMPLING_FACTOR
@@ -840,7 +839,7 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
     min_raw_data_count: float | None = None,
     busy_tag_ffill_limit_s: float | None = None,
     require_all_busy_tags: bool = False,
-    subsampling_timebase_ms: int | str | None = None,
+    subsampling_timebase_ms: int | str = _DEFAULT_SUBSAMPLING,
     source_clock_offset_s: float = 0.0,
 ) -> pd.DataFrame:
     """Resample all tags to the target timebase.
@@ -864,8 +863,9 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
     instead, with polarity following ``require_all_busy_tags``. Both blank every output column of
     a window below the threshold.
 
-    ``source_clock_offset_s`` is how many seconds ahead of true time the source's clock reads; it
-    is subtracted from every raw index so the output grid and labels are true time.
+    ``source_clock_offset_s`` is how many seconds ahead of true time the source's clock reads,
+    negative for one running behind; it is subtracted from every raw index so the output grid and
+    labels are true time.
     """
     if source_clock_offset_s:
         # An absent tag arrives as an empty frame with a RangeIndex, which cannot be shifted.

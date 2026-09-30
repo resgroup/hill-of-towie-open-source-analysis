@@ -7,6 +7,7 @@ from pandas.testing import assert_series_equal
 from hot_open.circular_math import (
     circ_mean_dataframe_columns,
     circ_mean_resample_degrees,
+    circ_std_resample_degrees,
     circdiff_degrees,
     circmedian_degrees,
 )
@@ -86,6 +87,25 @@ def test_circ_mean_resample_degrees_basic() -> None:
     # Mean of 350, 10, 0 wraps across zero — expected ~0 (i.e. 360)
     assert result["b"].iloc[0] % 360 == pytest.approx(0.0, abs=1e-6)
     assert result["b"].iloc[1] == pytest.approx(180.0)
+
+
+@pytest.mark.parametrize("offset", [0.0, 37.0, 180.0, 359.0])
+def test_circ_mean_and_std_resample_are_rotation_equivariant(offset: float) -> None:
+    """Rotating the inputs rotates the mean by the same amount and leaves the standard deviation unchanged."""
+    index = pd.date_range("2024-01-01", periods=6, freq="10min")
+    values = np.array([10.0, 25.0, 3.0, 355.0, 18.0, 340.0])
+    base = pd.DataFrame({"a": values}, index=index)
+    rotated = pd.DataFrame({"a": (values + offset) % 360.0}, index=index)
+    window = pd.Timedelta("30min")
+
+    mean_shift = circ_mean_resample_degrees(rotated, resample_timedelta=window) - circ_mean_resample_degrees(
+        base, resample_timedelta=window
+    )
+    assert ((mean_shift["a"] - offset + 180.0) % 360.0 - 180.0).abs().max() < 1e-9
+    assert_series_equal(
+        circ_std_resample_degrees(rotated, resample_timedelta=window)["a"],
+        circ_std_resample_degrees(base, resample_timedelta=window)["a"],
+    )
 
 
 def test_circ_mean_resample_degrees_requires_datetime_index() -> None:

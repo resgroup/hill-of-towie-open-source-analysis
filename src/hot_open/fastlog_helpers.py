@@ -1016,7 +1016,8 @@ def resample_fastlog_tags(  # noqa: C901, PLR0912, PLR0913, PLR0915
             if raw_tag_df is None or raw_tag_df.empty:
                 raw_counts[tag] = 0
             else:
-                counts = raw_tag_df.resample(f"{timebase_s}s").size()
+                # A NaN row is a read that failed, not a sample.
+                counts = raw_tag_df.notna().any(axis=1).resample(f"{timebase_s}s").sum()
                 raw_counts[tag] = counts.reindex(resampled_df.index, fill_value=0)
         below = raw_counts.lt(min_raw_data_count)
         low_raw_times = raw_counts.index[below.any(axis=1) if require_all_busy_tags else below.all(axis=1)]

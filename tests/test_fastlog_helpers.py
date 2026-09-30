@@ -715,6 +715,19 @@ class TestMinRawDataCount:
         )
         assert healthy["value"].iloc[:-1].notna().all()
 
+    def test_a_nan_row_is_not_a_sample(self) -> None:
+        """A NaN row is a read that failed, not a sample: 5 rows per window, 2 of them real, is starved."""
+        tag_df = _slow_scada_tag_df("busy_a", period_s=12, minutes=10)
+        tag_df.iloc[[i for i in range(len(tag_df)) if i % 5 in (1, 2, 3)], 0] = np.nan
+        starved = resample_fastlog_tags(
+            raw_df_dict={"busy_a": tag_df},
+            timebase_s=60,
+            busy_tags=self.BUSY,
+            busy_tag_ffill_limit_s=45,
+            min_raw_data_count=4,
+        )
+        assert starved["busy_a"].isna().all()
+
 
 class TestLowCoverageMaskingClearsEveryColumn:
     """A window masked for low coverage must not keep a standard deviation or a range.

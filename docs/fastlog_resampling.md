@@ -35,6 +35,12 @@ measured per chunk: the coarsest grid that still resolves them, capped at 1 s an
 output window. With no busy tag to measure it falls back to `min(1000, timebase_s * 1000 // 20)`.
 An explicit value must divide the output window; the grid is part of the cache key either way.
 
+A fine grid costs time: on one turbine-day resampled to 600 s, the auto grid (25 ms there) took
+about 16x as long as a 1 s grid. Pass `subsampling_timebase_ms=1000` for a coarse, fast grid when
+only means matter. On the validation day below, a 1 s grid moves the median `ActPower_Value` mean
+by under 0.05 kW, but it misses excursions shorter than a second, so extremes read inward: the
+median minimum ~4 kW too high and the median maximum ~8 kW too low.
+
 `source_clock_offset_s` corrects a source whose clock is known to be wrong: it is how many seconds
 the source's clock reads ahead of true time, negative for one running behind. The raw index is
 shifted before aggregating, so the output windows are labelled in true time.

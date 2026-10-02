@@ -34,7 +34,7 @@ jobs:
       # Fixture days fetched from Zenodo by tests/zenodo_fastlog.py land in hot_open's default data
       # directory, outside the workspace so pytest collection, ruff and mypy do not walk them.
       - name: Restore the Zenodo fixture cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/temp/hill-of-towie-open-source-analysis/data
           key: zenodo-hot-${{ env.HOT_V2_RECORD_ID }}-${{ env.ZENODO_CACHE_VERSION }}-${{ runner.os }}

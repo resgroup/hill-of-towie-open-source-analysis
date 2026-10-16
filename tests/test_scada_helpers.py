@@ -1,10 +1,58 @@
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
+import pytest
 from wind_up.constants import DataColumns
 
-from hot_open.scada_helpers import calc_shutdown_duration
+from hot_open.scada_helpers import calc_shutdown_duration, load_hot_10min_data
+from tests.synthetic_scada import SERIAL_OFFSET, field_value, write_year_zips
 
 TIMEBASE_S = 600
+
+
+class TestLoadHot10minDataSynthetic:
+    START = pd.Timestamp("2025-03-01", tz="UTC")
+    END_EXCL = pd.Timestamp("2025-03-01 01:00", tz="UTC")
+
+    def test_wide_frame_with_raw_field_names_and_serial_numbers(self, tmp_path: Path) -> None:
+        write_year_zips(tmp_path, start_dt=self.START, end_dt_excl=self.END_EXCL, wtg_numbers=[1, 2, 3])
+        df = load_hot_10min_data(
+            data_dir=tmp_path,
+            wtg_numbers=[1, 3],
+            start_dt=self.START,
+            end_dt_excl=self.END_EXCL,
+            use_turbine_names=False,
+        )
+        assert isinstance(df.index, pd.DatetimeIndex)
+        assert df.index.name == "TimeStamp_StartFormat"
+        assert str(df.index.tz) == "UTC"
+        assert len(df) == 6
+        assert df.columns.nlevels == 2
+        assert sorted(df.columns.get_level_values(0).unique()) == [1 + SERIAL_OFFSET, 3 + SERIAL_OFFSET]
+        assert "wtc_ActPower_mean" in df.columns.get_level_values(1)
+        assert df[(3 + SERIAL_OFFSET, "wtc_ActPower_mean")].iloc[0] == field_value(
+            field_name="wtc_ActPower_mean", wtg_number=3, start_ts=self.START
+        )
+
+    @pytest.mark.parametrize(
+        ("start_dt", "end_dt_excl", "match"),
+        [
+            (pd.Timestamp("2025-03-01"), pd.Timestamp("2025-03-02", tz="UTC"), "UTC"),
+            (pd.Timestamp("2025-03-02", tz="UTC"), pd.Timestamp("2025-03-01", tz="UTC"), "after"),
+        ],
+    )
+    def test_rejects_bad_window(
+        self, tmp_path: Path, start_dt: pd.Timestamp, end_dt_excl: pd.Timestamp, match: str
+    ) -> None:
+        with pytest.raises(ValueError, match=match):
+            load_hot_10min_data(data_dir=tmp_path, wtg_numbers=[1], start_dt=start_dt, end_dt_excl=end_dt_excl)
+
+    def test_rejects_unexpected_index_name(self, tmp_path: Path) -> None:
+        """A CSV whose first column is not TimeStamp would be misread as end-format times; it must fail loudly."""
+        write_year_zips(tmp_path, start_dt=self.START, end_dt_excl=self.END_EXCL, index_name="NotTheTimeStamp")
+        with pytest.raises(ValueError, match="unexpected index name"):
+            load_hot_10min_data(data_dir=tmp_path, wtg_numbers=[1], start_dt=self.START, end_dt_excl=self.END_EXCL)
 
 
 def _wind_up_df(power_by_turbine: dict[str, list[float]]) -> pd.DataFrame:

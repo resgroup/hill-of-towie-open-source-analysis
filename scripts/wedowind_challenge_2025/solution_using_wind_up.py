@@ -1,6 +1,9 @@
 """Make example submission file for the WeDoWind challenge using wind-up.
 
 Challenge URL: https://www.kaggle.com/competitions/hill-of-towie-wind-turbine-power-prediction
+
+The extra packages this script needs are not part of the locked environment; install them on top of it with:
+    uv pip install autogluon ephem kagglehub
 """
 
 import datetime as dt

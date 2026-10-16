@@ -1,27 +1,28 @@
 version: 2
 updates:
+  # One PR per month refreshing the whole uv.lock (direct and transitive, including majors).
+  # Security fixes arrive through this PR too; automated security-update PRs are disabled
+  # in the repo settings to keep the review load to a single PR.
   - package-ecosystem: "uv"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
+    cooldown:
+      default-days: 7
     allow:
-      # uv.lock pins the full transitive tree, but we only want PRs for
-      # packages we actually declare in pyproject.toml.
-      - dependency-type: "direct"
+      - dependency-type: "all"
     groups:
-      python-minor-and-patch:
+      python:
         patterns:
           - "*"
-        update-types:
-          - "minor"
-          - "patch"
-    # major bumps intentionally left ungrouped -> one PR each for review
+    open-pull-requests-limit: 1
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "quarterly"
     groups:
       github-actions:
         patterns:
           - "*"
+    open-pull-requests-limit: 1

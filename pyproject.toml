@@ -38,15 +38,6 @@ dev = [
     "polars>=1.41.2",
     "remotezip>=0.12.3",
 ]
-wedowind = [
-    "autogluon>=1.4.0",
-    "ephem>=4.2",
-    "jupyterlab>=4.5.10",
-    "jupytext>=1.17.0",
-    "kagglehub>=0.3.13",
-    "plotly>=6.8.0",
-    "xarray>=2025.4.0",
-]
 
 [build-system]
 requires = ["hatchling"]
@@ -107,14 +98,10 @@ exclude = ".venv|__ignore__|^scripts/"
 [[tool.mypy.overrides]]
 module = [
     "wind_up.*",
-    "plotly.*",
     "openmeteo_requests.*",
     "retry_requests.*",
     "requests_cache.*",
     "polars.*",
-    "ephem",
-    "kagglehub.*",
-    "autogluon.*",
     "pyarrow.*",
     "remotezip.*",
 ]

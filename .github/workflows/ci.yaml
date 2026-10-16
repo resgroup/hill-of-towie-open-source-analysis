@@ -14,8 +14,13 @@ env:
   ZENODO_CACHE_VERSION: v1
 
 jobs:
-  lint-and-test:
+  lint-and-test-matrix:
+    name: lint-and-test (${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.13"]  # minimum targeted and latest
 
     steps:
       - uses: actions/checkout@v7
@@ -25,7 +30,7 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
-          python-version: "3.10"  # minimum targeted
+          python-version: ${{ matrix.python-version }}
 
       - name: Install project
         run: |
@@ -48,3 +53,12 @@ jobs:
       - name: Test
         run: |
           uv run poe test
+
+  # Single stable check name for the branch ruleset, independent of the Python matrix.
+  lint-and-test:
+    if: always()
+    needs: lint-and-test-matrix
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all matrix jobs to pass
+        run: test "${{ needs.lint-and-test-matrix.result }}" = "success"

@@ -152,6 +152,19 @@ which used the Hill of Towie open dataset.
 `solution_using_wind_up.py` needs a few extra packages that are not in the locked environment;
 see its docstring.
 
+## Using `hot_open` in another project
+
+The helper package is published on [PyPI](https://pypi.org/project/hot-open/):
+
+```commandline
+uv add hot-open
+```
+
+Releases follow [semantic versioning](https://semver.org/); while the version is `0.x`, a minor
+version bump may contain breaking changes. Release notes are on the
+[GitHub releases page](https://github.com/resgroup/hill-of-towie-open-source-analysis/releases).
+The analysis scripts under `scripts/` are not part of the package.
+
 ## Python environment
 
 The environment can be created and managed using [uv](https://docs.astral.sh/uv/). To create the environment:

@@ -266,11 +266,22 @@ class TestLoadZxLidarFlData:
         assert len(cached) == 1
         pd.testing.assert_frame_equal(pd.read_parquet(cached[0]), df)
 
-    @pytest.mark.xfail(
-        reason="the cache is written under cache_dir/lidar_raw but looked up under cache_dir/load_zx_lidar_fl_data, "
-        "so it is never hit",
-        strict=True,
-    )
+    def test_cache_respects_remove_bad_values(self, lidar_dir: Path) -> None:
+        """A cached raw load must not be returned for a call asking for bad values to be removed."""
+        df_in = _lidar_frame(DAY, freq="1min", unit=ZX300_ID)
+        df_in.loc[0, "Horizontal Wind Speed (m/s) at 58m"] = 9999
+        _write_fl(lidar_dir, ZX300_ID, DAY, df_in)
+        kwargs = {
+            "data_dir": lidar_dir,
+            "lidar_unit_id": ZX300_ID,
+            "start_dt": DAY,
+            "end_dt_excl": DAY + pd.Timedelta(days=1),
+        }
+        raw = load_zx_lidar_fl_data(**kwargs)  # type: ignore[arg-type]
+        cleaned = load_zx_lidar_fl_data(**kwargs, remove_bad_values=True)  # type: ignore[arg-type]
+        assert raw["Horizontal Wind Speed (m/s) at 58m"].iloc[0] == 9999
+        assert np.isnan(cleaned["Horizontal Wind Speed (m/s) at 58m"].iloc[0])
+
     def test_second_call_is_served_from_cache(self, lidar_dir: Path) -> None:
         """Once loaded, the same request must not need the source files again."""
         _write_fl(lidar_dir, ZX300_ID, DAY)

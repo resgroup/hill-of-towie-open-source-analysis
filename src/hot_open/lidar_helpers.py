@@ -11,7 +11,7 @@ from pandas.api.types import is_datetime64_any_dtype
 from tqdm import tqdm
 from wind_up.reanalysis_data import MastOrLiDARDataset
 
-from hot_open.fastlog_helpers import _generate_dates_in_range
+from hot_open.fastlog_helpers import _generate_dates_in_range, create_consistent_hash
 from hot_open.parquet_io import write_parquet_atomic
 from hot_open.settings import get_cache_dir, get_data_dir
 from hot_open.sourcing_data import ensure_extracted
@@ -164,7 +164,7 @@ MIN_AIR_DENSITY_KGPM3 = 0.9
 MAX_AIR_DENSITY_KGPM3 = 1.4
 
 
-def load_zx_lidar_fl_data(  # noqa: C901, PLR0912, PLR0913, PLR0915
+def load_zx_lidar_fl_data(  # noqa: C901, PLR0912, PLR0913
     *,
     data_dir: Path,
     lidar_unit_id: str,
@@ -174,10 +174,20 @@ def load_zx_lidar_fl_data(  # noqa: C901, PLR0912, PLR0913, PLR0915
     add_air_density: bool = False,
 ) -> pd.DataFrame:
     """Return ZX LiDAR fastlog dataframe for any wind farm."""
-    cache_fname = f"{lidar_unit_id}_{start_dt.strftime('%Y%m%d%H%M%S')}_{end_dt_excl.strftime('%Y%m%d%H%M%S')}.parquet"
-    cache_dir = get_cache_dir()
-    if cache_dir is not None and (cache_dir / "load_zx_lidar_fl_data" / cache_fname).exists():
-        cache_path = cache_dir / "load_zx_lidar_fl_data" / cache_fname
+    cache_key = create_consistent_hash(
+        data_dir=data_dir,
+        lidar_unit_id=lidar_unit_id,
+        start_dt=start_dt,
+        end_dt_excl=end_dt_excl,
+        remove_bad_values=remove_bad_values,
+        add_air_density=add_air_density,
+    )
+    cache_path = (
+        get_cache_dir()
+        / "load_zx_lidar_fl_data"
+        / f"{lidar_unit_id}_{start_dt.strftime('%Y%m%d')}_{end_dt_excl.strftime('%Y%m%d')}_{cache_key}.parquet"
+    )
+    if cache_path.exists():
         logger.info("Reading: %s", cache_path)
         return pd.read_parquet(cache_path)
     ensure_extracted("lidar_data.zip", data_dir=get_data_dir())
@@ -248,14 +258,10 @@ def load_zx_lidar_fl_data(  # noqa: C901, PLR0912, PLR0913, PLR0915
     return_df = (
         return_df[(return_df.index >= pd.Timestamp(start_dt)) & (return_df.index < pd.Timestamp(end_dt_excl))]
     ).sort_index()
-    if cache_dir is not None:
-        (cache_dir / "lidar_raw").mkdir(exist_ok=True, parents=True)
-        raw_cache_path = cache_dir / "lidar_raw" / cache_fname
-        logger.info("Writing: %s", raw_cache_path)
-        write_parquet_atomic(return_df, raw_cache_path)
-        logger.info("Reading: %s", raw_cache_path)
-        return pd.read_parquet(raw_cache_path)
-    return return_df
+    logger.info("Writing: %s", cache_path)
+    write_parquet_atomic(return_df, cache_path)
+    logger.info("Reading: %s", cache_path)
+    return pd.read_parquet(cache_path)
 
 
 _MIN_FIT_POINTS = 2

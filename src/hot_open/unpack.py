@@ -20,6 +20,7 @@ DATASET_V2_END_EXCL = pd.Timestamp("2026-05-01", tz="UTC")  # open source datase
 
 
 def _cached(name: str, build: Callable[[], pd.DataFrame], **key: object) -> pd.DataFrame:
+    key = {k: v.resolve() if isinstance(v, Path) else v for k, v in key.items()}
     cache_path = get_cache_dir() / "unpack_scada_data" / f"{name}_{create_consistent_hash(**key)}.parquet"
     if not cache_path.is_file():
         write_parquet_atomic(build(), cache_path)

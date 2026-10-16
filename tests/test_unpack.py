@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -11,7 +12,6 @@ import hot_open.unpack
 from tests.synthetic_scada import field_value, write_shutdown_duration_zip, write_year_zips
 
 if TYPE_CHECKING:
-    from pathlib import Path
     from types import ModuleType
 
 # straddles a year boundary so two year zips are read and concatenated
@@ -159,3 +159,20 @@ class TestUnpackLocalMetaData:
         unpack.unpack_local_meta_data(data_dir=tmp_path)
         df = unpack.unpack_local_meta_data(data_dir=tmp_path, scada_index_name="dtTimeStamp")
         assert (df["TimeFormat"] == "End").all()
+
+    def test_cache_distinguishes_relative_data_dirs(
+        self, unpack: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The same relative data_dir used from two working directories must not share a cache entry."""
+        for name, lat_offset in [("a", 0.0), ("b", 1.0)]:
+            (tmp_path / name / "data").mkdir(parents=True)
+            _write_metadata_csv(tmp_path / name / "data")
+            csv_path = tmp_path / name / "data" / "Hill_of_Towie_turbine_metadata.csv"
+            meta = pd.read_csv(csv_path)
+            meta["Latitude"] += lat_offset
+            meta.to_csv(csv_path, index=False)
+        monkeypatch.chdir(tmp_path / "a")
+        df_a = unpack.unpack_local_meta_data(data_dir=Path("data"))
+        monkeypatch.chdir(tmp_path / "b")
+        df_b = unpack.unpack_local_meta_data(data_dir=Path("data"))
+        assert df_b["Latitude"].iloc[0] == pytest.approx(df_a["Latitude"].iloc[0] + 1.0)

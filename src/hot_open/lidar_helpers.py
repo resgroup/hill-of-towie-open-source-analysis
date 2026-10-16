@@ -175,7 +175,7 @@ def load_zx_lidar_fl_data(  # noqa: C901, PLR0912, PLR0913
 ) -> pd.DataFrame:
     """Return ZX LiDAR fastlog dataframe for any wind farm."""
     cache_key = create_consistent_hash(
-        data_dir=data_dir,
+        data_dir=data_dir.resolve(),
         lidar_unit_id=lidar_unit_id,
         start_dt=start_dt,
         end_dt_excl=end_dt_excl,

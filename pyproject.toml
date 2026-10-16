@@ -1,11 +1,11 @@
 [project]
 name = "hot_open"
-version = "0.2.0"
+version = "0.2.1"
 description = "Project for open analysis of the Hill of Towie SCADA open source dataset"
 authors = [
     { name = "Alex Clerc", email = "alex.clerc@res-group.com" }
 ]
-readme = "README.md"
+readme = "PYPI_README.md"
 license = "BSD-3-Clause"
 license-files = ["LICENSE.txt"]
 requires-python = ">=3.10"
@@ -64,7 +64,7 @@ packages = ["src/hot_open"]
 dev-mode-dirs = ["src", "."]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/hot_open", "docs", "README.md", "LICENSE.txt"]
+include = ["src/hot_open", "docs", "PYPI_README.md", "LICENSE.txt"]
 
 [tool.ruff]
 line-length = 120

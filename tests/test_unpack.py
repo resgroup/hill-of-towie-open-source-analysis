@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import importlib
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -12,8 +12,6 @@ import hot_open.unpack
 from tests.synthetic_scada import field_value, write_shutdown_duration_zip, write_year_zips
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
-    from pathlib import Path
     from types import ModuleType
 
 # straddles a year boundary so two year zips are read and concatenated
@@ -24,20 +22,13 @@ N_TURBINES = 21
 
 
 @pytest.fixture
-def unpack(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[ModuleType]:
-    """hot_open.unpack re-imported with its parquet caches under tmp_path and a short dataset window.
-
-    The cache paths are bound at import time, so a reload is the only way to keep these tests away
-    from the user's real cache.
-    """
+def unpack(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> ModuleType:
+    """hot_open.unpack with its parquet caches under tmp_path and a short dataset window."""
     monkeypatch.setenv("HOT_OPEN_CACHE_DIR", str(tmp_path / "cache"))
-    module = importlib.reload(hot_open.unpack)
-    monkeypatch.setattr(module, "DATASET_START", WINDOW_START)
-    monkeypatch.setattr(module, "DATASET_V1_END_EXCL", WINDOW_END_EXCL)
-    monkeypatch.setattr(module, "DATASET_V2_END_EXCL", WINDOW_END_EXCL)
-    yield module
-    monkeypatch.undo()
-    importlib.reload(hot_open.unpack)
+    monkeypatch.setattr(hot_open.unpack, "DATASET_START", WINDOW_START)
+    monkeypatch.setattr(hot_open.unpack, "DATASET_V1_END_EXCL", WINDOW_END_EXCL)
+    monkeypatch.setattr(hot_open.unpack, "DATASET_V2_END_EXCL", WINDOW_END_EXCL)
+    return hot_open.unpack
 
 
 @pytest.fixture
@@ -109,7 +100,7 @@ class TestUnpackLocalScadaDataV1:
     ) -> None:
         write_shutdown_duration_zip(data_dir, start_dt=WINDOW_START, end_dt_excl=WINDOW_END_EXCL)
         first = unpack.unpack_local_scada_data_v1(data_dir=data_dir)
-        assert (tmp_path / "cache" / "unpack_scada_data" / "v1_scada_df.parquet").is_file()
+        assert len(list((tmp_path / "cache" / "unpack_scada_data").glob("v1_scada_df_*.parquet"))) == 1
         for f in data_dir.glob("*.zip"):
             f.unlink()
         second = unpack.unpack_local_scada_data_v1(data_dir=data_dir)
@@ -162,14 +153,26 @@ class TestUnpackLocalMetaData:
         assert (df["TimeSpanMinutes"] == 10).all()
         assert (df["TimeFormat"] == expected_format).all()
 
-    @pytest.mark.xfail(
-        reason="the parquet cache path ignores the arguments, so a cached result for one scada_index_name "
-        "is returned for every other",
-        strict=True,
-    )
     def test_cache_respects_scada_index_name(self, unpack: ModuleType, tmp_path: Path) -> None:
         """A second call with a different scada_index_name must not get the first call's TimeFormat."""
         _write_metadata_csv(tmp_path)
         unpack.unpack_local_meta_data(data_dir=tmp_path)
         df = unpack.unpack_local_meta_data(data_dir=tmp_path, scada_index_name="dtTimeStamp")
         assert (df["TimeFormat"] == "End").all()
+
+    def test_cache_distinguishes_relative_data_dirs(
+        self, unpack: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The same relative data_dir used from two working directories must not share a cache entry."""
+        for name, lat_offset in [("a", 0.0), ("b", 1.0)]:
+            (tmp_path / name / "data").mkdir(parents=True)
+            _write_metadata_csv(tmp_path / name / "data")
+            csv_path = tmp_path / name / "data" / "Hill_of_Towie_turbine_metadata.csv"
+            meta = pd.read_csv(csv_path)
+            meta["Latitude"] += lat_offset
+            meta.to_csv(csv_path, index=False)
+        monkeypatch.chdir(tmp_path / "a")
+        df_a = unpack.unpack_local_meta_data(data_dir=Path("data"))
+        monkeypatch.chdir(tmp_path / "b")
+        df_b = unpack.unpack_local_meta_data(data_dir=Path("data"))
+        assert df_b["Latitude"].iloc[0] == pytest.approx(df_a["Latitude"].iloc[0] + 1.0)

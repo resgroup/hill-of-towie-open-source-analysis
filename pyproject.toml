@@ -1,12 +1,20 @@
 [project]
 name = "hot_open"
-dynamic = ["version"]
+version = "0.2.0"
 description = "Project for open analysis of the Hill of Towie SCADA open source dataset"
 authors = [
     { name = "Alex Clerc", email = "alex.clerc@res-group.com" }
 ]
 readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE.txt"]
 requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+]
 dependencies = [
     "requests>=2.32.3",
     "tqdm>=4.68.1",
@@ -39,6 +47,10 @@ dev = [
     "remotezip>=0.12.3",
 ]
 
+[project.urls]
+Homepage = "https://github.com/resgroup/hill-of-towie-open-source-analysis"
+Dataset = "https://zenodo.org/records/22662930"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -51,8 +63,8 @@ packages = ["src/hot_open"]
 # `hot_open` itself to stay importable in the dev install.
 dev-mode-dirs = ["src", "."]
 
-[tool.hatch.version]
-path = "src/hot_open/__init__.py"
+[tool.hatch.build.targets.sdist]
+include = ["src/hot_open", "docs", "README.md", "LICENSE.txt"]
 
 [tool.ruff]
 line-length = 120

@@ -655,6 +655,7 @@ wheels = [
 
 [[package]]
 name = "hot-open"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "numpy" },

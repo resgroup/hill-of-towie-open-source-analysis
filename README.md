@@ -179,13 +179,6 @@ To run formatting and linting:
 uv run poe all
 ```
 
-## Releasing
-
-1. Bump `version` in `pyproject.toml` in a PR and merge it to `main`.
-2. Create a GitHub release tagged `v<version>` (e.g. `v0.2.0`) and use "Generate release notes".
-3. Publishing the release runs `.github/workflows/pypi-publish.yaml`, which checks the tag matches
-   the version, builds the package and uploads it to PyPI.
-
 ## Configuration
 
 All filesystem paths used by the scripts and helpers are controlled by environment

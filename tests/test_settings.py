@@ -156,3 +156,59 @@ class TestFallbackSurvivesMissingMainFile:
             [sys.executable, "-c", code], cwd=unrelated, env=env, capture_output=True, text=True, check=True
         )
         assert result.stdout.strip() == str(tmp_path / "from_lib")
+
+
+class TestDirectoryGetters:
+    """Each getter honours its env var, falls back to a home-relative default, and creates the dir."""
+
+    @pytest.fixture
+    def home(self, isolated_env: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+        for var in ("HOT_OPEN_FILESTORE_DIR", "WINDUP_OUTPUT_DIR"):
+            monkeypatch.delenv(var, raising=False)
+        home = isolated_env / "home"
+        monkeypatch.setattr(settings.Path, "home", staticmethod(lambda: home))
+        unrelated = isolated_env / "unrelated"
+        unrelated.mkdir()
+        monkeypatch.chdir(unrelated)
+        if find_dotenv(usecwd=True):
+            pytest.skip("a .env exists above the temp dir, so defaults cannot be isolated here")
+        return home
+
+    def test_defaults_are_under_home(self, home: Path) -> None:
+        base = home / "temp" / settings.REPO_NAME
+        assert settings.get_data_dir() == base / "data"
+        assert settings.get_cache_dir() == base / "cache"
+        assert settings.get_out_dir(dir_name="x") == base / "output" / "x"
+        assert settings.get_filestore_dir() == base / "data" / "turbine_fastlog" / "Filestore"
+        assert settings.get_wind_up_output_dir() == base / "windup_output" / "hill-of-towie-open-source-analysis"
+        for p in (
+            base / "data",
+            base / "cache",
+            base / "output" / "x",
+            base / "data" / "turbine_fastlog" / "Filestore",
+        ):
+            assert p.is_dir()
+
+    @pytest.mark.usefixtures("home")
+    def test_env_vars_override_defaults(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.setenv("HOT_OPEN_OUTPUT_DIR", str(tmp_path / "out"))
+        monkeypatch.setenv("HOT_OPEN_FILESTORE_DIR", str(tmp_path / "fs"))
+        monkeypatch.setenv("WINDUP_OUTPUT_DIR", str(tmp_path / "wu"))
+        out = settings.get_out_dir(dir_name="a", subdir_name="b", subsubdir_name="c")
+        assert out == tmp_path / "out" / "a" / "b" / "c"
+        assert settings.get_filestore_dir() == tmp_path / "fs"
+        assert settings.get_wind_up_output_dir("my_analysis") == tmp_path / "wu" / "my_analysis"
+        for p in (out, tmp_path / "fs", tmp_path / "wu" / "my_analysis"):
+            assert p.is_dir()
+
+    def test_out_dir_skips_unset_subdir(self, home: Path) -> None:
+        out = settings.get_out_dir(dir_name="a", subsubdir_name="c")
+        assert out == home / "temp" / settings.REPO_NAME / "output" / "a" / "c"
+
+    def test_log_message_reports_the_path(self, home: Path, caplog: pytest.LogCaptureFixture) -> None:
+        with caplog.at_level("INFO", logger="hot_open.settings"):
+            data_dir = settings.get_data_dir(log_message=True)
+            cache_dir = settings.get_cache_dir(log_message=True)
+        assert f"Data directory is {data_dir}" in caplog.text
+        assert f"Cache directory is {cache_dir}" in caplog.text
+        assert home.is_dir()

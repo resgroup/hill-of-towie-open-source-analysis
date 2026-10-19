@@ -1,5 +1,12 @@
 # Hill of Towie - Open Source Dataset
 
+[![PyPI version](https://img.shields.io/pypi/v/hot-open.svg)](https://pypi.org/project/hot-open/)
+[![License](https://img.shields.io/pypi/l/hot-open.svg)](https://github.com/resgroup/hill-of-towie-open-source-analysis/blob/main/LICENSE.txt)
+[![Python versions](https://img.shields.io/pypi/pyversions/hot-open.svg)](https://pypi.org/project/hot-open/)
+[![Lint & Format: Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/charliermarsh/ruff/main/assets/badge/v1.json)](https://github.com/charliermarsh/ruff)
+[![Typing: mypy](https://img.shields.io/badge/typing-mypy-yellow.svg)](https://github.com/python/mypy)
+[![CI](https://github.com/resgroup/hill-of-towie-open-source-analysis/actions/workflows/ci.yaml/badge.svg)](https://github.com/resgroup/hill-of-towie-open-source-analysis/actions/workflows/ci.yaml)
+
 Analysis of the Hill of Towie wind farm open dataset: https://zenodo.org/records/22662930
 
 This repo contains analysis and helper functions to:

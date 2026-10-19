@@ -7,6 +7,9 @@ on:
   push:
     branches: [ main ]
 
+permissions:
+  contents: read
+
 env:
   # Keep in step with _HOT_V2_RECORD_ID in src/hot_open/sourcing_data.py.
   HOT_V2_RECORD_ID: "22662930"

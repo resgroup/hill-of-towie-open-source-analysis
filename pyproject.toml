@@ -1,6 +1,6 @@
 [project]
 name = "hot_open"
-version = "0.2.1"
+version = "0.2.2"
 description = "Project for open analysis of the Hill of Towie SCADA open source dataset"
 authors = [
     { name = "Alex Clerc", email = "alex.clerc@res-group.com" }

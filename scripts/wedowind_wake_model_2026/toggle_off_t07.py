@@ -4,8 +4,10 @@ The model is built from public information only: Zenodo turbine metadata, a gene
 (see ``make_turbine_yaml.py``) and FLORIS default wake parameters (``floris_inputs/hot_public.yaml``).
 
 Per minute, the free stream is ``k`` times T01's nacelle anemometer wind speed, T01's DY consensus
-wind direction and a TI from T01's 1 Hz anemometer. ``k`` is fitted so FLORIS reproduces T03 power,
-which is unwaked in the T03 -> T07 sector; T07 power is then an out-of-sample prediction.
+wind direction (gaps under 10 minutes interpolated) and a centred 10-minute TI from T01's 1 Hz
+anemometer. ``k`` is fitted so FLORIS has zero mean bias on T03 power, which is unwaked in the
+T03 -> T07 sector; T07 power is then an out-of-sample prediction.
+Everything uses the toggle-off minutes of the slide-12 window of the WindEurope Tech 2026 presentation.
 
 Run with ``uv sync --group wedowind`` first.
 """
@@ -21,7 +23,7 @@ import numpy.typing as npt
 import pandas as pd
 from floris import FlorisModel, TimeSeries
 from geographiclib.geodesic import Geodesic
-from scipy.optimize import minimize_scalar
+from scipy.optimize import brentq
 
 from hot_open.circular_math import circ_mean_resample_degrees
 from hot_open.fastlog_helpers import load_hot_fl_data
@@ -39,11 +41,9 @@ CALIBRATION_WTG = "T03"
 PREDICTION_WTG = "T07"
 WTGS = [FREE_STREAM_WTG, CALIBRATION_WTG, PREDICTION_WTG]
 
-LOAD_START = pd.Timestamp("2026-02-20", tz="UTC")
-LOAD_END_EXCL = pd.Timestamp("2026-02-23", tz="UTC")
 # slide 12 of the WindEurope Tech 2026 presentation
-SLIDE_WINDOW_START = pd.Timestamp("2026-02-20 00:00", tz="UTC")
-SLIDE_WINDOW_END_EXCL = pd.Timestamp("2026-02-20 04:20", tz="UTC")
+WINDOW_START = pd.Timestamp("2026-02-20 00:00", tz="UTC")
+WINDOW_END_EXCL = pd.Timestamp("2026-02-20 04:20", tz="UTC")
 
 POWER_COL = "ActPower_Value"
 WS_COL = "AcWindSp_AcWindSp"
@@ -57,6 +57,9 @@ RATED_POWER_KW = 2300.0
 SECONDS_PER_MINUTE = 60
 STEERING_SECTOR_DEG = (192.0, 224.0)
 TI_CLIP = (0.03, 0.25)
+TI_WINDOW = pd.Timedelta(minutes=10)
+TI_MIN_SAMPLE_FRACTION = 0.9
+MAX_WD_GAP = pd.Timedelta(minutes=10)
 WIND_SHEAR = 0.12
 K_BOUNDS = (0.7, 1.3)
 
@@ -119,23 +122,29 @@ def fit_ws_scale(
     measured_power: npt.ArrayLike,
     bounds: tuple[float, float] = K_BOUNDS,
 ) -> float:
-    """Return the wind speed scale ``k`` minimising the RMSE of ``modelled_power_fn(k)`` against ``measured_power``."""
-    measured = np.asarray(measured_power, dtype=float)
+    """Return the wind speed scale ``k`` at which ``modelled_power_fn(k)`` has the same mean as ``measured_power``.
 
-    def rmse(k: float) -> float:
-        return float(np.sqrt(np.mean((modelled_power_fn(k) - measured) ** 2)))
+    If there is no such ``k`` within ``bounds``, the bound with the smaller bias is returned with a warning.
+    """
+    measured_mean = float(np.mean(np.asarray(measured_power, dtype=float)))
 
-    result = minimize_scalar(rmse, bounds=bounds, method="bounded", options={"xatol": 1e-4})
-    k = float(result.x)
-    if min(abs(k - bounds[0]), abs(k - bounds[1])) < 1e-3 * (bounds[1] - bounds[0]):
-        logger.warning("fitted k=%.4f is on a search bound %s", k, bounds)
-    return k
+    def bias(k: float) -> float:
+        return float(np.mean(modelled_power_fn(k))) - measured_mean
+
+    bias_lo, bias_hi = bias(bounds[0]), bias(bounds[1])
+    if np.sign(bias_lo) == np.sign(bias_hi):
+        k = bounds[0] if abs(bias_lo) < abs(bias_hi) else bounds[1]
+        logger.warning("no zero-bias k within %s; using the bound k=%.4f", bounds, k)
+        return k
+    return float(brentq(bias, *bounds, xtol=1e-5))
 
 
-def check_data_present(fl_df: pd.DataFrame, *, wtgs: list[str]) -> None:
+def check_data_present(
+    fl_df: pd.DataFrame, *, wtgs: list[str], start_dt: pd.Timestamp, end_dt_excl: pd.Timestamp
+) -> None:
     present = set(fl_df.columns.get_level_values(0))
     for wtg in wtgs:
-        for day in pd.date_range(LOAD_START, LOAD_END_EXCL, freq="D", inclusive="left"):
+        for day in pd.date_range(start_dt.floor("D"), end_dt_excl, freq="D", inclusive="left"):
             day_power = (
                 fl_df.loc[(fl_df.index >= day) & (fl_df.index < day + pd.Timedelta(days=1)), (wtg, POWER_COL)]
                 if wtg in present
@@ -146,19 +155,50 @@ def check_data_present(fl_df: pd.DataFrame, *, wtgs: list[str]) -> None:
                 raise ValueError(msg)
 
 
+def fill_short_direction_gaps(wd: pd.Series, *, max_gap: pd.Timedelta = MAX_WD_GAP) -> pd.Series:
+    """Linearly interpolate interior NaN runs in a regular direction series (degrees) shorter than ``max_gap``.
+
+    Interpolation is on the unwrapped angle, so a gap across north takes the short way round.
+    """
+    valid = wd.notna()
+    unwrapped = pd.Series(np.nan, index=wd.index)
+    unwrapped[valid] = np.rad2deg(np.unwrap(np.deg2rad(wd[valid].to_numpy())))
+    filled = unwrapped.interpolate(method="time", limit_area="inside")
+
+    run_id = valid.cumsum()
+    run_length = (~valid).groupby(run_id).transform("sum")
+    step = wd.index.to_series().diff().median()
+    too_long = ~valid & (run_length * step >= max_gap)
+    filled[too_long] = np.nan
+    return filled % 360
+
+
+def rolling_turbulence_intensity(ws_1hz: pd.Series, *, at: pd.DatetimeIndex) -> pd.Series:
+    """Return TI at times ``at``: std / mean of the 1 Hz wind speed over a ``TI_WINDOW`` window centred on each time.
+
+    Windows with fewer than ``TI_MIN_SAMPLE_FRACTION`` of their samples give NaN.
+    """
+    min_periods = int(TI_MIN_SAMPLE_FRACTION * TI_WINDOW.total_seconds())
+    rolling = ws_1hz.rolling(TI_WINDOW, center=True, min_periods=min_periods)
+    ti = rolling.std() / rolling.mean()
+    return ti.reindex(at)
+
+
 def make_minute_df(fl_df: pd.DataFrame) -> pd.DataFrame:
     """Aggregate the 1 Hz fastlog to one row per minute with free-stream inputs and per-turbine power and flags."""
     one_min = pd.Timedelta(minutes=1)
     fs = fl_df[FREE_STREAM_WTG]
-    ws_resampler = fs[WS_COL].resample(one_min)
     minute_df = pd.DataFrame(
         {
-            "ws_raw": ws_resampler.mean(),
-            "ws_std": ws_resampler.std(),
-            "wd": circ_mean_resample_degrees(fs[[WD_COL]], resample_timedelta=one_min)[WD_COL],
+            "ws_raw": fs[WS_COL].resample(one_min).mean(),
+            "wd": fill_short_direction_gaps(
+                circ_mean_resample_degrees(fs[[WD_COL]], resample_timedelta=one_min)[WD_COL]
+            ),
         }
     )
-    minute_df["ti"] = (minute_df["ws_std"] / minute_df["ws_raw"]).clip(*TI_CLIP)
+    minute_midpoints = minute_df.index + one_min / 2
+    ti = rolling_turbulence_intensity(fs[WS_COL], at=minute_midpoints)
+    minute_df["ti"] = ti.clip(*TI_CLIP).to_numpy()
     for wtg in WTGS:
         d = fl_df[wtg]
         normal = (d[POWER_COL] > 0) & d[GEN_STATE_COL].eq(ON_GRID_GEN_STATE) & (d[ACT_LIMIT_COL] >= RATED_POWER_KW)
@@ -196,16 +236,18 @@ def error_metrics(*, measured: pd.Series, modelled: pd.Series) -> dict[str, floa
     return {"rmse_kw": float(np.sqrt((err**2).mean())), "bias_kw": float(err.mean()), "count": len(err)}
 
 
-def plot_time_series(*, minute_df: pd.DataFrame, modelled_df: pd.DataFrame, k: float, out_dir: Path) -> None:
-    in_window = (minute_df.index >= SLIDE_WINDOW_START) & (minute_df.index < SLIDE_WINDOW_END_EXCL)
-    window_df = minute_df.loc[in_window]
-    window_modelled = modelled_df.reindex(window_df.index)
-    toggle_on = window_df[f"{CALIBRATION_WTG}_toggle_mean"] > 0.5
+def plot_time_series(
+    *, minute_df: pd.DataFrame, modelled_df: pd.DataFrame, filtered_df: pd.DataFrame, k: float, out_dir: Path
+) -> None:
+    """Plot the FLORIS inputs, then measured vs modelled T03 and T07 power, with the toggle-off bias in the legend."""
+    modelled_df = modelled_df.reindex(minute_df.index)
+    toggle_on = minute_df[f"{CALIBRATION_WTG}_toggle_mean"] > 0.5
 
-    fig, axes = plt.subplots(len(WTGS), 1, figsize=(14, 10), sharex=True)
-    for ax, wtg in zip(axes, WTGS, strict=True):
+    fig, axes = plt.subplots(5, 1, figsize=(14, 15), sharex=True)
+    ax_ws, ax_ti, ax_wd, *power_axes = axes
+    for ax in axes:
         ax.fill_between(
-            window_df.index,
+            minute_df.index,
             0,
             1,
             where=toggle_on,
@@ -215,15 +257,37 @@ def plot_time_series(*, minute_df: pd.DataFrame, modelled_df: pd.DataFrame, k: f
             alpha=0.15,
             label="toggle on",
         )
-        ax.plot(window_df.index, window_df[f"{wtg}_power"], drawstyle="steps-post", label="measured")
-        ax.plot(window_modelled.index, window_modelled[wtg], drawstyle="steps-post", linestyle="--", label="FLORIS")
+
+    ax_ws.plot(minute_df.index, k * minute_df["ws_raw"], drawstyle="steps-post", label=f"{k:.3f} x {FREE_STREAM_WTG}")
+    ax_ws.set_ylabel("wind speed [m/s]")
+    ax_ti.plot(minute_df.index, minute_df["ti"], drawstyle="steps-post", label=f"{FREE_STREAM_WTG} anemometer")
+    ax_ti.set_ylabel("TI [-]")
+    ax_wd.plot(minute_df.index, minute_df["wd"], drawstyle="steps-post", label=f"{FREE_STREAM_WTG} DY consensus")
+    for i, sector_edge in enumerate(STEERING_SECTOR_DEG):
+        ax_wd.axhline(
+            sector_edge, color="black", linestyle=":", linewidth=0.8, label="filter sector" if i == 0 else None
+        )
+    ax_wd.set_ylabel("wind direction [deg]")
+
+    for ax, wtg in zip(power_axes, [CALIBRATION_WTG, PREDICTION_WTG], strict=True):
+        bias = round((modelled_df.loc[filtered_df.index, wtg] - filtered_df[f"{wtg}_power"]).mean())
+        ax.plot(minute_df.index, minute_df[f"{wtg}_power"], drawstyle="steps-post", label="measured")
+        ax.plot(
+            modelled_df.index,
+            modelled_df[wtg],
+            drawstyle="steps-post",
+            linestyle="--",
+            label=f"FLORIS (toggle-off bias {bias:+d} kW)",
+        )
         ax.set_ylabel(f"{wtg} power [kW]")
+
+    for ax in axes:
         ax.grid(visible=True, alpha=0.3)
         ax.legend(loc="upper left", bbox_to_anchor=(1, 1), fontsize="small")
     axes[-1].set_xlabel("timestamp (UTC)")
     fig.suptitle(
-        f"Measured vs FLORIS power, no yaw misalignment in the model, k={k:.3f}\n"
-        f"{SLIDE_WINDOW_START:%Y-%m-%d %H:%M} to {SLIDE_WINDOW_END_EXCL:%H:%M} UTC"
+        f"FLORIS inputs and power, no yaw misalignment in the model, k fitted on {len(filtered_df)} "
+        f"toggle-off {CALIBRATION_WTG} minutes\n{WINDOW_START:%Y-%m-%d %H:%M} to {WINDOW_END_EXCL:%H:%M} UTC"
     )
     plot_path = out_dir / "time_series_slide_window.png"
     logger.info("Writing: %s", plot_path)
@@ -248,15 +312,18 @@ def plot_scatter(*, measured: pd.Series, modelled: pd.Series, title: str, plot_p
 
 
 def main(out_dir: Path) -> None:
+    # padded so the TI windows and direction gap fill at the window edges see data either side
+    load_start, load_end_excl = WINDOW_START - TI_WINDOW, WINDOW_END_EXCL + TI_WINDOW
     fl_df = load_hot_fl_data(
         data_dir=get_filestore_dir(),
         wtg_numbers=[int(wtg[1:]) for wtg in WTGS],
-        start_dt=LOAD_START,
-        end_dt_excl=LOAD_END_EXCL,
+        start_dt=load_start,
+        end_dt_excl=load_end_excl,
         extra_tags=[TOGGLE_COL, WD_COL],
     )
-    check_data_present(fl_df, wtgs=WTGS)
+    check_data_present(fl_df, wtgs=WTGS, start_dt=load_start, end_dt_excl=load_end_excl)
     minute_df = make_minute_df(fl_df)
+    minute_df = minute_df.loc[(minute_df.index >= WINDOW_START) & (minute_df.index < WINDOW_END_EXCL)]
     filtered_df = filter_minutes(minute_df)
 
     fmodel, turbine_names = load_hot_floris_model(unpack_local_meta_data())
@@ -297,6 +364,7 @@ def main(out_dir: Path) -> None:
     plot_time_series(
         minute_df=minute_df,
         modelled_df=modelled_df_for(minute_df.loc[inputs_present], k),
+        filtered_df=filtered_df,
         k=k,
         out_dir=out_dir,
     )

@@ -151,13 +151,20 @@ the ten unchanged reference turbines, which is near 0% uplift as expected:
 
 ![combined uplift and 90% CI](https://github.com/user-attachments/assets/00b17f01-54ea-4532-ab1c-16921df0b70e)
 
-## Code for WeDoWind challenge
+## Code for WeDoWind challenges
 
 `scripts/wedowind_challenge_2025` contains code used for the
 [WeDoWind 2025 power prediction kaggle competition](https://www.kaggle.com/competitions/hill-of-towie-wind-turbine-power-prediction),
 which used the Hill of Towie open dataset.
 `solution_using_wind_up.py` needs a few extra packages that are not in the locked environment;
 see its docstring.
+
+`scripts/wedowind_wake_model_2026` is a FLORIS worked example for an upcoming WeDoWind wake modeling
+challenge, built from public information only. Its dependencies are in the `wedowind` group:
+
+```commandline
+uv sync --group wedowind
+```
 
 ## Using `hot_open` in another project
 

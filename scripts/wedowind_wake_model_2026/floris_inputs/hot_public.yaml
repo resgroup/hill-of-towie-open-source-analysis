@@ -1,0 +1,71 @@
+# Public FLORIS model of Hill of Towie. Wake model parameters are the FLORIS v4 defaults.
+# The farm layout below is a placeholder: the run scripts set it from the Zenodo turbine metadata.
+name: Hill of Towie public
+description: Hill of Towie, empirical Gauss with FLORIS default parameters and a generic SWT-2.3-82 turbine
+floris_version: v4
+
+logging:
+  console:
+    enable: true
+    level: WARNING
+  file:
+    enable: false
+    level: WARNING
+
+solver:
+  type: turbine_grid
+  turbine_grid_points: 3
+
+farm:
+  layout_x:
+  - 0.0
+  layout_y:
+  - 0.0
+  turbine_type:
+  - !include swt_2_3_82_generic.yaml
+
+flow_field:
+  air_density: 1.225
+  reference_wind_height: -1 # -1 means use the hub height
+  turbulence_intensities:
+  - 0.06
+  wind_directions:
+  - 270.0
+  wind_shear: 0.12
+  wind_speeds:
+  - 8.0
+  wind_veer: 0.0
+
+wake:
+  model_strings:
+    combination_model: sosfs
+    deflection_model: empirical_gauss
+    turbulence_model: wake_induced_mixing
+    velocity_model: empirical_gauss
+
+  enable_secondary_steering: false
+  enable_yaw_added_recovery: true
+  enable_transverse_velocities: false
+  enable_active_wake_mixing: false
+
+  wake_deflection_parameters:
+    empirical_gauss:
+      horizontal_deflection_gain_D: 3.0
+      vertical_deflection_gain_D: -1
+      deflection_rate: 22
+      mixing_gain_deflection: 0.0
+      yaw_added_mixing_gain: 0.0
+
+  wake_velocity_parameters:
+    empirical_gauss:
+      wake_expansion_rates: [0.023, 0.008]
+      breakpoints_D: [10]
+      sigma_0_D: 0.28
+      smoothing_length_D: 2.0
+      mixing_gain_velocity: 2.0
+      awc_wake_exp: 1.2
+      awc_wake_denominator: 400
+
+  wake_turbulence_parameters:
+    wake_induced_mixing:
+      atmospheric_ti_gain: 0.0

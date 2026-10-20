@@ -78,7 +78,7 @@ TOGGLE_COL = "computed_driver_post_processed_toggle_state"
 YAW_POS_COL = "computed_driver_pre_processed_yaw_direction_true_degrees"
 WD_COL = "computed_core_post_processed_consensus_wind_direction_true_degrees"
 
-# Coordinates from floris_config/hot_emgauss.yaml (0-indexed: T01=0, T03=2, T07=6)
+# Local x/y coordinates in metres (east = +x, north = +y) for T01, T03 and T07
 TURBINE_COORDS: dict[str, tuple[float, float]] = {
     "T01": (134.13, 328.33),
     "T03": (0.0, 646.29),

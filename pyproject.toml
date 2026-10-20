@@ -51,6 +51,10 @@ dev = [
     "polars>=1.41.2",
     "remotezip>=0.12.3",
 ]
+wedowind = [
+    "floris>=4.7",
+    "geographiclib>=2.1",
+]
 
 [project.urls]
 Homepage = "https://github.com/resgroup/hill-of-towie-open-source-analysis"
@@ -121,6 +125,8 @@ module = [
     "polars.*",
     "pyarrow.*",
     "remotezip.*",
+    "floris.*",
+    "geographiclib.*",
 ]
 ignore_missing_imports = true
 

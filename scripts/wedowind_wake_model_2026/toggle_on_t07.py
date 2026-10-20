@@ -30,6 +30,7 @@ from scripts.wedowind_wake_model_2026.hot_floris import (
     fit_toggle_off_k,
     load_hot_floris_model,
     load_minute_df,
+    plot_free_stream_inputs,
     plot_scatter,
     run_floris_minutes,
     shade_toggle_on,
@@ -50,14 +51,16 @@ def plot_time_series(
     k: float,
     out_dir: Path,
 ) -> None:
-    """Plot T03's misalignment, then measured and FLORIS (with and without T03 yaw) T03 and T07 power."""
+    """Plot the FLORIS inputs including T03's misalignment, then measured and FLORIS T03 and T07 power."""
     yawed_df = yawed_df.reindex(minute_df.index)
     unyawed_df = unyawed_df.reindex(minute_df.index)
 
-    fig, axes = plt.subplots(3, 1, figsize=(14, 10), sharex=True)
-    ax_yaw, *power_axes = axes
+    fig, axes = plt.subplots(6, 1, figsize=(14, 18), sharex=True)
+    ax_ws, ax_ti, ax_wd, ax_yaw, *power_axes = axes
     for ax in axes:
         shade_toggle_on(ax, minute_df=minute_df)
+
+    plot_free_stream_inputs(ax_ws=ax_ws, ax_ti=ax_ti, ax_wd=ax_wd, minute_df=minute_df, k=k)
 
     ax_yaw.plot(
         minute_df.index,

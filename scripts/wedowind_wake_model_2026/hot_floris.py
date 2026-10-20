@@ -356,6 +356,22 @@ def shade_toggle_on(ax: plt.Axes, *, minute_df: pd.DataFrame) -> None:
     )
 
 
+def plot_free_stream_inputs(
+    *, ax_ws: plt.Axes, ax_ti: plt.Axes, ax_wd: plt.Axes, minute_df: pd.DataFrame, k: float
+) -> None:
+    """Plot the FLORIS free-stream wind speed, TI and wind direction, with the filter sector on the direction."""
+    ax_ws.plot(minute_df.index, k * minute_df["ws_raw"], drawstyle="steps-post", label=f"{k:.3f} x {FREE_STREAM_WTG}")
+    ax_ws.set_ylabel("wind speed [m/s]")
+    ax_ti.plot(minute_df.index, minute_df["ti"], drawstyle="steps-post", label=f"{FREE_STREAM_WTG} anemometer")
+    ax_ti.set_ylabel("TI [-]")
+    ax_wd.plot(minute_df.index, minute_df["wd"], drawstyle="steps-post", label=f"{FREE_STREAM_WTG} DY consensus")
+    for i, sector_edge in enumerate(STEERING_SECTOR_DEG):
+        ax_wd.axhline(
+            sector_edge, color="black", linestyle=":", linewidth=0.8, label="filter sector" if i == 0 else None
+        )
+    ax_wd.set_ylabel("wind direction [deg]")
+
+
 def plot_scatter(*, measured: pd.Series, modelled: pd.Series, title: str, plot_path: Path) -> None:
     fig, ax = plt.subplots(figsize=(6, 6))
     ax.scatter(measured, modelled, s=8, alpha=0.5)

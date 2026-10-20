@@ -21,7 +21,6 @@ from scripts.wedowind_wake_model_2026.hot_floris import (
     FREE_STREAM_COLS,
     FREE_STREAM_WTG,
     PREDICTION_WTG,
-    STEERING_SECTOR_DEG,
     STEERING_WTG,
     WINDOW_END_EXCL,
     WINDOW_START,
@@ -30,6 +29,7 @@ from scripts.wedowind_wake_model_2026.hot_floris import (
     fit_toggle_off_k,
     load_hot_floris_model,
     load_minute_df,
+    plot_free_stream_inputs,
     plot_scatter,
     run_floris_minutes,
     shade_toggle_on,
@@ -50,16 +50,7 @@ def plot_time_series(
     for ax in axes:
         shade_toggle_on(ax, minute_df=minute_df)
 
-    ax_ws.plot(minute_df.index, k * minute_df["ws_raw"], drawstyle="steps-post", label=f"{k:.3f} x {FREE_STREAM_WTG}")
-    ax_ws.set_ylabel("wind speed [m/s]")
-    ax_ti.plot(minute_df.index, minute_df["ti"], drawstyle="steps-post", label=f"{FREE_STREAM_WTG} anemometer")
-    ax_ti.set_ylabel("TI [-]")
-    ax_wd.plot(minute_df.index, minute_df["wd"], drawstyle="steps-post", label=f"{FREE_STREAM_WTG} DY consensus")
-    for i, sector_edge in enumerate(STEERING_SECTOR_DEG):
-        ax_wd.axhline(
-            sector_edge, color="black", linestyle=":", linewidth=0.8, label="filter sector" if i == 0 else None
-        )
-    ax_wd.set_ylabel("wind direction [deg]")
+    plot_free_stream_inputs(ax_ws=ax_ws, ax_ti=ax_ti, ax_wd=ax_wd, minute_df=minute_df, k=k)
 
     for ax, wtg in zip(power_axes, [CALIBRATION_WTG, PREDICTION_WTG], strict=True):
         bias = round((modelled_df.loc[filtered_df.index, wtg] - filtered_df[f"{wtg}_power"]).mean())

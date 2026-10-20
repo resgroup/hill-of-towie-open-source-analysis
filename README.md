@@ -159,6 +159,15 @@ which used the Hill of Towie open dataset.
 `solution_using_wind_up.py` needs a few extra packages that are not in the locked environment;
 see its docstring.
 
+`scripts/wedowind_wake_model_2026` is a FLORIS worked example for an upcoming WeDoWind wake steering
+challenge, built from public information only. `toggle_off_t07.py` predicts T07 power on toggle-off
+(no steering) minutes from T01 free-stream inputs, with the wind speed scale calibrated to unwaked T03.
+Its dependencies are in the `wedowind` group:
+
+```commandline
+uv sync --group wedowind
+```
+
 ## Using `hot_open` in another project
 
 The helper package is published on [PyPI](https://pypi.org/project/hot-open/):

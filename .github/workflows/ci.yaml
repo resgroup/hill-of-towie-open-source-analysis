@@ -37,7 +37,7 @@ jobs:
 
       - name: Install project
         run: |
-          uv sync --frozen
+          uv sync --frozen --group wedowind
 
       # Fixture days fetched from Zenodo by tests/zenodo_fastlog.py land in hot_open's default data
       # directory, outside the workspace so pytest collection, ruff and mypy do not walk them.

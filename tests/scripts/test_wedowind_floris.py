@@ -251,7 +251,8 @@ def test_filter_minutes_toggle_on_needs_full_toggle_and_misalignment() -> None:
         return WINDOW_START + pd.Timedelta(minutes=minute, seconds=second)
 
     fl_df.loc[second_in(1), ("T07", TOGGLE_COL)] = 0.0  # one toggle-off second
-    fl_df.loc[second_in(2), ("T03", YAW_POS_COL)] = np.nan  # yaw position missing for a second
+    # a NaN left after the loader's forward fill: an explicit raw NaN or a logger outage
+    fl_df.loc[second_in(2), ("T03", YAW_POS_COL)] = np.nan
 
     kept = filter_minutes(_unpadded_minute_df(fl_df), toggle="on")
 

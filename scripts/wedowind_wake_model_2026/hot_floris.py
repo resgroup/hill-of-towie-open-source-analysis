@@ -267,6 +267,8 @@ def make_minute_df(fl_df: pd.DataFrame) -> pd.DataFrame:
 
     ``{wtg}_yaw_misalignment`` is the minute mean of the 1 Hz misalignment against the turbine's own consensus
     wind direction smoothed over a centred ``MISALIGNMENT_WD_WINDOW``, NaN unless every second is present.
+    The yaw, direction and toggle tags are logged on change and forward-filled by ``load_hot_fl_data`` up to
+    explicit NaNs and logger outages, so the per-second checks here catch those gaps, not unchanged values.
     """
     one_min = pd.Timedelta(minutes=1)
     fs = fl_df[FREE_STREAM_WTG]

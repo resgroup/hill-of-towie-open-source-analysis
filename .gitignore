@@ -170,3 +170,5 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 CLAUDE.md
+/docs/superpowers
+/docs/untracked

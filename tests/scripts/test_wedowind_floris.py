@@ -4,10 +4,12 @@ import pytest
 
 pytest.importorskip("floris")
 
+from floris import FlorisModel
 from geographiclib.geodesic import Geodesic
 
-from scripts.wedowind_wake_model_2026.toggle_off_t07 import (
+from scripts.wedowind_wake_model_2026.hot_floris import (
     ACT_LIMIT_COL,
+    FARM_YAML_PATH,
     GEN_STATE_COL,
     POWER_COL,
     TOGGLE_COL,
@@ -15,6 +17,7 @@ from scripts.wedowind_wake_model_2026.toggle_off_t07 import (
     WINDOW_START,
     WS_COL,
     WTGS,
+    YAW_POS_COL,
     check_data_present,
     fill_short_direction_gaps,
     filter_minutes,
@@ -22,8 +25,11 @@ from scripts.wedowind_wake_model_2026.toggle_off_t07 import (
     load_hot_floris_model,
     local_east_north,
     make_minute_df,
+    rolling_circular_mean_degrees,
     rolling_turbulence_intensity,
     run_floris,
+    yaw_angles_for,
+    yaw_misalignment,
 )
 
 # from the Zenodo turbine metadata
@@ -104,6 +110,7 @@ def _one_hz_fl_df(n_minutes: int) -> pd.DataFrame:
             ACT_LIMIT_COL: 2300.0,
             TOGGLE_COL: 0.0,
             WD_COL: 209.0,
+            YAW_POS_COL: 209.0,
         },
         index=index,
     )
@@ -132,7 +139,7 @@ def test_filter_minutes_applies_each_selection_criterion() -> None:
         in_minute = (fl_df.index >= second_in(minute, 0)) & (fl_df.index < second_in(minute + 1, 0))
         fl_df.loc[in_minute, ("T01", WD_COL)] = wd
 
-    kept = filter_minutes(_unpadded_minute_df(fl_df))
+    kept = filter_minutes(_unpadded_minute_df(fl_df), toggle="off")
 
     expected_minutes = [0, 6, 8]
     assert list(kept.index) == [second_in(m, 0) for m in expected_minutes]
@@ -145,7 +152,7 @@ def test_filter_minutes_raises_with_counts_when_nothing_survives() -> None:
     fl_df[("T03", TOGGLE_COL)] = 1.0
 
     with pytest.raises(ValueError, match="toggle off all minute': 3"):
-        filter_minutes(_unpadded_minute_df(fl_df))
+        filter_minutes(_unpadded_minute_df(fl_df), toggle="off")
 
 
 def test_check_data_present_names_turbine_and_day() -> None:
@@ -187,3 +194,79 @@ def test_rolling_turbulence_intensity_is_ten_minute_std_over_mean() -> None:
     window = ws[(ws.index > at[0] - pd.Timedelta(minutes=5)) & (ws.index <= at[0] + pd.Timedelta(minutes=5))]
     assert ti.iloc[0] == pytest.approx(window.std() / window.mean())
     assert ti.iloc[0] == pytest.approx(1.0 / 8.0, rel=0.01)
+
+
+def test_yaw_misalignment_wraps_across_north() -> None:
+    """Yaw position minus wind direction must take the short way round north, keeping its sign."""
+    misalignment = yaw_misalignment(yaw_pos=pd.Series([5.0, 355.0, 200.0]), wd=pd.Series([355.0, 5.0, 209.0]))
+
+    np.testing.assert_allclose(misalignment, [10.0, -10.0, -9.0])
+
+
+def test_yaw_angles_for_negates_misalignment_on_one_turbine_only() -> None:
+    """FLORIS yaw is positive counter-clockwise, so the clockwise-positive measured misalignment is negated."""
+    df = pd.DataFrame({"T03_yaw_misalignment": [-10.0, 5.0]})
+
+    yaw = yaw_angles_for(df=df, turbine_names=["T01", "T03", "T07"], wtg="T03")
+
+    np.testing.assert_array_equal(yaw, [[0.0, 10.0, 0.0], [0.0, -5.0, 0.0]])
+
+
+def test_yaw_position_left_of_wind_deflects_wake_to_the_right() -> None:
+    """With wind from 270 deg, a yaw position of 260 deg must push the wake south (-y), as on the real rotor.
+
+    Pins the sign chain from measured yaw position through ``yaw_angles_for`` to FLORIS's wake deflection.
+    The yawed upstream turbine must also lose power.
+    """
+    fmodel = FlorisModel(FARM_YAML_PATH)
+    fmodel.set(layout_x=[0.0, 400.0, 400.0], layout_y=[0.0, 40.0, -40.0])
+    turbine_names = ["up", "north", "south"]
+    df = pd.DataFrame(
+        {"up_yaw_misalignment": yaw_misalignment(yaw_pos=pd.Series([270.0, 260.0]), wd=pd.Series([270.0, 270.0]))}
+    )
+
+    power = run_floris(
+        fmodel,
+        turbine_names=turbine_names,
+        wind_speeds=[8.0, 8.0],
+        wind_directions=[270.0, 270.0],
+        turbulence_intensities=[0.08, 0.08],
+        yaw_angles=yaw_angles_for(df=df, turbine_names=turbine_names, wtg="up"),
+    )
+
+    unyawed, yawed = power.iloc[0], power.iloc[1]
+    assert yawed["north"] > unyawed["north"]
+    assert yawed["south"] < unyawed["south"]
+    assert yawed["up"] < unyawed["up"]
+
+
+def test_filter_minutes_toggle_on_needs_full_toggle_and_misalignment() -> None:
+    """Toggle-on minutes need the toggle on every second on every turbine and a complete T03 misalignment."""
+    fl_df = _one_hz_fl_df(n_minutes=4)
+    for wtg in WTGS:
+        fl_df[(wtg, TOGGLE_COL)] = 1.0
+    fl_df[("T03", YAW_POS_COL)] = 200.0
+
+    def second_in(minute: int, second: int = 30) -> pd.Timestamp:
+        return WINDOW_START + pd.Timedelta(minutes=minute, seconds=second)
+
+    fl_df.loc[second_in(1), ("T07", TOGGLE_COL)] = 0.0  # one toggle-off second
+    # a NaN left after the loader's forward fill: an explicit raw NaN or a logger outage
+    fl_df.loc[second_in(2), ("T03", YAW_POS_COL)] = np.nan
+
+    kept = filter_minutes(_unpadded_minute_df(fl_df), toggle="on")
+
+    assert list(kept.index) == [second_in(m, 0) for m in [0, 3]]
+    np.testing.assert_allclose(kept["T03_yaw_misalignment"], -9.0)
+
+
+def test_rolling_circular_mean_degrees_averages_across_north() -> None:
+    """Directions either side of north must average to north, not to 180 deg; part-empty edge windows give NaN."""
+    index = pd.date_range(WINDOW_START, periods=20 * 60, freq="1s")
+    wd = pd.Series(np.tile([350.0, 10.0], len(index) // 2), index=index)
+
+    smoothed = rolling_circular_mean_degrees(wd, window=pd.Timedelta(minutes=5))
+
+    middle = smoothed.iloc[5 * 60 : 15 * 60]
+    np.testing.assert_allclose((middle + 180) % 360 - 180, 0.0, atol=1e-6)
+    assert np.isnan(smoothed.iloc[0])  # half-empty window at the edge

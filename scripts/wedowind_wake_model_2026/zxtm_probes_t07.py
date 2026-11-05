@@ -1,7 +1,7 @@
 """FLORIS against the ZXTM LiDAR on T07: modelled and measured LOS speeds on toggle-off and toggle-on minutes.
 
 The model, free stream, ``k`` and T03 yaw are as in ``toggle_on_t07.py``; see ``hot_floris.py``. FLORIS is
-sampled on the ZXTM scan cone, which follows T07's measured yaw position, and projected onto the beams; the
+sampled at the ZXTM probes, which follow T07's measured yaw position, and projected onto the beams; the
 assumed ZXTM geometry is in ``zxtm_probes.py``. FLORIS also runs with zero yaw to show the modelled steering
 effect. Profiles and metrics only use probe-minutes with a measurement.
 
@@ -42,10 +42,10 @@ from scripts.wedowind_wake_model_2026.zxtm_probes import (
     HUB_HEIGHT_M,
     PROBE_RANGES_M,
     SIDES,
-    cone_points,
     left_minus_right,
     load_zxtm_minute_df,
     modelled_los_minutes,
+    probe_points,
 )
 
 logger = logging.getLogger(__name__)
@@ -55,7 +55,7 @@ MISALIGNMENT_COL = f"{STEERING_WTG}_yaw_misalignment"
 MEASURED = "measured"
 YAWED = f"FLORIS, {STEERING_WTG} measured yaw"
 UNYAWED = "FLORIS, zero yaw"
-SOURCE_STYLES = {MEASURED: "-o", YAWED: "--", UNYAWED: ":"}
+SOURCE_STYLES = {MEASURED: "-o", YAWED: "--s", UNYAWED: ":^"}
 SIDE_COLORS = {"Left": "tab:blue", "Right": "tab:orange"}
 SNAPSHOT_MARGIN_M = 250.0
 SNAPSHOT_RESOLUTION = 600
@@ -163,10 +163,9 @@ def plot_flow_snapshots(
         )
         visualize_cut_plane(plane, ax=ax, min_speed=norm.vmin, max_speed=norm.vmax, cmap=cmap)
         plot_turbine_rotors(fmodel, ax=ax, yaw_angles=yaw)
-        points = cone_points(
+        probes = probe_points(
             apex_x=float(fmodel.layout_x[lidar]), apex_y=float(fmodel.layout_y[lidar]), yaw_pos_deg=row[LIDAR_YAW_COL]
-        )
-        probes = points.loc[points["segment_height_m"] == HUB_HEIGHT_M].groupby(["range_m", "side"])[["x", "y"]].mean()
+        ).xs(HUB_HEIGHT_M, level="segment_height_m")
         values = [
             measured.loc[minute, (range_m, HUB_HEIGHT_M, side)] / np.cos(np.deg2rad(HALF_ANGLE_DEG))
             for range_m, side in probes.index

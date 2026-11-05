@@ -8,75 +8,103 @@ from floris import FlorisModel
 
 from scripts.wedowind_wake_model_2026.hot_floris import FARM_YAML_PATH, yaw_angles_for, yaw_misalignment
 from scripts.wedowind_wake_model_2026.zxtm_probes import (
+    CONE_CENTRE_HEIGHT_M,
     HALF_ANGLE_DEG,
     HUB_HEIGHT_M,
     PROBE_RANGES_M,
     RANGE_COL,
     SEGMENT_HEIGHTS_M,
     SIDES,
-    cone_points,
     left_minus_right,
     los_col,
     los_magnitude,
     modelled_los_minutes,
-    segment_means,
+    probe_points,
     zxtm_minute_means,
 )
 
 
-def _segments_at(points: pd.DataFrame, range_m: float) -> set[float]:
-    return set(points.loc[points["range_m"] == range_m, "segment_height_m"].dropna())
+def _heights_at(points: pd.DataFrame, range_m: float) -> set[float]:
+    return set(points.xs(range_m, level="range_m").index.get_level_values("segment_height_m"))
 
 
-def test_cone_reaches_segment_bands_as_in_the_measured_data() -> None:
-    """26.2 m only appears once the cone dips below 34.4 m; 75.4 m appears at 48 m because it is a band."""
-    points = cone_points(apex_x=0.0, apex_y=0.0, yaw_pos_deg=0.0)
+def test_probes_exist_where_the_measured_data_has_values() -> None:
+    """A circle centred 3.2 m above the hub just misses 42.6 m at 64 m range and 26.2 m at 126 m, as the data does.
 
-    assert 26.2 not in _segments_at(points, 85.0)
-    assert 26.2 in _segments_at(points, 208.0)
-    assert 75.4 in _segments_at(points, 48.0)
-    assert 91.8 not in _segments_at(points, 48.0)
+    The data also has 75.4 m at 48 m range, which this circle misses by 0.3 m; that probe is left out.
+    """
+    points = probe_points(apex_x=0.0, apex_y=0.0, yaw_pos_deg=0.0)
+
+    assert _heights_at(points, 48.0) == {59.0}
+    assert _heights_at(points, 64.0) == {59.0, 75.4}
+    assert _heights_at(points, 85.0) == {42.6, 59.0, 75.4}
+    assert _heights_at(points, 126.0) == {42.6, 59.0, 75.4, 91.8}
+    assert _heights_at(points, 208.0) == set(SEGMENT_HEIGHTS_M)
 
 
-def test_cone_right_half_is_to_the_right_looking_upwind() -> None:
-    """Facing north the right half is east; facing east it is south."""
-    north = cone_points(apex_x=0.0, apex_y=0.0, yaw_pos_deg=0.0)
-    east = cone_points(apex_x=0.0, apex_y=0.0, yaw_pos_deg=90.0)
+def test_one_probe_per_segment_and_side() -> None:
+    """The probe table is keyed like the measured minute table, with both sides at every reached segment."""
+    points = probe_points(apex_x=0.0, apex_y=0.0, yaw_pos_deg=0.0)
 
-    assert (north.loc[north["side"] == "Right", "x"] > 0).all()
-    assert (north.loc[north["side"] == "Left", "x"] < 0).all()
+    assert points.index.names == ["range_m", "segment_height_m", "side"]
+    assert not points.index.duplicated().any()
+    assert set(points.index.get_level_values("side")) == set(SIDES)
+    assert (points.xs("Left", level="side").index == points.xs("Right", level="side").index).all()
+
+
+def test_probe_sits_where_the_scan_circle_crosses_its_height() -> None:
+    """Facing north, a probe at height h is sqrt(r^2 - (h - centre)^2) east or west of the axis, r = R tan 15."""
+    points = probe_points(apex_x=0.0, apex_y=0.0, yaw_pos_deg=0.0)
+    radius = 208.0 * np.tan(np.deg2rad(HALF_ANGLE_DEG))
+
+    for height in SEGMENT_HEIGHTS_M:
+        lateral = np.sqrt(radius**2 - (height - CONE_CENTRE_HEIGHT_M) ** 2)
+        assert points.loc[(208.0, height, "Right"), "x"] == pytest.approx(lateral)
+        assert points.loc[(208.0, height, "Left"), "x"] == pytest.approx(-lateral)
+        assert points.loc[(208.0, height, "Right"), "y"] == pytest.approx(208.0)
+        assert points.loc[(208.0, height, "Right"), "z"] == pytest.approx(height)
+
+
+def test_right_probe_is_to_the_right_looking_upwind() -> None:
+    """Facing north the right probe is east; facing east it is south."""
+    north = probe_points(apex_x=0.0, apex_y=0.0, yaw_pos_deg=0.0)
+    east = probe_points(apex_x=0.0, apex_y=0.0, yaw_pos_deg=90.0)
+
+    assert (north.xs("Right", level="side")["x"] > 0).all()
+    assert (north.xs("Left", level="side")["x"] < 0).all()
     assert (north["y"] > 0).all()
-    assert (east.loc[east["side"] == "Right", "y"] < 0).all()
+    assert (east.xs("Right", level="side")["y"] < 0).all()
     assert (east["x"] > 0).all()
 
 
-def test_cone_points_lie_on_a_15_degree_cone_from_the_hub() -> None:
-    """Every scan point is range / cos 15 deg from the hub and its beam unit vector points at it."""
-    points = cone_points(apex_x=10.0, apex_y=20.0, yaw_pos_deg=33.0)
-    offset = np.column_stack([points["x"] - 10.0, points["y"] - 20.0, points["z"] - HUB_HEIGHT_M])
+def test_probes_lie_on_a_15_degree_cone_from_the_lidar() -> None:
+    """Every probe is range / cos 15 deg from the cone centre and its beam unit vector points at it."""
+    points = probe_points(apex_x=10.0, apex_y=20.0, yaw_pos_deg=33.0)
+    offset = np.column_stack([points["x"] - 10.0, points["y"] - 20.0, points["z"] - CONE_CENTRE_HEIGHT_M])
     distance = np.linalg.norm(offset, axis=1)
     beam = points[["beam_x", "beam_y", "beam_z"]].to_numpy()
+    ranges = points.index.get_level_values("range_m").to_numpy()
 
-    np.testing.assert_allclose(distance, points["range_m"] / np.cos(np.deg2rad(HALF_ANGLE_DEG)))
+    np.testing.assert_allclose(distance, ranges / np.cos(np.deg2rad(HALF_ANGLE_DEG)))
     np.testing.assert_allclose(beam, offset / distance[:, None])
 
 
-def test_wind_along_the_axis_gives_u_cos_15_on_every_segment() -> None:
+def test_wind_along_the_axis_gives_u_cos_15_on_every_probe() -> None:
     """With the wind along the cone axis every beam sees the same u cos 15 deg, whatever its height."""
-    points = cone_points(apex_x=0.0, apex_y=0.0, yaw_pos_deg=200.0)
-    means = segment_means(points, los_magnitude(u=8.0, wd_deg=200.0, points=points))
+    points = probe_points(apex_x=0.0, apex_y=0.0, yaw_pos_deg=200.0)
 
-    np.testing.assert_allclose(means.to_numpy(), 8.0 * np.cos(np.deg2rad(HALF_ANGLE_DEG)))
-    assert set(means.index.get_level_values("side")) == {"Left", "Right"}
+    los = los_magnitude(u=8.0, wd_deg=200.0, points=points)
+
+    np.testing.assert_allclose(los, 8.0 * np.cos(np.deg2rad(HALF_ANGLE_DEG)))
 
 
 def test_wind_from_the_right_of_the_axis_reads_faster_on_the_right_beam() -> None:
     """Pins the LOS projection sign: wind from the right of the axis lines up better with the right beam."""
-    points = cone_points(apex_x=0.0, apex_y=0.0, yaw_pos_deg=0.0)
-    means = segment_means(points, los_magnitude(u=8.0, wd_deg=10.0, points=points))
+    points = probe_points(apex_x=0.0, apex_y=0.0, yaw_pos_deg=0.0)
+    los = pd.Series(los_magnitude(u=8.0, wd_deg=10.0, points=points), index=points.index)
 
     for range_m in (48.0, 85.0, 208.0):
-        assert means[(range_m, HUB_HEIGHT_M, "Right")] > means[(range_m, HUB_HEIGHT_M, "Left")]
+        assert los[(range_m, HUB_HEIGHT_M, "Right")] > los[(range_m, HUB_HEIGHT_M, "Left")]
 
 
 def _minute(*, wd: float, lidar_yaw_pos: float, up_yaw_pos: float = 270.0) -> pd.DataFrame:
@@ -93,7 +121,7 @@ def _minute(*, wd: float, lidar_yaw_pos: float, up_yaw_pos: float = 270.0) -> pd
 
 
 def test_unwaked_lidar_in_uniform_flow_reads_u_cos_15() -> None:
-    """FLORIS sampling on the cone gives u cos 15 deg on every segment in uniform, unwaked flow."""
+    """FLORIS sampling at the probes gives u cos 15 deg on every one in uniform, unwaked flow."""
     fmodel = FlorisModel(FARM_YAML_PATH)
     fmodel.set(layout_x=[0.0], layout_y=[0.0], wind_shear=0.0)
 
@@ -102,6 +130,7 @@ def test_unwaked_lidar_in_uniform_flow_reads_u_cos_15() -> None:
     )
 
     assert los.shape[0] == 1
+    assert los.columns.names == ["range_m", "segment_height_m", "side"]
     np.testing.assert_allclose(los.to_numpy(), 8.0 * np.cos(np.deg2rad(HALF_ANGLE_DEG)), rtol=1e-6)
 
 

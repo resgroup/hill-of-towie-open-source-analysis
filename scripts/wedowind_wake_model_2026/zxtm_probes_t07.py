@@ -2,7 +2,7 @@
 
 The model, free stream, ``k`` and T03 yaw are as in ``toggle_on_t07.py``; see ``hot_floris.py``. FLORIS is
 sampled at the ZXTM probes, which follow T07's measured yaw position, and projected onto the beams; the
-assumed ZXTM geometry is in ``zxtm_probes.py``. FLORIS also runs with zero yaw to show the modelled steering
+ZXTM geometry is in ``zxtm_probes.py``. FLORIS also runs with zero yaw to show the modelled steering
 effect. Profiles and metrics only use probe-minutes with a measurement.
 
 Run with ``uv sync --group wedowind`` first.
@@ -164,7 +164,7 @@ def plot_flow_snapshots(
         visualize_cut_plane(plane, ax=ax, min_speed=norm.vmin, max_speed=norm.vmax, cmap=cmap)
         plot_turbine_rotors(fmodel, ax=ax, yaw_angles=yaw)
         probes = probe_points(
-            apex_x=float(fmodel.layout_x[lidar]), apex_y=float(fmodel.layout_y[lidar]), yaw_pos_deg=row[LIDAR_YAW_COL]
+            rotor_x=float(fmodel.layout_x[lidar]), rotor_y=float(fmodel.layout_y[lidar]), yaw_pos_deg=row[LIDAR_YAW_COL]
         ).xs(HUB_HEIGHT_M, level="segment_height_m")
         values = [
             measured.loc[minute, (range_m, HUB_HEIGHT_M, side)] / np.cos(np.deg2rad(HALF_ANGLE_DEG))

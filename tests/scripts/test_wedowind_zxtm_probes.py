@@ -11,6 +11,7 @@ from scripts.wedowind_wake_model_2026.zxtm_probes import (
     CONE_CENTRE_HEIGHT_M,
     HALF_ANGLE_DEG,
     HUB_HEIGHT_M,
+    LIDAR_BEHIND_ROTOR_M,
     PROBE_RANGES_M,
     RANGE_COL,
     SEGMENT_HEIGHTS_M,
@@ -18,6 +19,7 @@ from scripts.wedowind_wake_model_2026.zxtm_probes import (
     left_minus_right,
     los_col,
     los_magnitude,
+    mean_arc_lateral,
     modelled_los_minutes,
     probe_points,
     zxtm_minute_means,
@@ -31,9 +33,10 @@ def _heights_at(points: pd.DataFrame, range_m: float) -> set[float]:
 def test_probes_exist_where_the_measured_data_has_values() -> None:
     """A circle centred 3.2 m above the hub just misses 42.6 m at 64 m range and 26.2 m at 126 m, as the data does.
 
-    The data also has 75.4 m at 48 m range, which this circle misses by 0.3 m; that probe is left out.
+    The data also has 75.4 m at 48 m range about half the time, when nacelle inclination under load lifts the
+    circle the 0.3 m it misses by; that probe is left out.
     """
-    points = probe_points(apex_x=0.0, apex_y=0.0, yaw_pos_deg=0.0)
+    points = probe_points(rotor_x=0.0, rotor_y=0.0, yaw_pos_deg=0.0)
 
     assert _heights_at(points, 48.0) == {59.0}
     assert _heights_at(points, 64.0) == {59.0, 75.4}
@@ -44,7 +47,7 @@ def test_probes_exist_where_the_measured_data_has_values() -> None:
 
 def test_one_probe_per_segment_and_side() -> None:
     """The probe table is keyed like the measured minute table, with both sides at every reached segment."""
-    points = probe_points(apex_x=0.0, apex_y=0.0, yaw_pos_deg=0.0)
+    points = probe_points(rotor_x=0.0, rotor_y=0.0, yaw_pos_deg=0.0)
 
     assert points.index.names == ["range_m", "segment_height_m", "side"]
     assert not points.index.duplicated().any()
@@ -52,23 +55,40 @@ def test_one_probe_per_segment_and_side() -> None:
     assert (points.xs("Left", level="side").index == points.xs("Right", level="side").index).all()
 
 
-def test_probe_sits_where_the_scan_circle_crosses_its_height() -> None:
-    """Facing north, a probe at height h is sqrt(r^2 - (h - centre)^2) east or west of the axis, r = R tan 15."""
-    points = probe_points(apex_x=0.0, apex_y=0.0, yaw_pos_deg=0.0)
+def test_mean_arc_lateral_matches_the_mean_over_scan_angle() -> None:
+    """The lateral position is the mean over evenly spaced scan angles of the arc within the segment."""
+    radius = 30.0
+    angles = np.linspace(-np.pi / 2, np.pi / 2, 200_001)
+    for up in (-29.0, -10.0, 0.0, 12.0, 25.0):
+        in_segment = np.abs(radius * np.sin(angles) - up) <= 8.2
+        expected = (radius * np.cos(angles[in_segment])).mean()
+        assert mean_arc_lateral(radius=radius, up=up) == pytest.approx(expected, abs=1e-3)
+
+
+def test_probe_sits_at_the_mean_lateral_position_of_its_segment() -> None:
+    """Facing north, a probe is R - 0.8 m north of the rotor and at its segment's mean arc offset east or west.
+
+    The middle segments sit close to where the circle crosses their height; the top and bottom ones further in.
+    """
+    points = probe_points(rotor_x=0.0, rotor_y=0.0, yaw_pos_deg=0.0)
     radius = 208.0 * np.tan(np.deg2rad(HALF_ANGLE_DEG))
 
     for height in SEGMENT_HEIGHTS_M:
-        lateral = np.sqrt(radius**2 - (height - CONE_CENTRE_HEIGHT_M) ** 2)
+        up = height - CONE_CENTRE_HEIGHT_M
+        lateral = mean_arc_lateral(radius=radius, up=up)
+        crossing = np.sqrt(radius**2 - up**2)
         assert points.loc[(208.0, height, "Right"), "x"] == pytest.approx(lateral)
         assert points.loc[(208.0, height, "Left"), "x"] == pytest.approx(-lateral)
-        assert points.loc[(208.0, height, "Right"), "y"] == pytest.approx(208.0)
+        assert points.loc[(208.0, height, "Right"), "y"] == pytest.approx(208.0 - LIDAR_BEHIND_ROTOR_M)
         assert points.loc[(208.0, height, "Right"), "z"] == pytest.approx(height)
+        assert crossing - 1.0 < lateral < crossing
+    assert points.loc[(126.0, 91.8, "Right"), "x"] < np.sqrt((126.0 * np.tan(np.deg2rad(15.0))) ** 2 - 29.6**2) - 2.0
 
 
 def test_right_probe_is_to_the_right_looking_upwind() -> None:
     """Facing north the right probe is east; facing east it is south."""
-    north = probe_points(apex_x=0.0, apex_y=0.0, yaw_pos_deg=0.0)
-    east = probe_points(apex_x=0.0, apex_y=0.0, yaw_pos_deg=90.0)
+    north = probe_points(rotor_x=0.0, rotor_y=0.0, yaw_pos_deg=0.0)
+    east = probe_points(rotor_x=0.0, rotor_y=0.0, yaw_pos_deg=90.0)
 
     assert (north.xs("Right", level="side")["x"] > 0).all()
     assert (north.xs("Left", level="side")["x"] < 0).all()
@@ -77,21 +97,24 @@ def test_right_probe_is_to_the_right_looking_upwind() -> None:
     assert (east["x"] > 0).all()
 
 
-def test_probes_lie_on_a_15_degree_cone_from_the_lidar() -> None:
-    """Every probe is range / cos 15 deg from the cone centre and its beam unit vector points at it."""
-    points = probe_points(apex_x=10.0, apex_y=20.0, yaw_pos_deg=33.0)
-    offset = np.column_stack([points["x"] - 10.0, points["y"] - 20.0, points["z"] - CONE_CENTRE_HEIGHT_M])
-    distance = np.linalg.norm(offset, axis=1)
+def test_beams_are_15_degrees_off_the_axis_from_the_optical_head() -> None:
+    """Every mean beam is cos 15 deg along the axis and points from the optical head towards its probe."""
+    yaw = np.deg2rad(33.0)
+    axis = np.array([np.sin(yaw), np.cos(yaw), 0.0])
+    head = np.array([10.0, 20.0, CONE_CENTRE_HEIGHT_M]) - LIDAR_BEHIND_ROTOR_M * axis
+    points = probe_points(rotor_x=10.0, rotor_y=20.0, yaw_pos_deg=33.0)
+    offset = points[["x", "y", "z"]].to_numpy() - head
     beam = points[["beam_x", "beam_y", "beam_z"]].to_numpy()
     ranges = points.index.get_level_values("range_m").to_numpy()
 
-    np.testing.assert_allclose(distance, ranges / np.cos(np.deg2rad(HALF_ANGLE_DEG)))
-    np.testing.assert_allclose(beam, offset / distance[:, None])
+    np.testing.assert_allclose(offset @ axis, ranges)
+    np.testing.assert_allclose(beam @ axis, np.cos(np.deg2rad(HALF_ANGLE_DEG)))
+    np.testing.assert_allclose(beam, offset / (ranges / np.cos(np.deg2rad(HALF_ANGLE_DEG)))[:, None])
 
 
 def test_wind_along_the_axis_gives_u_cos_15_on_every_probe() -> None:
     """With the wind along the cone axis every beam sees the same u cos 15 deg, whatever its height."""
-    points = probe_points(apex_x=0.0, apex_y=0.0, yaw_pos_deg=200.0)
+    points = probe_points(rotor_x=0.0, rotor_y=0.0, yaw_pos_deg=200.0)
 
     los = los_magnitude(u=8.0, wd_deg=200.0, points=points)
 
@@ -100,7 +123,7 @@ def test_wind_along_the_axis_gives_u_cos_15_on_every_probe() -> None:
 
 def test_wind_from_the_right_of_the_axis_reads_faster_on_the_right_beam() -> None:
     """Pins the LOS projection sign: wind from the right of the axis lines up better with the right beam."""
-    points = probe_points(apex_x=0.0, apex_y=0.0, yaw_pos_deg=0.0)
+    points = probe_points(rotor_x=0.0, rotor_y=0.0, yaw_pos_deg=0.0)
     los = pd.Series(los_magnitude(u=8.0, wd_deg=10.0, points=points), index=points.index)
 
     for range_m in (48.0, 85.0, 208.0):

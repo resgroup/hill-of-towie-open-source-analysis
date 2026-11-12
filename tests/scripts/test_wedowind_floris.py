@@ -270,3 +270,18 @@ def test_rolling_circular_mean_degrees_averages_across_north() -> None:
     middle = smoothed.iloc[5 * 60 : 15 * 60]
     np.testing.assert_allclose((middle + 180) % 360 - 180, 0.0, atol=1e-6)
     assert np.isnan(smoothed.iloc[0])  # half-empty window at the edge
+
+
+def test_make_minute_df_yaw_position_is_circular_mean_and_needs_every_second() -> None:
+    """The yaw position that orients the ZXTM cone must average across north and be NaN with a missing second."""
+    fl_df = _one_hz_fl_df(n_minutes=2)
+    first_minute = (fl_df.index >= WINDOW_START) & (fl_df.index < WINDOW_START + pd.Timedelta(minutes=1))
+    fl_df.loc[first_minute, ("T07", YAW_POS_COL)] = np.tile([350.0, 10.0], first_minute.sum() // 2)
+    fl_df.loc[WINDOW_START + pd.Timedelta(minutes=1, seconds=30), ("T07", YAW_POS_COL)] = np.nan
+
+    minute_df = _unpadded_minute_df(fl_df)
+
+    first = minute_df["T07_yaw_position"].iloc[0]
+    assert min(first, 360 - first) == pytest.approx(0, abs=1e-6)
+    assert np.isnan(minute_df["T07_yaw_position"].iloc[1])
+    assert minute_df["T03_yaw_position"].iloc[1] == pytest.approx(209.0)

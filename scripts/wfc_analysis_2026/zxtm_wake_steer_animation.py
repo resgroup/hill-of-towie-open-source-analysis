@@ -52,6 +52,7 @@ NACELLE_FRONT_M = 6.0  # nacelle extends this far forward of tower centre
 NACELLE_REAR_M = 4.0  # nacelle extends this far behind tower centre
 NACELLE_HALF_WIDTH_M = 2.0  # half the nacelle width
 HALF_ANGLE_DEG = 15.0  # ZXTM cone half-angle
+ZXTM_BEHIND_ROTOR_M = 0.8  # ZXTM "Range (m)" is measured along the axis from the lidar, this far behind the rotor
 
 # ---------------------------------------------------------------------------
 # ZXTM column definitions
@@ -479,8 +480,7 @@ def _run_animation(
 
     ref_df = wtg_data[REF_NAME]
     t07_x, t07_y = TURBINE_COORDS[DEP_NAME]
-    half_angle_rad = np.deg2rad(HALF_ANGLE_DEG)
-    dist_factor = 1.0 / np.cos(half_angle_rad)
+    tan_half_angle = np.tan(np.deg2rad(HALF_ANGLE_DEG))
     ws_fill = (ws_vmin + ws_vmax) / 2  # fallback colour value for missing data
 
     timestamps = ref_df.resample(f"{FRAME_INTERVAL_S}s").first().index
@@ -557,12 +557,12 @@ def _run_animation(
                 if idx < 0:
                     continue
                 row = df.iloc[idx]
-                dist = range_val * dist_factor
-                for col_side, angle_off in [("Right", +half_angle_rad), ("Left", -half_angle_rad)]:
+                ahead = NACELLE_FRONT_M - ZXTM_BEHIND_ROTOR_M + range_val
+                for col_side, sign in [("Right", +1.0), ("Left", -1.0)]:
                     ws = row.get(f"{col_side} LOS Speed (m/s) at Rotor Segment Height 59.0m", np.nan)
-                    angle = yaw_rad + angle_off
-                    xs.append(t07_x + dist * np.sin(angle))
-                    ys.append(t07_y + dist * np.cos(angle))
+                    x, y = _local_to_world(t07_x, t07_y, yaw_rad, sign * range_val * tan_half_angle, ahead)
+                    xs.append(x)
+                    ys.append(y)
                     if pd.isna(ws):
                         values.append(ws_fill)
                         sizes.append(30.0)

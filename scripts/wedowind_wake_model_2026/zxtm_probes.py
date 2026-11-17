@@ -11,14 +11,16 @@ ZXTM geometry and processing, as confirmed by ZX Lidars:
   taken as the rotor centre.
 - Rotor segment heights are heights above ground; the rotor spans five 16.4 m segments centred on 59 m. Each
   ``Left`` / ``Right`` LOS speed is interpolated to exactly its segment height from the scan samples in that
-  segment, on that side of the axis. Its lateral position is the mean of those samples' positions; samples are
-  taken as evenly spaced in scan angle, so this is the mean lateral offset of the arc of the scan circle
-  within the segment. That is close to where the circle crosses the segment height for the middle segments,
-  and further inboard for the top and bottom ones.
+  segment, on that side of the axis. Its lateral position is the mean of the positions of the samples used.
 - A segment whose height the circle does not reach has no data. Inclination of the nacelle under load moves
   the circle, so a segment near the edge of the circle sometimes has data; 75.4 m at 48 m range, which the
   level circle misses by 0.3 m, has data about half the time. Those segments are not modelled.
 - The ZXTM is a continuous-wave lidar, so it reports the magnitude of the LOS speed.
+
+Every scan sample is taken as valid and evenly spaced in scan angle, so each probe sits at the mean lateral
+offset of the arc of the scan circle within its segment. That is close to where the circle crosses the segment
+height for the middle segments, and further inboard for the top and bottom ones. This is an approximation:
+samples missing from a segment move the true mean position away from it.
 
 The modelled LOS speed is FLORIS's streamwise speed, along the free-stream wind direction, projected onto
 each probe's mean beam; FLORIS's cross-flow from wake deflection is ignored. T07 itself is at zero yaw in
@@ -59,7 +61,8 @@ def los_col(side: str, height_m: float) -> str:
 def mean_arc_lateral(*, radius: npt.ArrayLike, up: npt.ArrayLike) -> npt.NDArray[np.float64]:
     """Return the mean lateral offset of one side of the scan circle within the segment centred ``up`` above its centre.
 
-    The segment spans ``up`` +/- half ``SEGMENT_DEPTH_M``, clipped to the circle; the mean is over scan angle.
+    The segment spans ``up`` +/- half ``SEGMENT_DEPTH_M``, clipped to the circle; the mean is over scan angle,
+    so it is the mean sample position only when every sample in the segment is valid.
     """
     r = np.asarray(radius, dtype=float)
     lo = np.clip(np.asarray(up, dtype=float) - SEGMENT_DEPTH_M / 2, -r, r)

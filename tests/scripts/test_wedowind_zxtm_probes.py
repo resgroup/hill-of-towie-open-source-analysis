@@ -56,7 +56,11 @@ def test_one_probe_per_segment_and_side() -> None:
 
 
 def test_mean_arc_lateral_matches_the_mean_over_scan_angle() -> None:
-    """The lateral position is the mean over evenly spaced scan angles of the arc within the segment."""
+    """The modelled lateral position is the mean over evenly spaced scan angles of the arc within the segment.
+
+    This matches the ZXTM's mean sample position only if every sample in the segment is valid; the model takes
+    that as an approximation.
+    """
     radius = 30.0
     angles = np.linspace(-np.pi / 2, np.pi / 2, 200_001)
     for up in (-29.0, -10.0, 0.0, 12.0, 25.0):

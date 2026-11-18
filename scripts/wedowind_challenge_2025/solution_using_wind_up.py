@@ -27,10 +27,10 @@ from wind_up.models import PlotConfig, WindUpConfig
 from wind_up.northing import check_wtg_northing
 from wind_up.plots.data_coverage_plots import plot_detrend_data_cov
 from wind_up.plots.detrend_plots import plot_apply_wsratio_v_wd_scen
-from wind_up.reanalysis_data import ReanalysisDataset
 from wind_up.waking_state import add_waking_scen, get_distance_and_bearing
 from wind_up.windspeed_drift import check_windspeed_drift
 
+from hot_open.era5_helpers import get_hot_reanalysis_datasets
 from hot_open.settings import get_wind_up_output_dir
 from hot_open.unpack import unpack_local_meta_data, unpack_local_scada_data_v1
 from scripts.logger import setup_logger
@@ -54,13 +54,9 @@ def wind_up_features_for_kaggle(
     setup_logger(analysis_output_dir / "analysis.log")
     logger = logging.getLogger(__name__)
 
-    uplift_analysis_dir = Path(__file__).parents[2] / "uplift_analysis"
+    uplift_analysis_dir = Path(__file__).parents[1] / "uplift_analysis_2025"
     logger.info("Loading reference reanalysis data")
-    reanalysis_file_path = uplift_analysis_dir / "reanalysis_data/ERA5T_57.50N_-3.25E_100m_1hr_20241231.parquet"
-    reanalysis_dataset = ReanalysisDataset(
-        id="ERA5T_57.50N_-3.25E_100m_1hr",
-        data=pd.read_parquet(reanalysis_file_path),
-    )
+    reanalysis_datasets = get_hot_reanalysis_datasets()
 
     logger.info("Defining Assessment Configuration")
     cfg = WindUpConfig.from_yaml(uplift_analysis_dir / "wind_up_config/HoT_wedowind_T1.yaml")
@@ -74,7 +70,7 @@ def wind_up_features_for_kaggle(
         plot_cfg=plot_cfg,
         scada_df=scada_df,
         metadata_df=metadata_df,
-        reanalysis_datasets=[reanalysis_dataset],
+        reanalysis_datasets=reanalysis_datasets,
         cache_dir=ANALYSIS_CACHE_DIR / cfg.assessment_name,
     )
     wf_df = assessment_inputs.wf_df

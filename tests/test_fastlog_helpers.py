@@ -16,6 +16,7 @@ from hot_open.fastlog_helpers import (
     _get_raw_df_dict,
     _get_tag_list_from_park_id,
     get_fl_resampled_one_device,
+    load_hot_fl_data,
     resample_fastlog_tags,
     upsample_and_ffill_stopping_at_nans,
 )
@@ -167,6 +168,15 @@ class TestCacheSourceFreshness:
         _call(filestore, cache)  # day-1 (ffill context) backfilled -> recompute
         assert sum(spy_make) == 2
 
+    def test_another_filestore_does_not_reuse_the_cache(self, tmp_path: Path, spy_make: list[int]) -> None:
+        """A second filestore with older files must be read, not served the first filestore's cached day."""
+        first, second, cache = tmp_path / "fs1", tmp_path / "fs2", tmp_path / "cache"
+        _write_source_file(filestore=first, date_str="2024-01-01", mtime=1000.0)
+        _write_source_file(filestore=second, date_str="2024-01-01", mtime=1000.0)
+        _call(first, cache)
+        _call(second, cache)
+        assert sum(spy_make) == 2
+
 
 def _latched_tag_df(times_values: list[tuple[str, bool]]) -> pd.DataFrame:
     """Build a single-column latched (boolean, logged-only-on-change) tag DataFrame."""
@@ -254,6 +264,34 @@ class TestResampleRealHotSample:
     def test_matches_committed_characterization(self) -> None:
         expected = pd.read_parquet(TEST_DATA_DIR / "fl_sample_resampled_expected.parquet")
         pd.testing.assert_frame_equal(self._resampled(), expected, check_exact=False, check_freq=False)
+
+
+class TestLoadHotFlDataMissingTurbines:
+    """``load_hot_fl_data`` on turbines with no files in the range."""
+
+    @pytest.fixture(autouse=True)
+    def _sample_filestore(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("HOT_OPEN_FILESTORE_DIR", str(FL_SAMPLE_DIR))
+        monkeypatch.setenv("HOT_OPEN_CACHE_DIR", str(tmp_path))
+
+    def _load(self, wtg_numbers: list[int]) -> pd.DataFrame:
+        return load_hot_fl_data(
+            data_dir=FL_SAMPLE_DIR,
+            wtg_numbers=wtg_numbers,
+            start_dt=pd.Timestamp("2026-01-02 08:06", tz="UTC"),
+            end_dt_excl=pd.Timestamp("2026-01-02 08:08", tz="UTC"),
+        )
+
+    def test_a_turbine_without_data_is_left_out(self) -> None:
+        """The sample has T01 only; T07 has no files there, which used to raise a TypeError on joining the turbines."""
+        fl_df = self._load([1, 7])
+
+        assert set(fl_df.columns.get_level_values(0)) == {"T01"}
+        assert fl_df[("T01", "ActPower_Value")].notna().any()
+
+    def test_no_turbine_with_data_raises_a_clear_error(self) -> None:
+        with pytest.raises(ValueError, match=r"no fastlog data for \['T07'\]"):
+            self._load([7])
 
 
 class TestUpsampleUnchangedExceptTrailingPoint:
@@ -857,9 +895,10 @@ class TestCacheKeyStability:
     # Measured on the commit before std_tags/min_raw_data_count were added. A change here means
     # every existing user's cache silently stops being found.
     LEGACY_KEY = "IZfqhKlUtfd8GBnRSyEDIWIdDgeRGuVH"
-    # The same day once the grid follows the logging rate. Its output differs from LEGACY_KEY's, so
-    # the grid is always keyed and days cached on the old grid are not reused.
-    AUTO_GRID_KEY = "ZXgLojnZogJW3KNnZxH888SYLPkAFCne"
+    # The same day once the grid follows the logging rate and the filestore is keyed, read from a
+    # filestore at ``pinned_filestore``. The grid and the filestore change the output, so both are
+    # always keyed and days cached before either was are not reused.
+    AUTO_GRID_KEY = "oihoI-WGn_Slw2bnBnoK_SlRFietMT75"
 
     def test_legacy_default_key_is_unchanged(self) -> None:
         assert flh.create_consistent_hash(**self.LEGACY_PARAMS) == self.LEGACY_KEY
@@ -1397,6 +1436,8 @@ class TestSiemensWrapperOverGenericLayer:
             end_dt_excl=pd.Timestamp("2024-01-02", tz="UTC"),
             timebase_s=1,
             cache_dir=tmp_path,
+            # relative, so the key is the same on every machine and OS
+            filestore_dir=Path("pinned_filestore"),
         )
         cached = list((tmp_path / "fl_resampled" / "HOT" / "2304512").glob("*.parquet"))
         assert [x.name for x in cached] == [f"20240101_{TestCacheKeyStability.AUTO_GRID_KEY}.parquet"]

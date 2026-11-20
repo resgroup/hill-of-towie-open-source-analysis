@@ -95,10 +95,16 @@ def load_hot_fl_data(  # noqa: PLR0913
         cache_dir=get_cache_dir(),
         filestore_dir=data_dir,
     )
+    if fl_df.empty:
+        msg = (
+            f"no fastlog data for {[f'T{x:02d}' for x in wtg_numbers]} "
+            f"from {start_dt} to {end_dt_excl} in {data_dir / 'FL' / park_id}"
+        )
+        raise ValueError(msg)
     if use_turbine_names:
         cols = fl_df.columns
         fl_df.columns = cols.set_levels(  # type:ignore[attr-defined]
-            [{x: f"T{int(x) - 2304509:02d}" for x in cols.get_level_values(0).unique()}[x] for x in cols.levels[0]],  # type:ignore[attr-defined]
+            [f"T{int(x) - 2304509:02d}" for x in cols.levels[0]],  # type:ignore[attr-defined]
             level=0,
         )
     return fl_df
@@ -156,7 +162,10 @@ def get_fl_resampled(  # noqa: PLR0913
         if not device_id_df.index.is_monotonic_increasing:
             msg = f"Resampled data index for {device_id} is not monotonic increasing."
             raise ValueError(msg)
-        device_id_dfs[device_id] = device_id_df
+        if not device_id_df.empty:
+            device_id_dfs[device_id] = device_id_df
+    if not device_id_dfs:
+        return pd.DataFrame()
     # Remove freq metadata which can confuse concat
     device_id_dfs_no_freq = {k: df.set_index(pd.DatetimeIndex(df.index, freq=None)) for k, df in device_id_dfs.items()}  # type: ignore[arg-type]
     resampled_df = pd.concat(device_id_dfs_no_freq, axis=1, names=["device_id", "tag"])
@@ -467,6 +476,7 @@ def get_fl_resampled_one_device(  # noqa: PLR0913
     Extra keyword arguments are forwarded to :func:`resample_fastlog_tags` and join the per-day
     cache key when they differ from its defaults.
     """
+    filestore_dir = get_filestore_dir() if filestore_dir is None else filestore_dir
     result_df = get_resampled_chunked_cached(
         load_raw=siemens_raw_loader(
             park_id=park_id,
@@ -480,6 +490,7 @@ def get_fl_resampled_one_device(  # noqa: PLR0913
         timebase_s=timebase_s,
         # Hashed as-is, None values included: changing this set orphans every cached day.
         cache_key_extra={
+            "filestore_dir": filestore_dir,
             "park_id": park_id,
             "device_id": device_id,
             "tags": tags,

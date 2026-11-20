@@ -15,7 +15,7 @@ Run with ``uv sync --group wedowind`` first.
 """
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Literal
 
@@ -262,17 +262,21 @@ def yaw_misalignment(*, yaw_pos: pd.Series, wd: pd.Series) -> pd.Series:
     return (yaw_pos - wd + 180) % 360 - 180
 
 
-def make_minute_df(fl_df: pd.DataFrame) -> pd.DataFrame:
+def make_minute_df(
+    fl_df: pd.DataFrame, *, free_stream_wtg: str = FREE_STREAM_WTG, wtgs: Sequence[str] = WTGS
+) -> pd.DataFrame:
     """Aggregate the 1 Hz fastlog to one row per minute with free-stream inputs and per-turbine power and flags.
 
+    The free-stream columns come from ``free_stream_wtg``; the per-turbine columns are made for each of ``wtgs``.
     ``{wtg}_yaw_misalignment`` is the minute mean of the 1 Hz misalignment against the turbine's own consensus
     wind direction smoothed over a centred ``MISALIGNMENT_WD_WINDOW``, NaN unless every second is present.
     ``{wtg}_yaw_position`` is the circular minute mean of the yaw position, likewise NaN unless every second is
-    present. The yaw, direction and toggle tags are logged on change and forward-filled by ``load_hot_fl_data`` up to
-    explicit NaNs and logger outages, so the per-second checks here catch those gaps, not unchanged values.
+    present. The toggle columns are only made for turbines whose fastlog has the toggle tag. The yaw, direction
+    and toggle tags are logged on change and forward-filled by ``load_hot_fl_data`` up to explicit NaNs and logger
+    outages, so the per-second checks here catch those gaps, not unchanged values.
     """
     one_min = pd.Timedelta(minutes=1)
-    fs = fl_df[FREE_STREAM_WTG]
+    fs = fl_df[free_stream_wtg]
     minute_df = pd.DataFrame(
         {
             "ws_raw": fs[WS_COL].resample(one_min).mean(),
@@ -284,18 +288,19 @@ def make_minute_df(fl_df: pd.DataFrame) -> pd.DataFrame:
     minute_midpoints = minute_df.index + one_min / 2
     ti = rolling_turbulence_intensity(fs[WS_COL], at=minute_midpoints)
     minute_df["ti"] = ti.clip(*TI_CLIP).to_numpy()
-    for wtg in WTGS:
+    for wtg in wtgs:
         d = fl_df[wtg]
         normal = (d[POWER_COL] > 0) & d[GEN_STATE_COL].eq(ON_GRID_GEN_STATE) & (d[ACT_LIMIT_COL] >= RATED_POWER_KW)
-        toggle = d[TOGGLE_COL].resample(one_min)
-        full_toggle_minute = toggle.count() == SECONDS_PER_MINUTE
         smoothed_wd = rolling_circular_mean_degrees(d[WD_COL], window=MISALIGNMENT_WD_WINDOW)
         misalignment = yaw_misalignment(yaw_pos=d[YAW_POS_COL], wd=smoothed_wd).resample(one_min)
         minute_df[f"{wtg}_power"] = d[POWER_COL].resample(one_min).mean()
         minute_df[f"{wtg}_normal"] = normal.resample(one_min).sum() == SECONDS_PER_MINUTE
-        minute_df[f"{wtg}_toggle_off"] = (toggle.max() == 0) & full_toggle_minute
-        minute_df[f"{wtg}_toggle_on"] = (toggle.min() == 1) & full_toggle_minute
-        minute_df[f"{wtg}_toggle_mean"] = toggle.mean()
+        if TOGGLE_COL in d.columns:
+            toggle = d[TOGGLE_COL].resample(one_min)
+            full_toggle_minute = toggle.count() == SECONDS_PER_MINUTE
+            minute_df[f"{wtg}_toggle_off"] = (toggle.max() == 0) & full_toggle_minute
+            minute_df[f"{wtg}_toggle_on"] = (toggle.min() == 1) & full_toggle_minute
+            minute_df[f"{wtg}_toggle_mean"] = toggle.mean()
         minute_df[f"{wtg}_yaw_misalignment"] = misalignment.mean().where(misalignment.count() == SECONDS_PER_MINUTE)
         yaw_pos = circ_mean_resample_degrees(d[[YAW_POS_COL]], resample_timedelta=one_min)[YAW_POS_COL]
         minute_df[f"{wtg}_yaw_position"] = yaw_pos.where(d[YAW_POS_COL].resample(one_min).count() == SECONDS_PER_MINUTE)

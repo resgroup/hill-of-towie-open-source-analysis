@@ -272,6 +272,21 @@ def test_rolling_circular_mean_degrees_averages_across_north() -> None:
     assert np.isnan(smoothed.iloc[0])  # half-empty window at the edge
 
 
+def test_make_minute_df_takes_the_free_stream_from_any_turbine_and_needs_no_toggle_tag() -> None:
+    """Scoring-day fastlog has no toggle tag and no T01, so the truth builder takes direction and speed from T03."""
+    fl_df = _one_hz_fl_df(n_minutes=2).drop(columns=["T01"], level=0).drop(columns=TOGGLE_COL, level=1)
+    fl_df[("T03", WD_COL)] = 215.0
+    fl_df[("T03", WS_COL)] = 9.0
+
+    minute_df = make_minute_df(fl_df, free_stream_wtg="T03", wtgs=["T03", "T07"])
+
+    middle = minute_df.loc[WINDOW_START : WINDOW_START + pd.Timedelta(minutes=1)]
+    np.testing.assert_allclose(middle["wd"], 215.0)
+    np.testing.assert_allclose(middle["ws_raw"], 9.0)
+    assert middle[["T03_normal", "T07_normal"]].all().all()
+    assert not any("toggle" in col or col.startswith("T01") for col in minute_df.columns)
+
+
 def test_make_minute_df_yaw_position_is_circular_mean_and_needs_every_second() -> None:
     """The yaw position that orients the ZXTM cone must average across north and be NaN with a missing second."""
     fl_df = _one_hz_fl_df(n_minutes=2)

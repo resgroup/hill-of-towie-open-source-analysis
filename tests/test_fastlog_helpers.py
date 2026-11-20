@@ -895,13 +895,20 @@ class TestCacheKeyStability:
     # Measured on the commit before std_tags/min_raw_data_count were added. A change here means
     # every existing user's cache silently stops being found.
     LEGACY_KEY = "IZfqhKlUtfd8GBnRSyEDIWIdDgeRGuVH"
-    # The same day once the grid follows the logging rate and the filestore is keyed, read from a
-    # filestore at ``pinned_filestore``. The grid and the filestore change the output, so both are
-    # always keyed and days cached before either was are not reused.
-    AUTO_GRID_KEY = "oihoI-WGn_Slw2bnBnoK_SlRFietMT75"
+    # The parameters the Siemens wrapper keys a day on once the grid follows the logging rate and the
+    # filestore is keyed; the wrapper passes the resolved filestore. The grid and the filestore change
+    # the output, so both are always keyed and days cached before either was are not reused.
+    CURRENT_PARAMS: ClassVar[dict[str, Any]] = LEGACY_PARAMS | {
+        "subsampling_timebase_ms": "auto",
+        "filestore_dir": "/pinned/filestore",
+    }
+    CURRENT_KEY = "wfz70w7qUeSBRpUMfU6qLFEnXbpd2M10"
 
     def test_legacy_default_key_is_unchanged(self) -> None:
         assert flh.create_consistent_hash(**self.LEGACY_PARAMS) == self.LEGACY_KEY
+
+    def test_current_key_is_unchanged(self) -> None:
+        assert flh.create_consistent_hash(**self.CURRENT_PARAMS) == self.CURRENT_KEY
 
     def test_defaulted_options_are_omitted_from_the_key(self) -> None:
         assert flh._non_default_resample_kwargs({}) == {}  # noqa: SLF001
@@ -1436,11 +1443,31 @@ class TestSiemensWrapperOverGenericLayer:
             end_dt_excl=pd.Timestamp("2024-01-02", tz="UTC"),
             timebase_s=1,
             cache_dir=tmp_path,
-            # relative, so the key is the same on every machine and OS
-            filestore_dir=Path("pinned_filestore"),
+            filestore_dir=tmp_path / "fs" / ".." / "fs",
+        )
+        expected_key = flh.create_consistent_hash(
+            **TestCacheKeyStability.CURRENT_PARAMS | {"filestore_dir": (tmp_path / "fs").resolve()}
         )
         cached = list((tmp_path / "fl_resampled" / "HOT" / "2304512").glob("*.parquet"))
-        assert [x.name for x in cached] == [f"20240101_{TestCacheKeyStability.AUTO_GRID_KEY}.parquet"]
+        assert [x.name for x in cached] == [f"20240101_{expected_key}.parquet"]
+
+    @pytest.mark.usefixtures("stub_chunk")
+    def test_a_relative_filestore_is_keyed_on_where_it_resolves(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The same relative filestore path from two working directories names two different filestores."""
+        for cwd in ("a", "b"):
+            (tmp_path / cwd).mkdir()
+            monkeypatch.chdir(tmp_path / cwd)
+            get_fl_resampled_one_device(
+                park_id="HOT",
+                device_id="2304512",
+                start_dt=pd.Timestamp("2024-01-01"),
+                end_dt_excl=pd.Timestamp("2024-01-02"),
+                cache_dir=tmp_path / "cache",
+                filestore_dir=Path("filestore"),
+            )
+        assert len(list((tmp_path / "cache" / "fl_resampled" / "HOT" / "2304512").glob("*.parquet"))) == 2
 
     @pytest.mark.usefixtures("stub_chunk")
     def test_naive_chunks_are_localised_for_a_tz_aware_range(self, tmp_path: Path) -> None:

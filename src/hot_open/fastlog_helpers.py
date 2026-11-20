@@ -490,7 +490,7 @@ def get_fl_resampled_one_device(  # noqa: PLR0913
         timebase_s=timebase_s,
         # Hashed as-is, None values included: changing this set orphans every cached day.
         cache_key_extra={
-            "filestore_dir": filestore_dir,
+            "filestore_dir": filestore_dir.resolve(),
             "park_id": park_id,
             "device_id": device_id,
             "tags": tags,

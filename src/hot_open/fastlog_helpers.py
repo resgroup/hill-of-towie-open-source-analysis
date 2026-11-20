@@ -65,15 +65,19 @@ def load_hot_fl_data(  # noqa: PLR0913
     use_turbine_names: bool = True,  # if False serial numbers are used to identify turbines
     extra_tags: Sequence[str] | None = None,
 ) -> pd.DataFrame:
-    """Load HOT fastlog data for specified turbines and time range.
+    """Load HOT fastlog data for specified turbines and time range from the filestore ``data_dir``.
 
-    Returns a wide-format DataFrame with a MultiIndex column (turbine_name, tag).
+    Returns a wide-format DataFrame with a MultiIndex column (turbine_name, tag). Only the configured
+    filestore (``get_filestore_dir()``) is downloaded from Zenodo when it has no data.
     """
-    # Check the actual filesystem rather than env-var presence: a user can set
-    # HOT_OPEN_FILESTORE_DIR to point at a populated local copy, or leave it
-    # unset and let the Zenodo zip extract into the default location.
     filestore_dir = get_filestore_dir()
-    if not (filestore_dir / "FL").exists():
+    if not (data_dir / "FL").exists():
+        if data_dir.resolve() != filestore_dir.resolve():
+            msg = (
+                f"{data_dir} does not contain an 'FL' subdirectory. Pass a directory holding the Hill of Towie "
+                f"fastlog tree (FL/HOT/<device_id>/<date>/...), or the configured filestore {filestore_dir}."
+            )
+            raise FileNotFoundError(msg)
         if os.getenv("HOT_OPEN_FILESTORE_DIR") is None:
             ensure_extracted("turbine_fastlog.zip", data_dir=get_data_dir())
         else:

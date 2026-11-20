@@ -122,7 +122,7 @@ def test_rejects_a_missing_column(col: str) -> None:
 
 @pytest.mark.parametrize("bad", [np.nan, np.inf, -np.inf, "fast"])
 @pytest.mark.parametrize("col", VALUE_COLS)
-def test_rejects_non_finite_values(col: str, bad: object) -> None:
+def test_rejects_non_finite_values(col: str, bad: float | str) -> None:
     """Every row must be predicted, even minutes that won't be scored."""
     sub = _perfect_submission().astype({col: object})
     sub.loc[7, col] = bad
@@ -160,7 +160,7 @@ def test_measured_zero_los_speeds_do_not_divide_by_zero() -> None:
     assert result["lr_rmse_pct_points"] == pytest.approx(20.0)
 
 
-def _one_minute_truth(**overrides: object) -> pd.DataFrame:
+def _one_minute_truth(**overrides: float) -> pd.DataFrame:
     return _truth().iloc[[0]].assign(**overrides)
 
 

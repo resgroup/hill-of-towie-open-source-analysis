@@ -351,10 +351,10 @@ class TestPublicLidarDownload:
 
     def test_default_directory_is_downloaded_if_needed(self, tmp_path: Path, extract_calls: list[str]) -> None:
         default = tmp_path / "data" / "lidar_data"
-        window = {"lidar_unit_id": ZXTM_ID, "start_dt": DAY, "end_dt_excl": DAY + pd.Timedelta(days=1)}
+        end_dt_excl = DAY + pd.Timedelta(days=1)
 
-        load_zx_lidar_10min_data(data_dir=default, **window)
-        load_zx_lidar_fl_data(data_dir=default, **window)
+        load_zx_lidar_10min_data(data_dir=default, lidar_unit_id=ZXTM_ID, start_dt=DAY, end_dt_excl=end_dt_excl)
+        load_zx_lidar_fl_data(data_dir=default, lidar_unit_id=ZXTM_ID, start_dt=DAY, end_dt_excl=end_dt_excl)
 
         assert extract_calls == ["lidar_data.zip", "lidar_data.zip"]
 

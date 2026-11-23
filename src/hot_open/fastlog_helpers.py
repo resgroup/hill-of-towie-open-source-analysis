@@ -16,7 +16,7 @@ import pandas as pd
 from pyarrow.lib import ArrowInvalid
 
 from hot_open.circular_math import circ_mean_resample_degrees, circ_std_resample_degrees
-from hot_open.parquet_io import write_parquet_atomic
+from hot_open.parquet_io import read_parquet, write_parquet_atomic
 from hot_open.settings import get_cache_dir, get_data_dir, get_filestore_dir
 from hot_open.sourcing_data import ensure_extracted
 
@@ -295,7 +295,7 @@ def _get_resampled_one_chunk_cached(  # noqa: PLR0913
             # so an unchanged chunk stays a hit; a backfilled one (newer source mtime) recomputes.
             if source_mtime is None or cache_path.stat().st_mtime >= source_mtime:
                 logger.info("Reading: %s", cache_path)
-                return pd.read_parquet(cache_path)
+                return read_parquet(cache_path)
             logger.info("Cache stale (source newer than cache); recomputing: %s", cache_path)
 
     result_df = _resample_one_chunk(
@@ -531,7 +531,7 @@ def _load_siemens_fastlog_files(  # noqa: C901, PLR0912
         for file in fl_data_dir.glob("*.prq"):
             if str_for_file_search in file.name and not file.name.startswith(".azDownload"):
                 logger.debug("Reading: %s", file)
-                tag_df = pd.read_parquet(file)
+                tag_df = read_parquet(file)
                 found_file = True
                 break
         if not found_file:

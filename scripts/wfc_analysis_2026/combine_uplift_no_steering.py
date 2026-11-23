@@ -8,6 +8,7 @@ from wind_up.combine_results import _calc_sigma_ref
 from wind_up.models import PlotConfig
 from wind_up.plots.combine_results_plots import plot_testref_and_combined_results
 
+from hot_open.parquet_io import read_parquet
 from scripts.wfc_analysis_2026.hot_wake_steering_helpers import calc_hot_yaw_stats
 
 logger = logging.getLogger(__name__)
@@ -21,9 +22,9 @@ def _load_yaw_stats(row, wind_up_out_dir: Path) -> dict | None:
         logger.warning("pp_df files not found for %s (ref %s)", row.test_wtg, row.ref)
         return None
     logger.info("Reading: %s", pre_path)
-    pre_df = pd.read_parquet(pre_path)
+    pre_df = read_parquet(pre_path)
     logger.info("Reading: %s", post_path)
-    post_df = pd.read_parquet(post_path)
+    post_df = read_parquet(post_path)
     return calc_hot_yaw_stats(pre_df, post_df)
 
 

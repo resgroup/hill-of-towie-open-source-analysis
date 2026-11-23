@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 from .fastlog_helpers import create_consistent_hash
-from .parquet_io import write_parquet_atomic
+from .parquet_io import read_parquet, write_parquet_atomic
 from .scada_helpers import load_hot_10min_data, scada_df_to_wind_up_df
 from .settings import get_cache_dir, get_data_dir
 from .sourcing_data import ensure_hot_data_files
@@ -25,7 +25,7 @@ def _cached(name: str, build: Callable[[], pd.DataFrame], **key: object) -> pd.D
     if not cache_path.is_file():
         write_parquet_atomic(build(), cache_path)
     logger.info("Reading: %s", cache_path)
-    return pd.read_parquet(cache_path)
+    return read_parquet(cache_path)
 
 
 def unpack_local_scada_data_v1(

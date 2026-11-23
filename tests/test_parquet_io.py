@@ -1,4 +1,4 @@
-"""Tests for writing a parquet file without ever exposing a half-written one."""
+"""Tests for reading local parquet files safely and writing them without exposing a half-written one."""
 
 import os
 import threading
@@ -10,7 +10,7 @@ import pytest
 from pyarrow.lib import ArrowInvalid
 
 from hot_open import parquet_io
-from hot_open.parquet_io import write_parquet_atomic
+from hot_open.parquet_io import read_parquet, write_parquet_atomic
 
 
 @pytest.fixture
@@ -191,3 +191,53 @@ class TestReplaceWithRetry:
 
         with pytest.raises(PermissionError):
             parquet_io._replace_with_retry(src, dst)  # noqa: SLF001
+
+
+class TestReadParquet:
+    """``read_parquet`` must never hand pyarrow a Python file handle.
+
+    pyarrow can release such a handle's buffers on a worker thread during interpreter exit, which
+    deadlocks the process on Python 3.13+ (a rare, timing-dependent hang, so it is pinned here by
+    its cause rather than by reproducing it).
+    """
+
+    @pytest.fixture
+    def path_with_handles_refused(self, tmp_path: Path, df: pd.DataFrame, monkeypatch: pytest.MonkeyPatch) -> Path:
+        """Write ``df``, then make any later attempt by pandas to open a Python handle fail."""
+        path = tmp_path / "chunk.parquet"
+        df.to_parquet(path)
+
+        def refuse(*_: Any, **__: Any) -> None:  # noqa: ANN401
+            msg = "pandas opened the parquet file as a Python handle"
+            raise AssertionError(msg)
+
+        monkeypatch.setattr(pd.io.parquet, "get_handle", refuse)
+        return path
+
+    def test_plain_pandas_opens_a_python_handle(self, path_with_handles_refused: Path) -> None:
+        """Guards the test below: if pandas stops using handles, the fixture checks nothing."""
+        with pytest.raises(AssertionError, match="Python handle"):
+            pd.read_parquet(path_with_handles_refused)
+
+    @pytest.mark.parametrize("as_str", [False, True])
+    def test_reads_without_a_python_handle(
+        self, path_with_handles_refused: Path, df: pd.DataFrame, *, as_str: bool
+    ) -> None:
+        path = path_with_handles_refused
+        result = read_parquet(str(path) if as_str else path)
+
+        pd.testing.assert_frame_equal(result, df, check_freq=False)
+
+    def test_reads_a_relative_path(self, tmp_path: Path, df: pd.DataFrame, monkeypatch: pytest.MonkeyPatch) -> None:
+        df.to_parquet(tmp_path / "chunk.parquet")
+        monkeypatch.chdir(tmp_path)
+
+        pd.testing.assert_frame_equal(read_parquet("chunk.parquet"), df, check_freq=False)
+
+    def test_passes_keyword_arguments_to_pandas(self, tmp_path: Path, df: pd.DataFrame) -> None:
+        path = tmp_path / "chunk.parquet"
+        df.assign(b=df["a"] * 2).to_parquet(path)
+
+        result = read_parquet(path, columns=["a"])
+
+        pd.testing.assert_frame_equal(result, df, check_freq=False)

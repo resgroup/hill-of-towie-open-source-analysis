@@ -12,7 +12,7 @@ from tqdm import tqdm
 from wind_up.reanalysis_data import MastOrLiDARDataset
 
 from hot_open.fastlog_helpers import _generate_dates_in_range, create_consistent_hash
-from hot_open.parquet_io import write_parquet_atomic
+from hot_open.parquet_io import read_parquet, write_parquet_atomic
 from hot_open.settings import get_cache_dir, get_data_dir
 from hot_open.sourcing_data import ensure_extracted
 
@@ -47,7 +47,7 @@ def load_zx_lidar_10min_data(  # noqa: C901
     logger.info("Reading %d parquet files from %s", len(files_to_read), lidar_dir)
     dfs = []
     for fname, expected_date in tqdm(files_to_read, desc=f"Reading {lidar_unit_id} 10-min parquet files"):
-        _df = pd.read_parquet(fname)
+        _df = read_parquet(fname)
         _df = _df.drop(columns=[x for x in _df.columns if x.startswith("Checksum")])
         # find a good timestamp column
         if "Timestamp (ISO 8601)" in _df.columns:
@@ -195,7 +195,7 @@ def load_zx_lidar_fl_data(  # noqa: C901, PLR0912, PLR0913
     )
     if cache_path.exists():
         logger.info("Reading: %s", cache_path)
-        return pd.read_parquet(cache_path)
+        return read_parquet(cache_path)
     _ensure_public_lidar_extracted(data_dir)
     device_decr = "ZTM" if int(lidar_unit_id) >= ZX_ZTM_DEVICE_ID_MIN else ""
     lidar_dir = data_dir / "timeseries" / str(lidar_unit_id)
@@ -207,7 +207,7 @@ def load_zx_lidar_fl_data(  # noqa: C901, PLR0912, PLR0913
     dfs = []
     for file_path in tqdm(file_paths, desc=f"Reading {lidar_unit_id} fastlog parquet files"):
         try:
-            _df = pd.read_parquet(file_path)
+            _df = read_parquet(file_path)
         except FileNotFoundError:
             msg = f"File {file_path} not found."
             logger.warning(msg)
@@ -267,7 +267,7 @@ def load_zx_lidar_fl_data(  # noqa: C901, PLR0912, PLR0913
     logger.info("Writing: %s", cache_path)
     write_parquet_atomic(return_df, cache_path)
     logger.info("Reading: %s", cache_path)
-    return pd.read_parquet(cache_path)
+    return read_parquet(cache_path)
 
 
 _MIN_FIT_POINTS = 2

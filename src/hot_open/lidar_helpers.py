@@ -19,6 +19,12 @@ from hot_open.sourcing_data import ensure_extracted
 logger = logging.getLogger(__name__)
 
 
+def _ensure_public_lidar_extracted(data_dir: Path) -> None:
+    """Download and extract the public LiDAR data if ``data_dir`` is its default location; leave any other alone."""
+    if data_dir.resolve() == (get_data_dir() / "lidar_data").resolve():
+        ensure_extracted("lidar_data.zip", data_dir=get_data_dir())
+
+
 def load_zx_lidar_10min_data(  # noqa: C901
     *,
     data_dir: Path,
@@ -28,7 +34,7 @@ def load_zx_lidar_10min_data(  # noqa: C901
     remove_bad_values: bool = False,
 ) -> pd.DataFrame:
     """Load 10-min ZX300/ZXTM LiDAR parquet files for a single unit and date range."""
-    ensure_extracted("lidar_data.zip", data_dir=get_data_dir())
+    _ensure_public_lidar_extracted(data_dir)
     lidar_dir = data_dir / "timeseries" / lidar_unit_id
     files_to_read: list[tuple[Path, pd.Timestamp]] = []
     for fname in lidar_dir.glob("*.parquet"):
@@ -190,7 +196,7 @@ def load_zx_lidar_fl_data(  # noqa: C901, PLR0912, PLR0913
     if cache_path.exists():
         logger.info("Reading: %s", cache_path)
         return pd.read_parquet(cache_path)
-    ensure_extracted("lidar_data.zip", data_dir=get_data_dir())
+    _ensure_public_lidar_extracted(data_dir)
     device_decr = "ZTM" if int(lidar_unit_id) >= ZX_ZTM_DEVICE_ID_MIN else ""
     lidar_dir = data_dir / "timeseries" / str(lidar_unit_id)
     file_paths = [

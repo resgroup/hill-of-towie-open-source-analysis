@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 from wind_up.reanalysis_data import MastOrLiDARDataset
 
+from hot_open import lidar_helpers
 from hot_open.lidar_helpers import (
     LIDAR_AIR_DENSITY_COL,
     add_shear_and_veer,
@@ -306,6 +307,56 @@ def _profile_frame(ws_rows: list[list[float]], wd_rows: list[list[float]], heigh
         data[f"Wind Direction (deg) at {h}m"] = [r[j] for r in wd_rows]
     data["Met Wind Direction (deg)"] = [0.0 for _ in ws_rows]
     return pd.DataFrame(data)
+
+
+class TestPublicLidarDownload:
+    """The public LiDAR zip is only fetched for the default ``lidar_data`` directory, never for another one."""
+
+    @pytest.fixture
+    def extract_calls(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> list[str]:
+        """Empty the default data dir and record any ensure_extracted call."""
+        monkeypatch.setenv("HOT_OPEN_DATA_DIR", str(tmp_path / "data"))
+        monkeypatch.setenv("HOT_OPEN_CACHE_DIR", str(tmp_path / "cache"))
+        calls: list[str] = []
+        monkeypatch.setattr(lidar_helpers, "ensure_extracted", lambda zip_name, **_: calls.append(zip_name))
+        return calls
+
+    @staticmethod
+    def _own_lidar_dir(tmp_path: Path) -> Path:
+        own = tmp_path / "own_lidar"
+        (own / "timeseries" / ZXTM_ID).mkdir(parents=True)
+        return own
+
+    def test_10min_from_another_directory_does_not_download(self, tmp_path: Path, extract_calls: list[str]) -> None:
+        own = self._own_lidar_dir(tmp_path)
+        _write_10min(own, ZXTM_ID, DAY)
+
+        df = load_zx_lidar_10min_data(
+            data_dir=own, lidar_unit_id=ZXTM_ID, start_dt=DAY, end_dt_excl=DAY + pd.Timedelta(days=1)
+        )
+
+        assert extract_calls == []
+        assert len(df) == 144
+
+    def test_fastlog_from_another_directory_does_not_download(self, tmp_path: Path, extract_calls: list[str]) -> None:
+        own = self._own_lidar_dir(tmp_path)
+        _write_fl(own, ZXTM_ID, DAY)
+
+        df = load_zx_lidar_fl_data(
+            data_dir=own, lidar_unit_id=ZXTM_ID, start_dt=DAY, end_dt_excl=DAY + pd.Timedelta(days=1)
+        )
+
+        assert extract_calls == []
+        assert len(df) == 24 * 60
+
+    def test_default_directory_is_downloaded_if_needed(self, tmp_path: Path, extract_calls: list[str]) -> None:
+        default = tmp_path / "data" / "lidar_data"
+        end_dt_excl = DAY + pd.Timedelta(days=1)
+
+        load_zx_lidar_10min_data(data_dir=default, lidar_unit_id=ZXTM_ID, start_dt=DAY, end_dt_excl=end_dt_excl)
+        load_zx_lidar_fl_data(data_dir=default, lidar_unit_id=ZXTM_ID, start_dt=DAY, end_dt_excl=end_dt_excl)
+
+        assert extract_calls == ["lidar_data.zip", "lidar_data.zip"]
 
 
 class TestExtractData:

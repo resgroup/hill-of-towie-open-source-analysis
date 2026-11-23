@@ -203,7 +203,7 @@ class TestGetEra5HourlyDf:
             return mock_path
 
         monkeypatch.setattr(era5_helpers, "_era5_cache_path", fake_cache_path)
-        monkeypatch.setattr(era5_helpers.pd, "read_parquet", lambda _p: pd.DataFrame())
+        monkeypatch.setattr(era5_helpers, "read_parquet", lambda _p: pd.DataFrame())
         era5_helpers.get_era5_hourly_df(lat=1.0, lon=2.0)
         today = pd.Timestamp.now(tz="UTC").normalize().strftime("%Y-%m-%d")
         assert captured["end_date"] == today

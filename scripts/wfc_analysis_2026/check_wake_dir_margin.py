@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 from hot_open.lidar_helpers import load_zx_lidar_10min_data
+from hot_open.parquet_io import read_parquet
 from hot_open.settings import get_cache_dir, get_data_dir, get_out_dir
 from scripts.logger import setup_logger
 
@@ -69,7 +70,7 @@ if __name__ == "__main__":
 
     scada_cache_path = get_cache_dir() / "unpack_scada_data" / "hot_dy_scada_df.parquet"
     logger.info("Reading: %s", scada_cache_path)
-    scada_df = pd.read_parquet(scada_cache_path)
+    scada_df = read_parquet(scada_cache_path)
     scada_df = scada_df[scada_df.index > pd.Timestamp("2026-01-07 13:00:00", tz="UTC")]
     for upwind, ref, first_wdir, last_wdir in [
         ("T11", "ZX300_2428", 228, 255),

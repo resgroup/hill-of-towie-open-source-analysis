@@ -12,6 +12,7 @@ from wind_up.smart_data import add_smart_lat_long_to_cfg
 
 from hot_open.era5_helpers import get_hot_reanalysis_datasets
 from hot_open.lidar_helpers import load_hot_lidar_10min_data
+from hot_open.parquet_io import read_parquet
 from hot_open.settings import get_cache_dir, get_data_dir, get_out_dir, get_wind_up_output_dir
 from hot_open.unpack import unpack_local_meta_data
 from scripts.logger import setup_logger
@@ -130,7 +131,7 @@ def hot_dy_uplift_no_steering(*, rerun_windup: bool = True) -> tuple[float, floa
         for p in paths:
             if p.exists():
                 logger.info("Reading: %s", p)
-                dfs.append(pd.read_parquet(p))
+                dfs.append(read_parquet(p))
         if len(dfs) == 0:
             continue
         combined_index = reduce(lambda a, b: a.union(b), (df.index for df in dfs))

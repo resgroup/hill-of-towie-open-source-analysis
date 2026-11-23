@@ -11,7 +11,7 @@ import requests_cache
 from retry_requests import retry
 from wind_up.reanalysis_data import ReanalysisDataset
 
-from .parquet_io import write_parquet_atomic
+from .parquet_io import read_parquet, write_parquet_atomic
 from .settings import get_cache_dir
 
 logger = logging.getLogger(__name__)
@@ -92,7 +92,7 @@ def get_era5_hourly_df(
     cache_path = _era5_cache_path(lat=lat, lon=lon, start_date=start_date, end_date=end_date, fields=fields)
     if cache_path.exists():
         logger.info("Reading: %s", cache_path)
-        return pd.read_parquet(cache_path)
+        return read_parquet(cache_path)
 
     openmeteo = openmeteo_requests.Client(
         session=retry(

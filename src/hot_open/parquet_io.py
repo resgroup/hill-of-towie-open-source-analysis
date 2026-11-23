@@ -1,4 +1,4 @@
-"""Writing parquet caches so a reader never meets a half-written file."""
+"""Reading and writing local parquet files safely."""
 
 import logging
 import os
@@ -8,8 +8,21 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import pyarrow.fs
 
 logger = logging.getLogger(__name__)
+
+
+def read_parquet(path: Path | str, **kwargs: Any) -> pd.DataFrame:  # noqa: ANN401
+    """Read a local parquet file into a DataFrame; use this instead of :func:`pandas.read_parquet`.
+
+    pandas opens a local path as a Python file handle, and pyarrow can then release that handle's
+    buffers on a worker thread while the interpreter exits, deadlocking the process on Python 3.13+.
+    Reading through pyarrow's own local file system avoids it. Extra keyword arguments are passed to
+    :func:`pandas.read_parquet`.
+    """
+    return pd.read_parquet(str(path), filesystem=pyarrow.fs.LocalFileSystem(), **kwargs)
+
 
 _REPLACE_ATTEMPTS = 10
 _REPLACE_BACKOFF_S = 0.05

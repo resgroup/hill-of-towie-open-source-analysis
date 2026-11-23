@@ -700,7 +700,7 @@ wheels = [
 
 [[package]]
 name = "hot-open"
-version = "0.2.2"
+version = "0.2.3"
 source = { editable = "." }
 dependencies = [
     { name = "numpy" },
@@ -750,7 +750,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.1.0" },
     { name = "requests", specifier = ">=2.32.3" },
     { name = "requests-cache", specifier = ">=1.2.1" },
-    { name = "res-wind-up", specifier = ">=0.4.10" },
+    { name = "res-wind-up", specifier = ">=0.4.10,<1" },
     { name = "retry-requests", specifier = ">=2.0.0" },
     { name = "scipy", specifier = ">=1.11" },
     { name = "tqdm", specifier = ">=4.68.1" },

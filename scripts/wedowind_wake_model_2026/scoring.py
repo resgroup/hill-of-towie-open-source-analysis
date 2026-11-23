@@ -29,6 +29,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from hot_open.parquet_io import read_parquet
+
 SCORING_PERIODS = tuple(
     (pd.Timestamp(start, tz="UTC"), pd.Timestamp(end_excl, tz="UTC"))
     for start, end_excl in (
@@ -198,7 +200,7 @@ def main() -> None:
     parser.add_argument("submission", type=Path, help="submission CSV")
     parser.add_argument("truth", type=Path, help="truth parquet")
     args = parser.parse_args()
-    result = score_submission(read_submission(args.submission), pd.read_parquet(args.truth))
+    result = score_submission(read_submission(args.submission), read_parquet(args.truth))
     print(json.dumps(result, indent=2))
 
 

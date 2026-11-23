@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 
 import hot_open.fastlog_helpers as flh
+from hot_open import settings
 from hot_open.fastlog_helpers import (
     SIEMENS_PARKS,
     SIEMENS_TAGS,
@@ -16,6 +17,7 @@ from hot_open.fastlog_helpers import (
     _get_raw_df_dict,
     _get_tag_list_from_park_id,
     get_fl_resampled_one_device,
+    load_hot_fl_data,
     resample_fastlog_tags,
     upsample_and_ffill_stopping_at_nans,
 )
@@ -254,6 +256,65 @@ class TestResampleRealHotSample:
     def test_matches_committed_characterization(self) -> None:
         expected = pd.read_parquet(TEST_DATA_DIR / "fl_sample_resampled_expected.parquet")
         pd.testing.assert_frame_equal(self._resampled(), expected, check_exact=False, check_freq=False)
+
+
+class _DownloadAttemptedError(Exception):
+    pass
+
+
+class TestLoadHotFlDataSourceDirectory:
+    """``load_hot_fl_data`` reads the filestore it is given; only the configured filestore is ever downloaded."""
+
+    @pytest.fixture
+    def extract_calls(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> list[str]:
+        """Empty the configured filestore and record, then stop, any ensure_extracted call."""
+        settings._load_env()  # noqa: SLF001  # so a developer's .env can't set the filestore back mid-test
+        monkeypatch.delenv("HOT_OPEN_FILESTORE_DIR", raising=False)
+        monkeypatch.setenv("HOT_OPEN_DATA_DIR", str(tmp_path / "data"))
+        monkeypatch.setenv("HOT_OPEN_CACHE_DIR", str(tmp_path / "cache"))
+        calls: list[str] = []
+
+        def record(zip_name: str, **_: object) -> None:
+            calls.append(zip_name)
+            raise _DownloadAttemptedError
+
+        monkeypatch.setattr(flh, "ensure_extracted", record)
+        return calls
+
+    @staticmethod
+    def _load(data_dir: Path) -> pd.DataFrame:
+        return load_hot_fl_data(
+            data_dir=data_dir,
+            wtg_numbers=[1],
+            start_dt=pd.Timestamp("2026-01-02 08:06", tz="UTC"),
+            end_dt_excl=pd.Timestamp("2026-01-02 08:08", tz="UTC"),
+        )
+
+    def test_another_populated_filestore_is_read_without_downloading(self, extract_calls: list[str]) -> None:
+        fl_df = self._load(FL_SAMPLE_DIR)
+
+        assert extract_calls == []
+        assert fl_df[("T01", "ActPower_Value")].notna().any()
+
+    def test_another_filestore_is_read_when_the_configured_one_is_empty(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, extract_calls: list[str]
+    ) -> None:
+        monkeypatch.setenv("HOT_OPEN_FILESTORE_DIR", str(tmp_path / "configured"))
+
+        fl_df = self._load(FL_SAMPLE_DIR)
+
+        assert extract_calls == []
+        assert fl_df[("T01", "ActPower_Value")].notna().any()
+
+    def test_another_filestore_without_fl_raises_naming_it(self, tmp_path: Path, extract_calls: list[str]) -> None:
+        with pytest.raises(FileNotFoundError, match="elsewhere"):
+            self._load(tmp_path / "elsewhere")
+        assert extract_calls == []
+
+    def test_the_configured_filestore_is_downloaded_if_needed(self, extract_calls: list[str]) -> None:
+        with pytest.raises(_DownloadAttemptedError):
+            self._load(settings.get_filestore_dir())
+        assert extract_calls == ["turbine_fastlog.zip"]
 
 
 class TestUpsampleUnchangedExceptTrailingPoint:

@@ -31,6 +31,7 @@ from scripts.wedowind_wake_model_2026.hot_floris import (
     yaw_angles_for,
     yaw_misalignment,
 )
+from scripts.wedowind_wake_model_2026.make_scoring_truth import MIN_ACT_LIMIT_HEADROOM_KW, normal_minutes
 
 # from the Zenodo turbine metadata
 T03_LAT_LON = (57.50206973, -3.088980479)
@@ -300,3 +301,27 @@ def test_make_minute_df_yaw_position_is_circular_mean_and_needs_every_second() -
     assert min(first, 360 - first) == pytest.approx(0, abs=1e-6)
     assert np.isnan(minute_df["T07_yaw_position"].iloc[1])
     assert minute_df["T03_yaw_position"].iloc[1] == pytest.approx(209.0)
+
+
+def _status_frame(*, power: float, act_limit: float) -> tuple[pd.DatetimeIndex, pd.DataFrame]:
+    index = pd.date_range("2026-07-31 00:00", periods=180, freq="1s", tz="UTC")
+    return index, pd.DataFrame({POWER_COL: power, ACT_LIMIT_COL: act_limit}, index=index)
+
+
+def test_normal_minutes_need_power_and_rated_act_limit_every_second() -> None:
+    """One second below rated or without power spoils its minute; a missing ActLimit counts as not limited."""
+    index, d = _status_frame(power=600.0, act_limit=2300.0)
+    d.loc[index[70], ACT_LIMIT_COL] = 2299.0
+    d.loc[index[130], POWER_COL] = 0.0
+    d.loc[index[:60], ACT_LIMIT_COL] = np.nan
+
+    assert normal_minutes(d, wtg="T14").tolist() == [True, False, False]
+
+
+def test_normal_minutes_for_t11_need_act_limit_headroom_above_power() -> None:
+    """T11's ActLimit follows its power, so it needs MIN_ACT_LIMIT_HEADROOM_KW above the power, not rated."""
+    index, d = _status_frame(power=600.0, act_limit=600.0 + MIN_ACT_LIMIT_HEADROOM_KW)
+    d.loc[index[70], ACT_LIMIT_COL] = 600.0 + MIN_ACT_LIMIT_HEADROOM_KW - 1
+
+    assert normal_minutes(d, wtg="T11").tolist() == [True, False, True]
+    assert normal_minutes(d, wtg="T14").tolist() == [False, False, False]

@@ -1,8 +1,7 @@
 """Scoring for the WeDoWind wake steering challenge.
 
-The challenge has four steering pairs (``PAIRS``): an upstream turbine that steers its wake and a downstream
-turbine that feels it. T03 steers for T07, T11 for T14 and T07 for T08 and T04. Each scoring period belongs to
-one pair.
+The challenge has four turbine pairs (``PAIRS``): an upstream turbine and a downstream turbine in its wake.
+T03 is upstream of T07, T11 of T14 and T07 of T08 and T04. Each scoring period belongs to one pair.
 
 A submission is one CSV with a row for every minute of every scoring period (``submission_timestamps()``) and
 columns ``SUBMISSION_COLS``: the minute start in UTC, the pair, the downstream turbine's minute-mean power and,
@@ -18,7 +17,7 @@ above ``MIN_UPSTREAM_POWER_KW``. The LiDAR term also needs both measured LOS val
 - L-R = 100 (|L| - |R|) / ((|L| + |R|) / 2), from predicted and from measured LOS; the error is their difference
   in percentage points.
 
-There is one power term per steering turbine (T03, T11, T07), each the RMSE of the power error pooled over that
+There is one power term per upstream turbine (T03, T11, T07), each the RMSE of the power error pooled over that
 turbine's periods, and one L-R term::
 
     score = POWER_WEIGHT sum(RMSE(power error) / POWER_NORMALISER) + LR_WEIGHT RMSE(L-R error) / LR_NORMALISER_PCT
@@ -45,7 +44,7 @@ from hot_open.parquet_io import read_parquet
 
 
 @dataclass(frozen=True)
-class SteeringPair:
+class TurbinePair:
     name: str
     upstream: str
     downstream: str
@@ -59,7 +58,7 @@ def _periods(*start_end_excl: tuple[str, str]) -> tuple[tuple[pd.Timestamp, pd.T
 
 
 PAIRS = (
-    SteeringPair(
+    TurbinePair(
         name="T03->T07",
         upstream="T03",
         downstream="T07",
@@ -72,7 +71,7 @@ PAIRS = (
         ),
         lidar=True,
     ),
-    SteeringPair(
+    TurbinePair(
         name="T11->T14",
         upstream="T11",
         downstream="T14",
@@ -83,14 +82,14 @@ PAIRS = (
             ("2026-10-15 04:00", "2026-10-15 09:30"),
         ),
     ),
-    SteeringPair(
+    TurbinePair(
         name="T07->T08",
         upstream="T07",
         downstream="T08",
         wd_range_deg=(260.0, 295.0),
         periods=_periods(("2026-10-10 20:00", "2026-10-11 00:00")),
     ),
-    SteeringPair(
+    TurbinePair(
         name="T07->T04",
         upstream="T07",
         downstream="T04",
@@ -99,7 +98,7 @@ PAIRS = (
     ),
 )
 PAIRS_BY_NAME = {pair.name: pair for pair in PAIRS}
-STEERING_WTGS = tuple(dict.fromkeys(pair.upstream for pair in PAIRS))
+UPSTREAM_WTGS = tuple(dict.fromkeys(pair.upstream for pair in PAIRS))
 # (start, end exclusive, pair name), in time order
 SCORING_PERIODS = tuple(sorted((start, end, pair.name) for pair in PAIRS for start, end in pair.periods))
 
@@ -271,7 +270,7 @@ def score_submission(submission: pd.DataFrame, truth: pd.DataFrame) -> dict[str,
 
     ``submission`` is as returned by ``validate_submission``; ``truth`` has the ``TRUTH_COLS``, indexed by UTC
     minute start, and must cover every submission timestamp with the same pair. The power terms are keyed by
-    steering turbine, e.g. ``power_rmse_T03`` and ``power_minutes_T03``.
+    upstream turbine, e.g. ``power_rmse_T03`` and ``power_minutes_T03``.
     """
     truth = truth.copy()
     truth.index = pd.DatetimeIndex(truth.index).tz_convert("UTC")
@@ -288,7 +287,7 @@ def score_submission(submission: pd.DataFrame, truth: pd.DataFrame) -> dict[str,
 
     result: dict[str, float | int] = {}
     score = 0.0
-    for wtg in STEERING_WTGS:
+    for wtg in UPSTREAM_WTGS:
         scored = mask["power"] & upstream.eq(wtg)
         if not scored.any():
             msg = f"no scored power minutes for {wtg}"

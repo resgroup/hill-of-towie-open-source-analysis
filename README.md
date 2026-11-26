@@ -159,8 +159,9 @@ which used the Hill of Towie open dataset.
 `solution_using_wind_up.py` needs a few extra packages that are not in the locked environment;
 see its docstring.
 
-`scripts/wedowind_wake_model_2026` is a FLORIS worked example for an upcoming WeDoWind wake modeling
-challenge, built from public information only. Its dependencies are in the `wedowind` group:
+`scripts/wedowind_wake_model_2026` is for an upcoming WeDoWind wake steering challenge: the
+[participant instructions](scripts/wedowind_wake_model_2026/README.md), the scorer and a FLORIS worked example
+built from public information only. Its dependencies are in the `wedowind` group:
 
 ```commandline
 uv sync --group wedowind

@@ -17,7 +17,6 @@ from scripts.wedowind_wake_model_2026.scoring import (
     POWER_NORMALISER,
     RIGHT_LOS_COL,
     SCORING_PERIODS,
-    STEERING_WTGS,
     SUBMISSION_COLS,
     TEMPLATE_PATH,
     TIMESTAMP_COL,
@@ -26,6 +25,7 @@ from scripts.wedowind_wake_model_2026.scoring import (
     UPSTREAM_POWER_COL,
     UPSTREAM_WD_COL,
     UPSTREAM_WS_COL,
+    UPSTREAM_WTGS,
     VALUE_COLS,
     WS_RANGE_MS,
     read_submission,
@@ -81,9 +81,9 @@ def _row(sub: pd.DataFrame, pair: str, n: int = 0) -> int:
     return int(np.flatnonzero(sub[PAIR_COL].eq(pair))[n])
 
 
-def test_pairs_cover_three_steering_turbines_and_four_downstream_turbines() -> None:
+def test_pairs_cover_three_upstream_turbines_and_four_downstream_turbines() -> None:
     """T03 -> T07 carries the LiDAR term; T07 steers for both T08 and T04."""
-    assert STEERING_WTGS == ("T03", "T11", "T07")
+    assert UPSTREAM_WTGS == ("T03", "T11", "T07")
     assert {pair.downstream for pair in PAIRS} == {"T07", "T14", "T08", "T04"}
     assert [pair.name for pair in PAIRS if pair.lidar] == [LIDAR_PAIR]
     assert {name: len(PAIRS_BY_NAME[name].periods) for name in PAIRS_BY_NAME} == {
@@ -336,15 +336,15 @@ def test_no_steering_sized_errors_score_one() -> None:
 
     result = score_submission(validate_submission(_submission_csv_df(values)), truth)
 
-    for wtg in STEERING_WTGS:
+    for wtg in UPSTREAM_WTGS:
         assert result[f"power_rmse_{wtg}"] == pytest.approx(POWER_NORMALISER)
     assert result["lr_rmse_pct_points"] == pytest.approx(LR_NORMALISER_PCT)
     assert result["score"] == pytest.approx(1.0)
 
 
 @pytest.mark.parametrize("wtg", ["T03", "T11", "T07"])
-def test_each_steering_turbine_power_term_weighs_a_quarter(wtg: str) -> None:
-    """An error of the normaliser in one steering turbine's minutes only scores 0.25."""
+def test_each_upstream_turbine_power_term_weighs_a_quarter(wtg: str) -> None:
+    """An error of the normaliser in one upstream turbine's minutes only scores 0.25."""
     truth = _truth()
     values = _values(truth)
     upstream = truth[PAIR_COL].map({pair.name: pair.upstream for pair in PAIRS})

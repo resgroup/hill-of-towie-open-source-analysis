@@ -22,7 +22,6 @@ from scripts.wedowind_wake_model_2026.hot_floris import (
 from scripts.wedowind_wake_model_2026.scoring import (
     DOWNSTREAM_POWER_COL,
     LEFT_LOS_COL,
-    NO_STEERING_POWER_COL,
     PAIRS_BY_NAME,
     RIGHT_LOS_COL,
     read_submission,
@@ -81,9 +80,7 @@ def test_write_submission_writes_a_file_the_scorer_reads(tmp_path: Path) -> None
 
     write_submission(submission, path)
 
-    values = read_submission(path)
-    assert values[DOWNSTREAM_POWER_COL].eq(500.0).all()
-    assert values[NO_STEERING_POWER_COL].isna().all()
+    assert read_submission(path)[DOWNSTREAM_POWER_COL].eq(500.0).all()
 
 
 def test_write_submission_rejects_an_incomplete_submission(tmp_path: Path) -> None:

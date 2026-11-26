@@ -70,7 +70,7 @@ from scripts.wedowind_wake_model_2026.scoring import (
     UPSTREAM_POWER_COL,
     UPSTREAM_WD_COL,
     UPSTREAM_WS_COL,
-    SteeringPair,
+    TurbinePair,
     submission_timestamps,
 )
 from scripts.wedowind_wake_model_2026.zxtm_probes import HUB_HEIGHT_M, ZXTM_UNIT_ID, zxtm_minute_means
@@ -141,7 +141,7 @@ def load_period_fl_df(
 
 
 def truth_for_period(
-    pair: SteeringPair,
+    pair: TurbinePair,
     *,
     start: pd.Timestamp,
     end_excl: pd.Timestamp,

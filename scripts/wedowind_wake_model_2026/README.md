@@ -1,13 +1,14 @@
 # WeDoWind wake steering challenge: participant instructions
 
 Hill of Towie (HOT) is a 21-turbine wind farm in Scotland where some turbines steer their wakes away from a
-downstream neighbour by yawing off the wind. The challenge is to predict what the downstream turbine does while
-that is happening.
+downstream neighbour by yawing off the wind. The challenge is to predict what a downstream turbine does (and where there is LiDAR, what the wind speed is) from its
+upstream neighbour's data alone.
 
 ## The task
 
-For each of ten scoring periods you are given 1 Hz data from one **steering turbine** (the upstream turbine of a
-pair) and nothing from any other turbine. For every minute of every period, predict:
+Each scoring case is a pair: an **upstream turbine** and a **downstream turbine** in its wake. For each of ten
+scoring periods you are given 1 Hz data from the pair's upstream turbine and nothing from any other turbine. For
+every minute of every period, predict:
 
 - the minute-mean power of the pair's **downstream turbine**, in kW;
 - for the T03 → T07 pair only, the minute-mean line-of-sight (LOS) wind speed of two beams of the nacelle LiDAR
@@ -16,7 +17,7 @@ pair) and nothing from any other turbine. For every minute of every period, pred
 Any method is welcome: an engineering wake model, CFD, machine learning, a lookup table, or a mix. You may use
 anything in the public datapack to build and tune it.
 
-| Pair | Downstream is at | Spacing | Scoring periods (UTC, end exclusive) | Minutes |
+| Pair | Upstream turbine is at | Spacing | Scoring periods (UTC, end exclusive) | Minutes |
 |---|---|---|---|---|
 | T03 → T07 | 209° from T07 | 389 m, 4.7 D | 2026-09-01 02:00 – 04:30 | 150 |
 | | | | 2026-09-04 03:00 – 07:00 | 240 |
@@ -29,7 +30,7 @@ anything in the public datapack to build and tune it.
 | T07 → T04 | 327° from T04 | 419 m, 5.1 D | 2026-07-18 21:00 – 2026-07-19 00:00 | 180 |
 | | | | 2026-08-20 15:30 – 2026-08-21 00:00 | 510 |
 
-"Downstream is at 209° from T07" means T03 is on a bearing of 209° from T07, so T07 sits in the centre of T03's
+"209° from T07" means T03 is on a bearing of 209° from T07, so T07 sits in the centre of T03's
 wake when the wind blows from 209°. These bearings are from the turbine positions only; the direction signals
 can sit a few degrees away from them (see [Things to know about the data](#things-to-know-about-the-data)). D is
 the rotor diameter. That is 3,450 minutes in all, 1,020 of them in the
@@ -67,18 +68,19 @@ unsteered wake only.
 > **Placeholder:** the download location of the scoring-day inputs will be added here before the challenge opens.
 
 One folder, `turbine_fastlog/Filestore/FL/HOT/<station number>/<date>/`, in the same layout and file format as the
-datapack fastlog. It holds the steering turbine's files for its own periods: T03 (station 2304512) for the
+datapack fastlog. It holds the upstream turbine's files for its own periods: T03 (station 2304512) for the
 T03 → T07 days, T11 (2304520) for the T11 → T14 days and T07 (2304516) for the T07 → T08 and T07 → T04 days.
 The station number is the turbine number plus 2304509.
 
-- Each period's days are complete, with all 15 turbine tags and the four DY tags other than the toggle.
+- Each period's days have all 15 turbine tags and two of the DY tags: the consensus wind direction and the
+  measured yaw direction.
 - The day before each period is included too. Most tags are logged only when they change, so the previous day is
   needed to know a tag's value at midnight.
 - The day after each period has three status tags only (`GenState_GenState`, `ActLimit_Power`,
   `PowerRed_PowerRed`), for the same reason at the other end of the day.
-- **The toggle tag is not included.** The DY controller was fully activated on 2026-05-28 at about 13:46 UTC.
-  From then on there is no toggling: the controller is always in charge and every steering turbine steers whenever
-  its controller asks for it. All scoring periods are after that date, so every scoring minute is "toggle on".
+- **The other three DY tags are not included, and the control in the scoring periods is not stated.** The
+  toggle, the wake steering offset and the yaw target are left out: the wake does not feel a command, only where
+  the nacelle points. Wake steering may or may not be on, and if it is on it may be calibrated differently from the open data.
 
 You get no data from the downstream turbine, from any other turbine or from either LiDAR for the scoring days.
 The 10-minute SCADA in the datapack also ends before them.
@@ -98,15 +100,14 @@ fl_df = load_hot_fl_data(
     extra_tags=[
         "computed_core_post_processed_consensus_wind_direction_true_degrees",
         "computed_driver_pre_processed_yaw_direction_true_degrees",
-        "computed_core_post_processed_core_wake_steering_offset_degrees",
     ],
 )
 fl_df["T03"]["ActPower_Value"]
 ```
 
 The result has a `(turbine, tag)` column MultiIndex on a 1 s UTC index; the turbine tags lose their `Wtc_TDI_`
-prefix. Log-on-change tags are forward-filled, but not across a pause in logging. Start a load at midnight if you
-need the status tags: they always have a value there. The loader caches by turbine and day and not by folder, so
+prefix. Log-on-change tags are forward-filled, but not across a pause in logging. Start a load at midnight if
+you need the status tags: they always have a value there. The loader caches by turbine and day and not by folder, so
 use a separate cache directory (`HOT_OPEN_CACHE_DIR`) if you ever keep two different copies of the same
 turbine-day. The first load of a turbine-day takes the best part of a minute; after that it comes from the cache.
 For months of training data it is quicker to read the tag files yourself: each is a parquet file indexed by
@@ -114,23 +115,28 @@ For months of training data it is quicker to read the tag files yourself: each i
 
 ### Tags that matter
 
-| Tag | Meaning |
-|---|---|
-| `Wtc_TDI_ActPower_Value` | Active power, kW. |
-| `Wtc_TDI_AcWindSp_AcWindSp` | Nacelle anemometer wind speed, m/s. Behind the rotor, so not the free-stream speed. |
-| `computed_core_post_processed_consensus_wind_direction_true_degrees` | The DY controller's estimate of the wind direction at this turbine, drawing on several turbines. Degrees clockwise from true north, direction the wind comes from. |
-| `computed_driver_pre_processed_yaw_direction_true_degrees` | Measured yaw direction (where the rotor faces), true north. |
-| `computed_core_post_processed_core_wake_steering_offset_degrees` | Wake steering yaw offset the controller computes. Positive is counter-clockwise seen from above. Zero when it wants no steering. In the datapack period it is computed on toggle-off minutes too, but only acted on when the toggle is on. |
-| `computed_driver_post_processed_yaw_target_degrees` | Yaw target including steering. In the turbine's own north frame, not true north. |
-| `Wtc_TDI_ActLimit_Power` | Active power limit, kW. 2,300 or more when the turbine is not limited. |
-| `Wtc_TDI_PowerRed_PowerRed` | 1 while the turbine is reducing power, else 0. |
-| `Wtc_TDI_GenState_GenState` | Generator state; `LargeOnGrd` in normal production. Not used by the scorer. |
+| Tag | Meaning | In scoring inputs |
+|---|---|---|
+| `Wtc_TDI_ActPower_Value` | Active power, kW. | yes |
+| `Wtc_TDI_AcWindSp_AcWindSp` | Nacelle anemometer wind speed, m/s. Behind the rotor, so not the free-stream speed. | yes |
+| `Wtc_TDI_AcWindDr_Value` | Wind direction from the turbine's own wind sensor, in the turbine's own north frame, not true north. | yes |
+| `Wtc_TDI_YawPos_Value` | Yaw position in the turbine's own north frame, not true north. | yes |
+| `Wtc_TDI_MainSRpm_Value` | Main shaft speed, rpm. | yes |
+| `Wtc_TDI_PitcPosA_Value`, `B`, `C` | Blade pitch angles, degrees. | yes |
+| `computed_core_post_processed_consensus_wind_direction_true_degrees` | The DY controller's estimate of the wind direction at this turbine, drawing on several turbines. Degrees clockwise from true north, direction the wind comes from. | yes |
+| `computed_driver_pre_processed_yaw_direction_true_degrees` | Measured yaw direction (where the rotor faces), true north. | yes |
+| `Wtc_TDI_ActLimit_Power` | Active power limit, kW. 2,300 or more when the turbine is not limited. | yes |
+| `Wtc_TDI_PowerRed_PowerRed` | 1 while the turbine is reducing power, else 0. | yes |
+| `Wtc_TDI_GenState_GenState` | Generator state; `LargeOnGrd` in normal production. Not used by the scorer. | yes |
+| `computed_core_post_processed_core_wake_steering_offset_degrees` | Wake steering yaw offset the controller computes. Positive is counter-clockwise seen from above. Zero when it wants no steering. It is computed on toggle-off minutes too, but only acted on when the toggle is on. | no |
+| `computed_driver_post_processed_yaw_target_degrees` | Yaw target including steering. In the turbine's own north frame, not true north. | no |
+| `computed_driver_post_processed_toggle_state` | 1 when the DY controller is in charge, 0 when it is not. | no |
 
 **Yaw misalignment** here means yaw direction minus consensus wind direction, wrapped to ±180°. It is positive
-when the rotor is turned clockwise (seen from above) from the wind. The steering offset tag has the opposite
-sign convention, so a commanded offset of +10° shows up as a misalignment of about −10°. The yaw direction lags
-the command and moves in steps, so use the measured misalignment, not the command, for what the turbine actually
-did. `hot_floris.make_minute_df` computes a per-minute misalignment this way.
+when the rotor is turned clockwise (seen from above) from the wind. In the datapack the steering offset tag has
+the opposite sign convention, so a commanded offset of +10° shows up as a misalignment of about −10°, and the yaw
+direction lags the command and moves in steps. The measured misalignment is what the turbine actually did, and it
+is all you have on scoring days. `hot_floris.make_minute_df` computes a per-minute misalignment this way.
 
 ### The ZXTM LiDAR on T07
 
@@ -159,23 +165,15 @@ minute of every period, 3,450 rows.
 | Column | Content |
 |---|---|
 | `timestamp_utc` | Start of the minute, as in the template (`2026-07-18T21:00:00Z`). Do not change. |
-| `pair` | The steering pair, as in the template. Do not change. |
+| `pair` | The turbine pair, as in the template. Do not change. |
 | `downstream_power_kW` | Your prediction of the downstream turbine's mean power over that minute. |
 | `zxtm_126m_left_los_ms` | T03 → T07 rows: the ZXTM Left LOS speed, range 126 m, height 59.0 m, minute mean. |
 | `zxtm_126m_right_los_ms` | T03 → T07 rows: the same for the Right beam. |
-| `downstream_power_no_steering_kW` | Optional, not scored: your model's downstream power had the pair's steering turbine not steered. |
 
 A submission is rejected if a column is missing; a timestamp is missing, duplicated or extra; a `pair` differs
 from the template; a power is blank or not finite; or, in a T03 → T07 row, an LOS speed is blank, not finite or
 negative. The two LOS columns are ignored in the other pairs' rows and may be left blank there. Extra columns are
-ignored.
-
-**The no-steering column.** If your model can say what the downstream turbine would have produced had the steering
-turbine stayed aligned with the wind, everything else being the same, put that in
-`downstream_power_no_steering_kW`. It does not change your score. The organisers use it to work out the steering
-gain each model predicts: 100 × (sum of power − sum of no-steering power) / sum of no-steering power over each
-steering turbine's scored minutes. Fill it in for every minute or leave it blank throughout; a model with no
-notion of steering should leave it blank. To check a file before sending it:
+ignored. To check a file before sending it:
 
 ```python
 from pathlib import Path
@@ -190,16 +188,16 @@ The scorer is [`scoring.py`](scoring.py); the measured values it compares agains
 
 You predict every minute, but only some are scored. A minute is scored for power when all of these hold:
 
-- the steering turbine's consensus wind direction (minute circular mean) is inside the pair's window:
+- the upstream turbine's consensus wind direction (minute circular mean) is inside the pair's window:
   T03 → T07 [206°, 222°), T11 → T14 [228°, 256°), T07 → T08 [260°, 295°), T07 → T04 [312°, 342°);
-- the steering turbine's nacelle wind speed (minute mean) is in [6, 12) m/s;
-- the steering turbine's mean power is above 150 kW;
+- the upstream turbine's nacelle wind speed (minute mean) is in [6, 12) m/s;
+- the upstream turbine's mean power is above 150 kW;
 - both turbines operate normally for the whole minute: power above zero every second and not power limited.
   Power limited means `PowerRed_PowerRed` set, or `ActLimit_Power` below 2,300 kW. For T11, whose `ActLimit_Power`
   tracks its power on the scoring days, it instead means `ActLimit_Power` less than 50 kW above its power.
 
 A T03 → T07 minute is scored for the LiDAR as well when both measured LOS values exist. You can work out the
-steering turbine's part of this from your inputs. The downstream turbine's part and the LiDAR's availability you
+upstream turbine's part of this from your inputs. The downstream turbine's part and the LiDAR's availability you
 cannot, so the exact set of scored minutes is not published: about three quarters of all minutes are scored for
 power and about half of the T03 → T07 minutes for the LiDAR.
 
@@ -211,7 +209,7 @@ For each scored minute:
   percentage points. Only this asymmetry is scored, not the level of the LOS speeds: it is what moves when the
   wake moves sideways.
 
-There are three power terms, one per steering turbine (T03, T11, and T07 with its two pairs pooled), each the
+There are three power terms, one per upstream turbine (T03, T11, and T07 with its two pairs pooled), each the
 root mean square of the power error over that turbine's scored minutes, and one L−R term:
 
 ```
@@ -234,13 +232,12 @@ Per-minute data is noisy and no model gets near 0.
 - **Northing in general.** Tags ending `_true_degrees` have the controller's northing correction applied; turbine
   frame tags (`YawPos_Value`, `AcWindDr_Value`, the yaw target) do not. A correction can be a few degrees out and
   can change over time, and a few degrees matter at 5 D spacing.
-- **Wake centre against bearing.** Where the data put the centre of a wake, in the steering turbine's consensus
+- **Wake centre against bearing.** Where the data put the centre of a wake, in the upstream turbine's consensus
   direction, can be a few degrees from the bearing between the two turbines. Northing errors and the flow turning
   over the terrain both contribute, so check it in the datapack rather than trusting the geometry.
-- **More steering than in the datapack.** The scoring periods were chosen for strong steering, so the steering
-  turbines' yaw misalignments are often larger than is typical of the datapack's toggle-on minutes.
-- **Downstream turbines do not perform wake steering** in their pair's scoring periods. They can still be a few
-  degrees off the wind at any moment, as any turbine is, and the controller also runs a collective yaw strategy.
+- **Control may differ from the datapack.** Steering may or may not be on in a scoring period, and its
+  calibration may differ from the open data, so a model that only reproduces the datapack's toggle-on behaviour
+  may not carry over. A model of how the wake responds to where the upstream turbine's nacelle points should.
 - **Season.** The datapack fastlog covers January to April; the scoring periods are July to November, and several
   are at night.
 
@@ -248,8 +245,8 @@ Per-minute data is noisy and no model gets near 0.
 
 [`example_submission.py`](example_submission.py) writes a valid submission from the public
 [FLORIS](https://github.com/NREL/floris) model in this folder. It is a starting point and a format check, not a
-strong entry. Per minute it takes the free stream from the steering turbine (nacelle wind speed times a fitted
-factor `k`, consensus wind direction, and a turbulence intensity from the 1 Hz wind speed), gives the steering
+strong entry. Per minute it takes the free stream from the upstream turbine (nacelle wind speed times a fitted
+factor `k`, consensus wind direction, and a turbulence intensity from the 1 Hz wind speed), gives the upstream
 turbine its measured yaw misalignment and reads off the downstream turbine's power. For T03 → T07 it samples the
 modelled flow at the two ZXTM beam positions, assuming T07 faces T03's wind direction. Wake parameters are FLORIS
 defaults.
@@ -262,7 +259,7 @@ uv run python -m scripts.wedowind_wake_model_2026.example_submission --fastlog-d
 Run it from the repository root. Add any other packages your own method needs with `uv pip install`.
 
 It writes `submission.csv` to the output directory (`HOT_OPEN_OUTPUT_DIR`, see the top-level README) and takes a
-few minutes. It fills in the no-steering column with the same model and every turbine at zero yaw.
+few minutes. `--no-steering` writes the same model with every turbine at zero yaw.
 
 The other scripts show the model against measurements in the datapack period, on the night of 2026-02-20:
 

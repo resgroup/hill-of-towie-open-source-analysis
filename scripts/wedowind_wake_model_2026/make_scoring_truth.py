@@ -10,9 +10,10 @@ A turbine operates normally in a minute (``normal_minutes``) when it makes power
 be power limited: its power reduction flag ``PowerRed_PowerRed`` set, or ``ActLimit_Power`` below rated or, for
 T11, whose ``ActLimit_Power`` follows its power in the scoring periods, less than ``MIN_ACT_LIMIT_HEADROOM_KW``
 above its power. The loader stops forward-filling at any second without a power or wind speed sample, so on a quiet
-turbine it drops ``ActLimit_Power`` and ``PowerRed_PowerRed``, which are logged on change, until their next change;
-they are forward-filled again here and a missing value counts as not limited. Power is forward-filled across
-logging pauses up to ``POWER_FFILL_LIMIT_S``.
+turbine it drops ``ActLimit_Power`` and ``PowerRed_PowerRed``, which are logged on change, until their next change.
+Each period is therefore loaded from midnight, where the loader has a value for both, and they are forward-filled
+again here; a value still missing counts as not limited. Power is forward-filled across logging pauses up to
+``POWER_FFILL_LIMIT_S``.
 
 It only runs where the scoring-day fastlog and ZXTM files are available; they are not in the public datapack, and
 the truth file is not published. The DY toggle-state tag is not needed. Fastlog tags are logged on change, so each
@@ -117,8 +118,9 @@ def truth_for_period(
     lidar_dir: Path,
 ) -> pd.DataFrame:
     wtgs = [pair.upstream, pair.downstream]
-    # padded so the direction smoothing and gap fill at the period edges see data either side
-    load_start, load_end_excl = start - TI_WINDOW, end_excl + TI_WINDOW
+    # padded so the direction smoothing and gap fill at the period edges see data either side, and from midnight
+    # so the status tags have a value to forward-fill into the period
+    load_start, load_end_excl = (start - TI_WINDOW).floor("D"), end_excl + TI_WINDOW
     fl_df = pd.concat(
         [
             load_hot_fl_data(

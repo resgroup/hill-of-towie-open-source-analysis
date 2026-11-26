@@ -12,6 +12,7 @@ from scripts.wedowind_wake_model_2026.hot_floris import (
     FARM_YAML_PATH,
     GEN_STATE_COL,
     POWER_COL,
+    POWER_RED_COL,
     TOGGLE_COL,
     WD_COL,
     WINDOW_START,
@@ -31,6 +32,7 @@ from scripts.wedowind_wake_model_2026.hot_floris import (
     yaw_angles_for,
     yaw_misalignment,
 )
+from scripts.wedowind_wake_model_2026.make_scoring_truth import MIN_ACT_LIMIT_HEADROOM_KW, normal_minutes
 
 # from the Zenodo turbine metadata
 T03_LAT_LON = (57.50206973, -3.088980479)
@@ -272,6 +274,21 @@ def test_rolling_circular_mean_degrees_averages_across_north() -> None:
     assert np.isnan(smoothed.iloc[0])  # half-empty window at the edge
 
 
+def test_make_minute_df_takes_the_free_stream_from_any_turbine_and_needs_no_toggle_tag() -> None:
+    """Scoring-day fastlog has no toggle tag and no T01, so the truth builder takes direction and speed from T03."""
+    fl_df = _one_hz_fl_df(n_minutes=2).drop(columns=["T01"], level=0).drop(columns=TOGGLE_COL, level=1)
+    fl_df[("T03", WD_COL)] = 215.0
+    fl_df[("T03", WS_COL)] = 9.0
+
+    minute_df = make_minute_df(fl_df, free_stream_wtg="T03", wtgs=["T03", "T07"])
+
+    middle = minute_df.loc[WINDOW_START : WINDOW_START + pd.Timedelta(minutes=1)]
+    np.testing.assert_allclose(middle["wd"], 215.0)
+    np.testing.assert_allclose(middle["ws_raw"], 9.0)
+    assert middle[["T03_normal", "T07_normal"]].all().all()
+    assert not any("toggle" in col or col.startswith("T01") for col in minute_df.columns)
+
+
 def test_make_minute_df_yaw_position_is_circular_mean_and_needs_every_second() -> None:
     """The yaw position that orients the ZXTM cone must average across north and be NaN with a missing second."""
     fl_df = _one_hz_fl_df(n_minutes=2)
@@ -285,3 +302,37 @@ def test_make_minute_df_yaw_position_is_circular_mean_and_needs_every_second() -
     assert min(first, 360 - first) == pytest.approx(0, abs=1e-6)
     assert np.isnan(minute_df["T07_yaw_position"].iloc[1])
     assert minute_df["T03_yaw_position"].iloc[1] == pytest.approx(209.0)
+
+
+def _status_frame(*, power: float, act_limit: float) -> tuple[pd.DatetimeIndex, pd.DataFrame]:
+    index = pd.date_range("2026-07-31 00:00", periods=180, freq="1s", tz="UTC")
+    return index, pd.DataFrame({POWER_COL: power, ACT_LIMIT_COL: act_limit, POWER_RED_COL: 0.0}, index=index)
+
+
+def test_normal_minutes_need_power_and_rated_act_limit_every_second() -> None:
+    """One second below rated or without power spoils its minute; a missing ActLimit counts as not limited."""
+    index, d = _status_frame(power=600.0, act_limit=2300.0)
+    d.loc[index[70], ACT_LIMIT_COL] = 2299.0
+    d.loc[index[130], POWER_COL] = 0.0
+    d.loc[index[:60], ACT_LIMIT_COL] = np.nan
+
+    assert normal_minutes(d, wtg="T14").tolist() == [True, False, False]
+
+
+@pytest.mark.parametrize("wtg", ["T14", "T11"])
+def test_normal_minutes_need_the_power_reduction_flag_clear_every_second(wtg: str) -> None:
+    """One second with PowerRed set spoils its minute on any turbine; a missing PowerRed counts as not limited."""
+    index, d = _status_frame(power=600.0, act_limit=2300.0)
+    d.loc[index[70], POWER_RED_COL] = 1.0
+    d.loc[index[120:], POWER_RED_COL] = np.nan
+
+    assert normal_minutes(d, wtg=wtg).tolist() == [True, False, True]
+
+
+def test_normal_minutes_for_t11_need_act_limit_headroom_above_power() -> None:
+    """T11's ActLimit follows its power, so it needs MIN_ACT_LIMIT_HEADROOM_KW above the power, not rated."""
+    index, d = _status_frame(power=600.0, act_limit=600.0 + MIN_ACT_LIMIT_HEADROOM_KW)
+    d.loc[index[70], ACT_LIMIT_COL] = 600.0 + MIN_ACT_LIMIT_HEADROOM_KW - 1
+
+    assert normal_minutes(d, wtg="T11").tolist() == [True, False, True]
+    assert normal_minutes(d, wtg="T14").tolist() == [False, False, False]

@@ -10,6 +10,10 @@ for T03 -> T07 minutes only, the ZXTM 126 m range, 59 m segment height Left and 
 LOS columns are ignored, and may be blank, in the other pairs' minutes. ``scoring/submission_template.csv`` is a
 blank one with the pair filled in.
 
+``NO_STEERING_POWER_COL`` is optional and never scored: the model's downstream power had the pair's steering
+turbine not steered. When it is filled in, the scorer also reports the model's steering gain per steering turbine,
+100 (sum(power) - sum(no-steering power)) / sum(no-steering power) over that turbine's scored minutes.
+
 The scorer picks the scored minutes from the truth file: upstream consensus wind direction in the pair's window,
 upstream nacelle wind speed in ``WS_RANGE_MS``, both turbines operating normally all minute and upstream power
 above ``MIN_UPSTREAM_POWER_KW``. The LiDAR term also needs both measured LOS values. Per scored minute:
@@ -117,7 +121,8 @@ LEFT_LOS_COL = "zxtm_126m_left_los_ms"
 RIGHT_LOS_COL = "zxtm_126m_right_los_ms"
 LOS_COLS = (LEFT_LOS_COL, RIGHT_LOS_COL)
 VALUE_COLS = (DOWNSTREAM_POWER_COL, *LOS_COLS)
-SUBMISSION_COLS = (TIMESTAMP_COL, PAIR_COL, *VALUE_COLS)
+NO_STEERING_POWER_COL = "downstream_power_no_steering_kW"
+SUBMISSION_COLS = (TIMESTAMP_COL, PAIR_COL, *VALUE_COLS, NO_STEERING_POWER_COL)
 
 UPSTREAM_WD_COL = "upstream_wind_direction_deg"
 UPSTREAM_WS_COL = "upstream_wind_speed_ms"
@@ -157,7 +162,7 @@ def submission_timestamps() -> pd.DatetimeIndex:
 def submission_template() -> pd.DataFrame:
     """Return a blank submission: every timestamp, its pair, empty value columns."""
     template = submission_pairs().to_frame()
-    for col in VALUE_COLS:
+    for col in (*VALUE_COLS, NO_STEERING_POWER_COL):
         template[col] = np.nan
     return template
 
@@ -178,11 +183,13 @@ def validate_submission(submission: pd.DataFrame) -> pd.DataFrame:
     ``ValueError``.
 
     ``submission`` has the ``SUBMISSION_COLS`` as columns; extra columns are ignored. It is rejected if a column
-    is missing, a timestamp is missing, duplicated or extra, a pair differs from the template's, a downstream power
-    is not finite, or, in a LiDAR pair's minutes, an LOS speed is not finite or is negative. The ZXTM reports LOS
-    speed magnitudes; zero is allowed. LOS values in other pairs' minutes are returned as NaN.
+    other than ``NO_STEERING_POWER_COL`` is missing, a timestamp is missing, duplicated or extra, a pair differs
+    from the template's, a downstream power is not finite, or, in a LiDAR pair's minutes, an LOS speed is not
+    finite or is negative. The ZXTM reports LOS speed magnitudes; zero is allowed. LOS values in other pairs'
+    minutes are returned as NaN. ``NO_STEERING_POWER_COL`` may be missing or all blank, and is then returned as
+    NaN; otherwise it must be finite in every minute.
     """
-    missing_cols = [col for col in SUBMISSION_COLS if col not in submission.columns]
+    missing_cols = [col for col in (TIMESTAMP_COL, PAIR_COL, *VALUE_COLS) if col not in submission.columns]
     if missing_cols:
         msg = f"submission is missing columns {missing_cols}"
         raise ValueError(msg)
@@ -226,7 +233,20 @@ def validate_submission(submission: pd.DataFrame) -> pd.DataFrame:
     if negative.any():
         msg = f"submission has {negative.sum()} minutes with a negative LOS speed, e.g. {negative.idxmax()}"
         raise ValueError(msg)
-    return pd.concat([pairs, values], axis=1)
+    no_steering = pd.Series(np.nan, index=expected)
+    if NO_STEERING_POWER_COL in submission.columns:
+        given = pd.to_numeric(submission[NO_STEERING_POWER_COL], errors="coerce").set_axis(timestamps).reindex(expected)
+        blank = submission[NO_STEERING_POWER_COL].astype("string").str.strip().fillna("").eq("")
+        not_finite = ~np.isfinite(given.to_numpy(dtype=float))
+        if not blank.all():
+            if not_finite.any():
+                msg = (
+                    f"submission has {not_finite.sum()} missing or non-finite {NO_STEERING_POWER_COL} values, "
+                    f"e.g. at {given.index[not_finite][0]}; fill in every minute or none"
+                )
+                raise ValueError(msg)
+            no_steering = given
+    return pd.concat([pairs, values, no_steering.rename(NO_STEERING_POWER_COL)], axis=1)
 
 
 def read_submission(path: Path) -> pd.DataFrame:
@@ -267,11 +287,12 @@ def _rmse(err: pd.Series) -> float:
 
 
 def score_submission(submission: pd.DataFrame, truth: pd.DataFrame) -> dict[str, float | int]:
-    """Return the score, every RMSE term and its scored minute count.
+    """Return the score, every RMSE term and its scored minute count, and the model's steering gains if given.
 
     ``submission`` is as returned by ``validate_submission``; ``truth`` has the ``TRUTH_COLS``, indexed by UTC
     minute start, and must cover every submission timestamp with the same pair. The power terms are keyed by
-    steering turbine, e.g. ``power_rmse_T03`` and ``power_minutes_T03``.
+    steering turbine, e.g. ``power_rmse_T03`` and ``power_minutes_T03``. ``steering_gain_pct_T03`` and so on are
+    only returned when the submission has ``NO_STEERING_POWER_COL`` values, and are not part of the score.
     """
     truth = truth.copy()
     truth.index = pd.DatetimeIndex(truth.index).tz_convert("UTC")
@@ -310,6 +331,12 @@ def score_submission(submission: pd.DataFrame, truth: pd.DataFrame) -> dict[str,
     score += LR_WEIGHT * lr_rmse / LR_NORMALISER_PCT
     result["lr_rmse_pct_points"] = lr_rmse
     result["lidar_minutes"] = int(mask["lidar"].sum())
+    if NO_STEERING_POWER_COL in submission.columns and submission[NO_STEERING_POWER_COL].notna().all():
+        for wtg in STEERING_WTGS:
+            p = submission.loc[mask["power"] & upstream.eq(wtg)]
+            no_steering_sum = float(p[NO_STEERING_POWER_COL].sum())
+            gain = 100 * (float(p[DOWNSTREAM_POWER_COL].sum()) - no_steering_sum) / no_steering_sum
+            result[f"steering_gain_pct_{wtg}"] = gain
     return {"score": score, **result}
 
 

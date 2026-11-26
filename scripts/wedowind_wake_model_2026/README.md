@@ -163,11 +163,19 @@ minute of every period, 3,450 rows.
 | `downstream_power_kW` | Your prediction of the downstream turbine's mean power over that minute. |
 | `zxtm_126m_left_los_ms` | T03 → T07 rows: the ZXTM Left LOS speed, range 126 m, height 59.0 m, minute mean. |
 | `zxtm_126m_right_los_ms` | T03 → T07 rows: the same for the Right beam. |
+| `downstream_power_no_steering_kW` | Optional, not scored: your model's downstream power had the pair's steering turbine not steered. |
 
 A submission is rejected if a column is missing; a timestamp is missing, duplicated or extra; a `pair` differs
 from the template; a power is blank or not finite; or, in a T03 → T07 row, an LOS speed is blank, not finite or
 negative. The two LOS columns are ignored in the other pairs' rows and may be left blank there. Extra columns are
-ignored. To check a file before sending it:
+ignored.
+
+**The no-steering column.** If your model can say what the downstream turbine would have produced had the steering
+turbine stayed aligned with the wind, everything else being the same, put that in
+`downstream_power_no_steering_kW`. It does not change your score. The organisers use it to work out the steering
+gain each model predicts: 100 × (sum of power − sum of no-steering power) / sum of no-steering power over each
+steering turbine's scored minutes. Fill it in for every minute or leave it blank throughout; a model with no
+notion of steering should leave it blank. To check a file before sending it:
 
 ```python
 from pathlib import Path
@@ -254,7 +262,7 @@ uv run python -m scripts.wedowind_wake_model_2026.example_submission --fastlog-d
 Run it from the repository root. Add any other packages your own method needs with `uv pip install`.
 
 It writes `submission.csv` to the output directory (`HOT_OPEN_OUTPUT_DIR`, see the top-level README) and takes a
-few minutes. `--no-steering` writes the same model with every turbine at zero yaw.
+few minutes. It fills in the no-steering column with the same model and every turbine at zero yaw.
 
 The other scripts show the model against measurements in the datapack period, on the night of 2026-02-20:
 

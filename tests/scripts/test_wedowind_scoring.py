@@ -11,6 +11,7 @@ from scripts.wedowind_wake_model_2026.scoring import (
     LOS_COLS,
     LR_NORMALISER_PCT,
     MIN_UPSTREAM_POWER_KW,
+    NO_STEERING_POWER_COL,
     PAIR_COL,
     PAIRS,
     PAIRS_BY_NAME,
@@ -122,8 +123,8 @@ def test_committed_template_matches_submission_timestamps(tmp_path: Path) -> Non
     assert list(template.columns) == list(SUBMISSION_COLS)
     assert template.loc[0, TIMESTAMP_COL] == "2026-07-18T21:00:00Z"
     assert template.loc[0, PAIR_COL] == "T07->T04"
-    assert template[list(VALUE_COLS)].isna().all().all()
-    assert submission_template().shape == (N_MINUTES, 4)
+    assert template[[*VALUE_COLS, NO_STEERING_POWER_COL]].isna().all().all()
+    assert submission_template().shape == (N_MINUTES, 5)
 
 
 def test_read_submission_round_trips_a_csv(tmp_path: Path) -> None:
@@ -134,7 +135,8 @@ def test_read_submission_round_trips_a_csv(tmp_path: Path) -> None:
     values = read_submission(path)
 
     assert values.index.equals(submission_timestamps())
-    pd.testing.assert_frame_equal(values, _values(_truth()), check_names=False)
+    pd.testing.assert_frame_equal(values[[PAIR_COL, *VALUE_COLS]], _values(_truth()), check_names=False)
+    assert values[NO_STEERING_POWER_COL].isna().all()
 
 
 def test_rejects_missing_duplicated_or_extra_timestamps() -> None:
@@ -149,9 +151,9 @@ def test_rejects_missing_duplicated_or_extra_timestamps() -> None:
         validate_submission(pd.concat([sub, extra]))
 
 
-@pytest.mark.parametrize("col", SUBMISSION_COLS)
+@pytest.mark.parametrize("col", [TIMESTAMP_COL, PAIR_COL, *VALUE_COLS])
 def test_rejects_a_missing_column(col: str) -> None:
-    """Each submission column, the timestamp and pair included, is required."""
+    """Each scored column, the timestamp and the pair are required."""
     with pytest.raises(ValueError, match="missing columns"):
         validate_submission(_perfect_submission().drop(columns=col))
 
@@ -426,3 +428,42 @@ def test_score_needs_truth_and_submission_pairs_to_agree() -> None:
     truth.loc[truth.index[0], PAIR_COL] = "T11->T14"
     with pytest.raises(ValueError, match="pairs differ"):
         score_submission(validate_submission(_perfect_submission()), truth)
+
+
+@pytest.mark.parametrize("blank", [np.nan, "", " "])
+def test_no_steering_power_may_be_left_blank(blank: float | str) -> None:
+    """The template's blank no-steering column must validate and score as if the column were not there."""
+    sub = _perfect_submission().assign(**{NO_STEERING_POWER_COL: blank})
+
+    values = validate_submission(sub)
+
+    assert values[NO_STEERING_POWER_COL].isna().all()
+    assert not any(key.startswith("steering_gain") for key in score_submission(values, _truth()))
+
+
+@pytest.mark.parametrize("bad", [np.nan, np.inf, "n/a"])
+def test_rejects_a_partly_filled_no_steering_power(bad: float | str) -> None:
+    """A gain from some minutes only would be misleading, so the column is all or nothing."""
+    sub = _perfect_submission().assign(**{NO_STEERING_POWER_COL: 650.0}).astype({NO_STEERING_POWER_COL: object})
+    sub.loc[_row(sub, "T11->T14"), NO_STEERING_POWER_COL] = bad
+
+    with pytest.raises(ValueError, match=NO_STEERING_POWER_COL):
+        validate_submission(sub)
+
+
+def test_steering_gain_is_reported_per_steering_turbine_and_does_not_change_the_score() -> None:
+    """The gain is the summed power over the summed no-steering power on scored minutes, outside the score."""
+    truth = _truth()
+    values = _values(truth)
+    upstream = truth[PAIR_COL].map({pair.name: pair.upstream for pair in PAIRS})
+    values[NO_STEERING_POWER_COL] = upstream.map({"T03": 700.0 / 1.05, "T11": 700.0, "T07": 700.0 / 0.98})
+    unscored = values.index[_row(values, "T03->T07")]
+    truth.loc[unscored, UPSTREAM_NORMAL_COL] = False
+    values.loc[unscored, NO_STEERING_POWER_COL] = 1.0
+
+    result = score_submission(validate_submission(_submission_csv_df(values)), truth)
+
+    assert result["score"] == 0.0
+    assert result["steering_gain_pct_T03"] == pytest.approx(5.0)
+    assert result["steering_gain_pct_T11"] == pytest.approx(0.0)
+    assert result["steering_gain_pct_T07"] == pytest.approx(-2.0)

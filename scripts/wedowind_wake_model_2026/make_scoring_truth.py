@@ -109,15 +109,13 @@ def normal_minutes(wtg_fl_df: pd.DataFrame, *, wtg: str) -> pd.Series:
     return normal.resample(pd.Timedelta(minutes=1)).sum() == SECONDS_PER_MINUTE
 
 
-def truth_for_period(
-    pair: SteeringPair,
-    *,
-    start: pd.Timestamp,
-    end_excl: pd.Timestamp,
-    fastlog_dirs: list[Path],
-    lidar_dir: Path,
+def load_period_fl_df(
+    wtgs: list[str], *, start: pd.Timestamp, end_excl: pd.Timestamp, fastlog_dirs: list[Path]
 ) -> pd.DataFrame:
-    wtgs = [pair.upstream, pair.downstream]
+    """Return the 1 Hz fastlog of ``wtgs`` for one scoring period, with the status tags and power forward-filled.
+
+    It starts at the midnight before ``start`` and runs ``TI_WINDOW`` past ``end_excl``.
+    """
     # padded so the direction smoothing and gap fill at the period edges see data either side, and from midnight
     # so the status tags have a value to forward-fill into the period
     load_start, load_end_excl = (start - TI_WINDOW).floor("D"), end_excl + TI_WINDOW
@@ -139,6 +137,19 @@ def truth_for_period(
         for col in (ACT_LIMIT_COL, POWER_RED_COL):
             fl_df[(wtg, col)] = fl_df[(wtg, col)].ffill()
         fl_df[(wtg, POWER_COL)] = fl_df[(wtg, POWER_COL)].ffill(limit=POWER_FFILL_LIMIT_S)
+    return fl_df
+
+
+def truth_for_period(
+    pair: SteeringPair,
+    *,
+    start: pd.Timestamp,
+    end_excl: pd.Timestamp,
+    fastlog_dirs: list[Path],
+    lidar_dir: Path,
+) -> pd.DataFrame:
+    wtgs = [pair.upstream, pair.downstream]
+    fl_df = load_period_fl_df(wtgs, start=start, end_excl=end_excl, fastlog_dirs=fastlog_dirs)
     minute_df = make_minute_df(fl_df, free_stream_wtg=pair.upstream, wtgs=wtgs)
     for wtg in wtgs:
         minute_df[f"{wtg}_normal"] = normal_minutes(fl_df[wtg], wtg=wtg)

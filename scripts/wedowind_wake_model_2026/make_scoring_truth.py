@@ -7,16 +7,18 @@ Direction, speed and power are as ``hot_floris.make_minute_df`` with the upstrea
 minute means as ``zxtm_probes.zxtm_minute_means``.
 
 A turbine operates normally in a minute (``normal_minutes``) when it makes power every second and is never known to
-be power limited: ``ActLimit_Power`` below rated, or for T11, whose ``ActLimit_Power`` follows its power in the
-scoring periods, less than ``MIN_ACT_LIMIT_HEADROOM_KW`` above its power. The loader stops forward-filling at any
-second without a power or wind speed sample, so on a quiet turbine it drops ``ActLimit_Power``, which is logged on
-change, until its next change; it is forward-filled again here and a missing value counts as not limited. Power is
-forward-filled across logging pauses up to ``POWER_FFILL_LIMIT_S``.
+be power limited: its power reduction flag ``PowerRed_PowerRed`` set, or ``ActLimit_Power`` below rated or, for
+T11, whose ``ActLimit_Power`` follows its power in the scoring periods, less than ``MIN_ACT_LIMIT_HEADROOM_KW``
+above its power. The loader stops forward-filling at any second without a power or wind speed sample, so on a quiet
+turbine it drops ``ActLimit_Power`` and ``PowerRed_PowerRed``, which are logged on change, until their next change;
+they are forward-filled again here and a missing value counts as not limited. Power is forward-filled across
+logging pauses up to ``POWER_FFILL_LIMIT_S``.
 
 It only runs where the scoring-day fastlog and ZXTM files are available; they are not in the public datapack, and
 the truth file is not published. The DY toggle-state tag is not needed. Fastlog tags are logged on change, so each
 scoring day's fastlog needs the previous day too, to forward-fill across midnight, and the next day's
-``ActLimit_Power``, whose midnight value the loader reads to forward-fill it to the end of the day.
+``ActLimit_Power`` and ``PowerRed_PowerRed``, whose midnight values the loader reads to forward-fill them to the end
+of the day.
 
 The fastlog cache is keyed without the filestore directory, so build the truth with a cache directory
 (``HOT_OPEN_CACHE_DIR``) that has not cached these days from another filestore.
@@ -46,6 +48,7 @@ from scripts.logger import setup_logger
 from scripts.wedowind_wake_model_2026.hot_floris import (
     ACT_LIMIT_COL,
     POWER_COL,
+    POWER_RED_COL,
     RATED_POWER_KW,
     SECONDS_PER_MINUTE,
     TI_WINDOW,
@@ -92,14 +95,15 @@ def fastlog_dir_for(wtg: str, *, day: pd.Timestamp, fastlog_dirs: list[Path]) ->
 def normal_minutes(wtg_fl_df: pd.DataFrame, *, wtg: str) -> pd.Series:
     """Return per minute whether the turbine made power every second and was never known to be power limited.
 
-    ``wtg_fl_df`` is one turbine's 1 Hz fastlog with ``ActLimit_Power`` already forward-filled; a missing
-    ``ActLimit_Power`` counts as not limited.
+    ``wtg_fl_df`` is one turbine's 1 Hz fastlog with ``ActLimit_Power`` and ``PowerRed_PowerRed`` already
+    forward-filled; a missing value of either counts as not limited.
     """
     act_limit, power = wtg_fl_df[ACT_LIMIT_COL], wtg_fl_df[POWER_COL]
+    limited = wtg_fl_df[POWER_RED_COL] > 0
     if wtg in HEADROOM_NORMAL_WTGS:
-        limited = act_limit - power < MIN_ACT_LIMIT_HEADROOM_KW
+        limited |= act_limit - power < MIN_ACT_LIMIT_HEADROOM_KW
     else:
-        limited = act_limit < RATED_POWER_KW
+        limited |= act_limit < RATED_POWER_KW
     normal = (power > 0) & ~limited
     return normal.resample(pd.Timedelta(minutes=1)).sum() == SECONDS_PER_MINUTE
 
@@ -130,7 +134,8 @@ def truth_for_period(
     )
     check_data_present(fl_df, wtgs=wtgs, start_dt=start, end_dt_excl=end_excl)
     for wtg in wtgs:
-        fl_df[(wtg, ACT_LIMIT_COL)] = fl_df[(wtg, ACT_LIMIT_COL)].ffill()
+        for col in (ACT_LIMIT_COL, POWER_RED_COL):
+            fl_df[(wtg, col)] = fl_df[(wtg, col)].ffill()
         fl_df[(wtg, POWER_COL)] = fl_df[(wtg, POWER_COL)].ffill(limit=POWER_FFILL_LIMIT_S)
     minute_df = make_minute_df(fl_df, free_stream_wtg=pair.upstream, wtgs=wtgs)
     for wtg in wtgs:

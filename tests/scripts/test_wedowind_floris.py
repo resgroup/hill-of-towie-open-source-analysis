@@ -12,6 +12,7 @@ from scripts.wedowind_wake_model_2026.hot_floris import (
     FARM_YAML_PATH,
     GEN_STATE_COL,
     POWER_COL,
+    POWER_RED_COL,
     TOGGLE_COL,
     WD_COL,
     WINDOW_START,
@@ -305,7 +306,7 @@ def test_make_minute_df_yaw_position_is_circular_mean_and_needs_every_second() -
 
 def _status_frame(*, power: float, act_limit: float) -> tuple[pd.DatetimeIndex, pd.DataFrame]:
     index = pd.date_range("2026-07-31 00:00", periods=180, freq="1s", tz="UTC")
-    return index, pd.DataFrame({POWER_COL: power, ACT_LIMIT_COL: act_limit}, index=index)
+    return index, pd.DataFrame({POWER_COL: power, ACT_LIMIT_COL: act_limit, POWER_RED_COL: 0.0}, index=index)
 
 
 def test_normal_minutes_need_power_and_rated_act_limit_every_second() -> None:
@@ -316,6 +317,16 @@ def test_normal_minutes_need_power_and_rated_act_limit_every_second() -> None:
     d.loc[index[:60], ACT_LIMIT_COL] = np.nan
 
     assert normal_minutes(d, wtg="T14").tolist() == [True, False, False]
+
+
+@pytest.mark.parametrize("wtg", ["T14", "T11"])
+def test_normal_minutes_need_the_power_reduction_flag_clear_every_second(wtg: str) -> None:
+    """One second with PowerRed set spoils its minute on any turbine; a missing PowerRed counts as not limited."""
+    index, d = _status_frame(power=600.0, act_limit=2300.0)
+    d.loc[index[70], POWER_RED_COL] = 1.0
+    d.loc[index[120:], POWER_RED_COL] = np.nan
+
+    assert normal_minutes(d, wtg=wtg).tolist() == [True, False, True]
 
 
 def test_normal_minutes_for_t11_need_act_limit_headroom_above_power() -> None:

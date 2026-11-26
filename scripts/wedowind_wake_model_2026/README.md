@@ -259,7 +259,7 @@ uv run python -m scripts.wedowind_wake_model_2026.example_submission --fastlog-d
 Run it from the repository root. Add any other packages your own method needs with `uv pip install`.
 
 It writes `submission.csv` to the output directory (`HOT_OPEN_OUTPUT_DIR`, see the top-level README) and takes a
-few minutes. `--no-steering` writes the same model with every turbine at zero yaw.
+few minutes.
 
 The other scripts show the model against measurements in the datapack period, on the night of 2026-02-20:
 

@@ -13,7 +13,7 @@ For every scoring period it uses only the upstream turbine's fastlog, as a parti
   into T03's wind direction.
 
 Minutes with a missing input are filled from their neighbours (zero for a missing yaw misalignment), because a
-submission needs a value for every minute. ``--no-steering`` gives every turbine zero yaw instead.
+submission needs a value for every minute.
 
 Usage::
 
@@ -104,10 +104,10 @@ def period_minute_df(
     return minute_df
 
 
-def fit_k(*, minute_df: pd.DataFrame, wtg: str, fmodel: FlorisModel, turbine_names: list[str], steering: bool) -> float:
+def fit_k(*, minute_df: pd.DataFrame, wtg: str, fmodel: FlorisModel, turbine_names: list[str]) -> float:
     """Return the zero-bias wind speed scale for ``wtg``'s own power on the ``fit_k`` minutes of ``minute_df``."""
     fit_df = minute_df.loc[minute_df["fit_k"]]
-    yaw = yaw_angles_for(df=fit_df, turbine_names=turbine_names, wtg=wtg) if steering else None
+    yaw = yaw_angles_for(df=fit_df, turbine_names=turbine_names, wtg=wtg)
     k = fit_ws_scale(
         modelled_power_fn=lambda k: run_floris_minutes(
             fmodel, turbine_names=turbine_names, df=fit_df, k=k, yaw_angles=yaw
@@ -118,9 +118,7 @@ def fit_k(*, minute_df: pd.DataFrame, wtg: str, fmodel: FlorisModel, turbine_nam
     return k
 
 
-def make_example_submission(
-    *, fastlog_dirs: list[Path], metadata_df: pd.DataFrame, steering: bool = True
-) -> pd.DataFrame:
+def make_example_submission(*, fastlog_dirs: list[Path], metadata_df: pd.DataFrame) -> pd.DataFrame:
     """Return a submission, indexed and ordered like ``scoring.submission_template()``."""
     fmodel, turbine_names = load_hot_floris_model(metadata_df)
     submission = submission_template()
@@ -131,16 +129,10 @@ def make_example_submission(
             for pair in pairs
             for start, end_excl in pair.periods
         }
-        k = fit_k(
-            minute_df=pd.concat(minute_dfs.values()),
-            wtg=wtg,
-            fmodel=fmodel,
-            turbine_names=turbine_names,
-            steering=steering,
-        )
+        k = fit_k(minute_df=pd.concat(minute_dfs.values()), wtg=wtg, fmodel=fmodel, turbine_names=turbine_names)
         for pair in pairs:
             df = pd.concat([minute_df for (name, _), minute_df in minute_dfs.items() if name == pair.name])
-            yaw = yaw_angles_for(df=df, turbine_names=turbine_names, wtg=wtg) if steering else None
+            yaw = yaw_angles_for(df=df, turbine_names=turbine_names, wtg=wtg)
             power = run_floris_minutes(fmodel, turbine_names=turbine_names, df=df, k=k, yaw_angles=yaw)
             submission.loc[df.index, DOWNSTREAM_POWER_COL] = power[pair.downstream].to_numpy()
             if pair.lidar:
@@ -166,18 +158,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Write a FLORIS example submission for the wake steering challenge.")
     parser.add_argument("--fastlog-dir", type=Path, action="append", dest="fastlog_dirs")
     parser.add_argument("--out", type=Path, default=None)
-    parser.add_argument("--no-steering", action="store_true", help="give every turbine zero yaw")
     args = parser.parse_args()
 
     out_dir = get_out_dir(dir_name=Path(__file__).stem)
     setup_logger(out_dir / f"{Path(__file__).stem}.log")
     submission = make_example_submission(
-        fastlog_dirs=args.fastlog_dirs or [get_filestore_dir()],
-        metadata_df=unpack_local_meta_data(),
-        steering=not args.no_steering,
+        fastlog_dirs=args.fastlog_dirs or [get_filestore_dir()], metadata_df=unpack_local_meta_data()
     )
-    default_name = "submission_no_steering.csv" if args.no_steering else "submission.csv"
-    write_submission(submission, args.out or out_dir / default_name)
+    write_submission(submission, args.out or out_dir / "submission.csv")
 
 
 if __name__ == "__main__":
